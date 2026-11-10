@@ -5,7 +5,11 @@
 // half is published at /api/page-identity/keys, and 红包信息 (§13.4) at
 // /api/hongbao/test.
 
-import { splitParams, TEST_HONGBAO_ID } from "../../runtime/index.mjs";
+import {
+  splitParams,
+  TEST_HONGBAO_ID,
+  unitFieldsOf,
+} from "../../runtime/index.mjs";
 import { fingerprintOf } from "./files.mjs";
 import { yuan } from "./words.mjs";
 
@@ -95,9 +99,12 @@ export function localInfo({
     judge: { ...LOCAL_JUDGE },
     fingerprint: fingerprintOf(code),
     params: ended ? values : splitParams(declarations, values).shown,
-    unit: "LDC",
+    // 三方积分 as the site has it: amounts in the unit's decimals, and
+    // `units` the whole 最小单位 the judge counts.
+    ...unitFieldsOf(hongbao.points),
     pool: yuan(hongbao.total),
     unclaimed: yuan(unclaimed),
+    units: { pool: hongbao.total, unclaimed },
     openedAt: new Date(hongbao.openedAt).toISOString(),
     deadlineAt: new Date(hongbao.endsAt).toISOString(),
     // 模拟器不分领取范围：谁都能领

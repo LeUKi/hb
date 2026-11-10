@@ -156,6 +156,8 @@
       const host = new URL(config.pageOrigin).host;
       const site = new URL(config.pageOrigin).hostname;
       const author = config.hongbao.author;
+      // "LDC", or a 三方积分's unit (simulate.json's hongbao.points).
+      const UNIT = config.hongbao.unit;
       let state = null;
       /** The red packet's clock (simulate.json's now, moving on), as hb.now() in the page. */
       const now = () => Date.now() + (state?.clock ?? 0);
@@ -219,9 +221,9 @@
 
       /** One record's move, as the site's 我的记录 says it: “+0.50 → 1.20”. */
       function moveText(item) {
-        if (item.settled) return item.claimed ? `结算 ${item.amount} LDC` : "结算，没有领到";
+        if (item.settled) return item.claimed ? `结算 ${item.amount} ${UNIT}` : "结算，没有领到";
         const added = Number(item.added);
-        if (added === 0) return Number(item.pending) > 0 ? `待结算 ${item.pending} LDC` : "没领到";
+        if (added === 0) return Number(item.pending) > 0 ? `待结算 ${item.pending} ${UNIT}` : "没领到";
         return `${added > 0 ? "+" : "−"}${item.added.replace("-", "")} → ${item.pending}`;
       }
 
@@ -267,7 +269,7 @@
           h("h1", {}, hongbao.title),
           noteOf(seat),
           h("div", { class: "cells" },
-            h("div", { class: "cell" }, h("small", {}, `奖池还剩 ${share()}`), h("b", {}, hongbao.unclaimed), h("span", {}, "LDC")),
+            h("div", { class: "cell" }, h("small", {}, `奖池还剩 ${share()}`), h("b", {}, hongbao.unclaimed), h("span", {}, UNIT)),
             h("div", { class: "cell" }, h("small", {}, "已判定"), h("b", {}, hongbao.judged), h("span", {}, "次")),
             h("div", { class: "cell" }, h("small", {}, "剩余"), h("b", { "data-left": "" }, remaining()), h("span", {}, `截止 ${time(hongbao.deadlineAt)}`)),
           ),
@@ -281,8 +283,8 @@
         return h("div", { class: "card" },
           seat.myView?.summary && h("div", { class: "big" }, seat.myView.summary),
           me.settled
-            ? h("div", { class: "muted" }, me.claim ? `结算了 ${me.claim.amount} LDC` : "结算了，没有领到")
-            : me.pending !== null && h("div", { class: "muted" }, `待结算 ${me.pending} LDC · 判定器结算或红包结束时发`),
+            ? h("div", { class: "muted" }, me.claim ? `结算了 ${me.claim.amount} ${UNIT}` : "结算了，没有领到")
+            : me.pending !== null && h("div", { class: "muted" }, `待结算 ${me.pending} ${UNIT} · 判定器结算或红包结束时发`),
         );
       }
 
@@ -291,9 +293,9 @@
         return h("div", { class: "ended" },
           h("b", {}, state.endedBy === "judge" ? "判定器结束了这个红包" : "红包已结束"),
           h("div", { class: "muted" }, state.settled.length > 0
-            ? `结算：${state.settled.map((one) => `${one.name} ${one.amount} LDC`).join("、")}`
+            ? `结算：${state.settled.map((one) => `${one.name} ${one.amount} ${UNIT}`).join("、")}`
             : "没有人结算"),
-          h("div", { class: "muted" }, `发出 ${state.paid} LDC`),
+          h("div", { class: "muted" }, `发出 ${state.paid} ${UNIT}`),
         );
       }
 
@@ -460,7 +462,7 @@
           open: !ended && settled === null,
           ...(ended ? { why: "ended" } : settled !== null ? { why: "already_claimed" } : {}),
           cooldownUntil: own?.cooldownUntil ?? null,
-          claim: settled !== null && Number(settled) > 0 ? { amount: settled, unit: "LDC", payment: "paid" } : null,
+          claim: settled !== null && Number(settled) > 0 ? { amount: settled, unit: UNIT, payment: "paid" } : null,
           registered: false,
           pending: own?.pending ?? null,
           settled: settled !== null,

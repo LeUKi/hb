@@ -21,6 +21,7 @@ import {
   startScenario,
   TEST_HONGBAO_ID,
   unclaimedOf,
+  unitFieldsOf,
 } from "../../runtime/index.mjs";
 import {
   KitError,
@@ -40,6 +41,7 @@ import {
 } from "./signer.mjs";
 import { readSimulation } from "./simulation.mjs";
 import {
+  amountsIn,
   failureText,
   isSlow,
   printLogs,
@@ -200,6 +202,7 @@ export async function paramsOf(given, hongbao, sandbox) {
     total,
     count,
     minEach,
+    ...unitFieldsOf(hongbao.points),
   });
   if ("failure" in checked)
     return {
@@ -242,7 +245,11 @@ export async function simulateCommand({
   const { hongbao, submissions } = read.plan;
   const seed =
     options.seed === undefined ? read.plan.seed : seedOf(options.seed);
-  print(`${hongbao.title}：总奖池 ${yuan(hongbao.total)}`);
+  // 三方积分: every amount is so many 最小单位 (hongbao.points.step).
+  amountsIn(hongbao.points);
+  print(
+    `${hongbao.title}：总奖池 ${yuan(hongbao.total)}${hongbao.points ? ` ${hongbao.points.unit}（三方积分，最小单位 ${hongbao.points.step}）` : ""}`,
+  );
   print(`种子 ${seed}`);
 
   const keys = options.live ? await readLocalKeys(dir) : {};
@@ -284,6 +291,13 @@ export async function simulateCommand({
     await close();
     return { exitCode: 1 };
   }
+  if (hongbao.points && declarations.meta?.points !== true) {
+    print(
+      "✗ hongbao.points（三方积分红包）只能用在 meta 里写了 points: true 的判定器上",
+    );
+    await close();
+    return { exitCode: 1 };
+  }
   // 协议第三版: the params, as the site would take them from a sender.
   const params = await paramsOf(read.plan.params, hongbao, sandbox);
   if ("problem" in params) {
@@ -295,7 +309,7 @@ export async function simulateCommand({
   const { title, total, count, minEach } = hongbao;
   const opened = await sandbox.setup(
     params.values,
-    { title, total, count, minEach },
+    { title, total, count, minEach, ...unitFieldsOf(hongbao.points) },
     { now: hongbao.openedAt, seed: setupSeed(TEST_HONGBAO_ID, seed) },
   );
   if (opened && "failure" in opened) {

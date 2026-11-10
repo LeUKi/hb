@@ -26,6 +26,7 @@ import {
   TEST_HONGBAO_ID,
   TEST_SEED,
   unclaimedOf,
+  unitFieldsOf,
 } from "../../runtime/index.mjs";
 import {
   KitError,
@@ -38,7 +39,7 @@ import { openSandbox } from "./sandbox.mjs";
 import { INFO_PATH, localInfo, localSigner, SENDER_ID } from "./signer.mjs";
 import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
-import { failureText, say, yuan } from "./words.mjs";
+import { amountsIn, failureText, say, unitNow, yuan } from "./words.mjs";
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -174,7 +175,7 @@ function resultOf(judged) {
         judged: true,
         claimed: true,
         amount: yuan(paid),
-        unit: "LDC",
+        unit: unitNow(),
         ...said,
       }
     : { judged: true, claimed: false, ...said };
@@ -194,10 +195,12 @@ function inputProblem(input) {
  * 重新开始. `print` gets each judgment's line as npm run simulate prints it.
  */
 async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
+  // 三方积分: every amount is so many 最小单位 (hongbao.points.step).
+  amountsIn(plan.hongbao.points);
   const { title, total, count, minEach } = plan.hongbao;
   const opened = await sandbox.setup(
     params,
-    { title, total, count, minEach },
+    { title, total, count, minEach, ...unitFieldsOf(plan.hongbao.points) },
     {
       now: plan.hongbao.openedAt,
       seed: setupSeed(TEST_HONGBAO_ID, plan.seed),
@@ -257,7 +260,7 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
       code: true,
       status: ended() ? "ended" : "active",
       endedByCode: scenario.ended,
-      unit: "LDC",
+      ...unitFieldsOf(plan.hongbao.points),
       // No shares from protocol 5: what is left unclaimed instead.
       shares: null,
       pool: yuan(total),
@@ -620,6 +623,7 @@ export async function startPage({
                   pageAutoOpen:
                     sandbox.declarations.hongbao?.pageAutoOpen === true,
                   total: yuan(plan.hongbao.total),
+                  unit: unitNow(),
                 },
               }).replaceAll("<", "\\u003c"),
             ),
@@ -779,6 +783,10 @@ export async function startPage({
     await fail(sandbox.network.problems.join("\n"));
   if (sandbox.declarations.problems.length > 0)
     await fail(sandbox.declarations.problems.join("\n"));
+  if (plan.hongbao.points && sandbox.declarations.meta?.points !== true)
+    await fail(
+      "hongbao.points（三方积分红包）只能用在 meta 里写了 points: true 的判定器上",
+    );
   params = await paramsOf(plan.params, plan.hongbao, sandbox);
   if ("problem" in params) await fail(params.problem);
   for (const line of localAddressLines(

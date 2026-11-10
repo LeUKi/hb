@@ -10,7 +10,12 @@ import { sha256Text } from "./hash.mjs";
 import { defaultCount } from "./money.mjs";
 import { NETWORK_LIMITS, NETWORK_METHODS } from "./network.mjs";
 import { paramValues } from "./params.mjs";
-import { judgeNext, startScenario } from "./scenario.mjs";
+import {
+  judgeNext,
+  pointsProblem,
+  startScenario,
+  unitFieldsOf,
+} from "./scenario.mjs";
 import {
   LEDGER_PROTOCOL,
   LIMITS,
@@ -139,10 +144,12 @@ function hongbaoProblem(hongbao, protocol) {
   }
   const extra = only(
     hongbao,
-    ["title", "total", "count", "minEach", "openedAt", "endsAt"],
+    ["title", "total", "count", "minEach", "openedAt", "endsAt", "points"],
     "hongbao 里",
   );
   if (extra) return extra;
+  const points = pointsProblem(hongbao.points);
+  if (points) return points;
   if (
     hongbao.title !== undefined &&
     (typeof hongbao.title !== "string" ||
@@ -1308,10 +1315,25 @@ function stepOutcome(step, judged, scenario) {
 export async function runTest(
   test,
   run,
-  { twice = false, params: declared, check, protocol = LEDGER_PROTOCOL } = {},
+  {
+    twice = false,
+    params: declared,
+    check,
+    protocol = LEDGER_PROTOCOL,
+    points = false,
+  } = {},
 ) {
   const plan = planOf(test, protocol);
   if ("problem" in plan) return { passed: false, problem: plan.problem, ms: 0 };
+  // 三方积分 (hb's docs/third-party-points-design.md §10): only a judge
+  // that declares meta.points opens one.
+  if (plan.hongbao.points && !points)
+    return {
+      passed: false,
+      problem:
+        "hongbao.points（三方积分红包）只能用在 meta 里写了 points: true 的判定器上",
+      ms: 0,
+    };
   // 协议第三版: the params it is judged with, as the site would take them
   // from a sender, and as check() would let them through.
   const fail = (problem) => ({ passed: false, problem, ms: 0 });
@@ -1327,7 +1349,13 @@ export async function runTest(
     params = read.values;
     if (check) {
       const { title, total, count, minEach } = plan.hongbao;
-      const checked = await check(params, { title, total, count, minEach });
+      const checked = await check(params, {
+        title,
+        total,
+        count,
+        minEach,
+        ...unitFieldsOf(plan.hongbao.points),
+      });
       if ("failure" in checked)
         return {
           ...fail(`check 出错：${checked.detail}`),

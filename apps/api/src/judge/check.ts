@@ -492,6 +492,7 @@ async function runChecks(
         protocol: JUDGE_PROTOCOL,
         twice: true,
         params: declarations.params,
+        points: declarations.meta?.points === true,
         ...(declarations.check ? { check } : {}),
       });
       const { failure } = result;

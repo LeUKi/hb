@@ -392,9 +392,7 @@ describe("三方积分红包", () => {
           ).bind(crypto.randomUUID(), systemId, at),
         ),
       );
-    await env.DB.prepare(
-      "UPDATE points_calls SET at=at-2000 WHERE system_id=?",
-    )
+    await env.DB.prepare("UPDATE points_calls SET at=at-2000 WHERE system_id=?")
       .bind(systemId)
       .run();
     await calls(Date.now());
@@ -405,9 +403,7 @@ describe("三方积分红包", () => {
       status: "pending",
     });
     // A second on, under the cap again.
-    await env.DB.prepare(
-      "UPDATE points_calls SET at=at-2000 WHERE system_id=?",
-    )
+    await env.DB.prepare("UPDATE points_calls SET at=at-2000 WHERE system_id=?")
       .bind(systemId)
       .run();
     expect(await run(id)).toBe("confirmed");

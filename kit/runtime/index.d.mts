@@ -570,7 +570,10 @@ export type TestRun = {
 /** check(params, hongbao) run once: what it said, or how it failed. */
 export type RunCheck = (
   params: Params,
-  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+  hongbao: Pick<
+    Submission["hongbao"],
+    "title" | "total" | "count" | "minEach" | "unit" | "step" | "points"
+  >,
 ) => Promise<
   | { problems: ParamProblem[] }
   | { invalid: string }
@@ -586,6 +589,11 @@ export function runTest(
     check?: RunCheck;
     /** How the test is read and run (the newest by default). */
     protocol?: number;
+    /**
+     * The judge declares meta.points: a test may make its 红包 a 三方积分红包
+     * (hongbao.points); without it such a test does not pass.
+     */
+    points?: boolean;
   },
 ): Promise<TestRun>;
 
@@ -642,6 +650,21 @@ export type Scenario = {
   pending?: number;
   endedBy?: "judge" | "empty" | "deadline" | null;
 };
+/** A test's or simulate.json's 三方积分 (hongbao.points). */
+export type TestPoints = {
+  name: string;
+  unit: string;
+  step: string;
+  host?: string;
+};
+/** The issuer's host a test's 三方积分 has when it names none. */
+export const POINTS_TEST_HOST: string;
+/** hongbao.unit, step and points as the site gives them: LDC's without points. */
+export function unitFieldsOf(
+  points?: TestPoints | null,
+): Pick<Submission["hongbao"], "unit" | "step" | "points">;
+/** Why hongbao.points is not one, or null. */
+export function pointsProblem(points: unknown): string | null;
 export function startScenario(input: {
   hongbao: Scenario["hongbao"];
   claims?: Submission["claims"];

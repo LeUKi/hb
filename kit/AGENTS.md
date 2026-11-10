@@ -142,6 +142,7 @@ export function judge(submission, tools) { … }
 - 写给玩的人看的金额用 `tools.money.format()`，它按最小单位定小数位，再接上 `hongbao.unit`；不要自己除以 100。
 - 代码里直接写的数（比如答对一题 `add: 100`）在三方积分红包上是 100 个最小单位，可能比你想的大很多：按奖池算（`even()`、`lucky()`），或者做成金额参数让发红包的人填。
 - 自己的服务签的凭证，金额也是多少个最小单位；红包信息的 `units` 给的就是这个数。
+- 测试和模拟：`tests.json` 的测试、`simulate.json` 的 `hongbao` 里写 `"points": { "name": "星星", "unit": "星星", "step": "1" }`（可选 `host`），就按三方积分红包跑：`total` 和所有金额都是多少个最小单位，`npm run simulate`、`npm run page` 按最小单位写金额。没写 `meta.points` 的判定器这样写会报错。
 
 ### 每个人自己的：`player`
 
@@ -261,7 +262,7 @@ export async function judge(submission) {
 
 - 结束后公开（`revealAtEnd: true`；旧写法 `secret: true` 同样认）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
 - 密钥（`type: "key"`）：`{ key, label, hint, type: "key", to, header, prefix, required }`。发红包的人自己填，代码读不到（`submission.params` 里没有它），代码请求 `to` 开头的地址时，网站把它加进请求头 `header`（默认 `Authorization`），值是 `prefix`（默认 `"Bearer "`）加密钥；Anthropic 这类写 `header: "x-api-key", prefix: ""`。`to` 要在 `network` 里；`to` 写 `{ param: "server" }` 就只发给发红包的人在地址参数 `server` 填的地址（`network` 里也要有 `{ param: "server" }`）。最多 3 项，不能写 `default` 和 `revealAtEnd`。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次，提醒他在服务商那边设消费上限。本地 `--live` 时密钥从 judge.js 旁边的 `keys.local.json`（`{ "ai": "sk-…" }`，不提交）读；`npm test` 用不到密钥。会联网的判定器里有文字参数像密钥（名字里有 key、token、密钥这类字样），`npm run check` 会提醒改用 `type: "key"`。
-- `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
+- `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach, unit, step, points }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值，后三项见“三方积分红包”）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
 - `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
 - `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。网页放在发红包的人自己的服务上时写 `page: { param: "server", path: "play/" }`：跟着他填的地址填好，`path` 选填，接在地址后面（不以 `/` 开头）。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
@@ -898,7 +899,7 @@ export async function judge(submission, tools) {
 | `expect` | 期望（见下） | 必填 |
 | `now` | 这次提交的时间，毫秒或带时区的 ISO 时间（`"2026-10-24T12:00:00+08:00"`，不带时区的不认） | 2026-10-24 12:00（北京时间） |
 | `user` | `id`、`username`、`level`（0–4 或 null）、`attempts`（之前被判定过几次） | 10000、tester、2、0 |
-| `hongbao` | `title`、`total`、`openedAt`、`endsAt`（时间同 `now` 的写法）；没有 `count` 和 `minEach` | 测试红包、10000、`now` 前 1 小时、`now` 后 1 天 |
+| `hongbao` | `title`、`total`、`openedAt`、`endsAt`（时间同 `now` 的写法）、`points`（三方积分红包，见“三方积分红包”）；没有 `count` 和 `minEach` | 测试红包、10000、`now` 前 1 小时、`now` 后 1 天、LDC 红包 |
 | `claims` | 前面已经结算、领到钱的人：数字（补上这么多条占位记录，每人约 1 LDC）或完整列表（每条 `{ "user": { "id", "username" }, "amount", "input", "at" }`） | 没有 |
 | `players` | 前面已经玩过、还没结算的人：名字对应 `{ "pending", "state", "view" }`，比如 `{ "小明": { "pending": 50, "state": { "tries": 2 } } }`；这次提交的人也可以在里面（单次测试按 `user.username`，默认 tester） | 没有 |
 | `state` | 代码之前存的共用状态 | null |

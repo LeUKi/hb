@@ -529,6 +529,11 @@ interface TestBase {
   hongbao?: Partial<Pick<Submission["hongbao"], "title" | "total">> & {
     openedAt?: TestTime;
     endsAt?: TestTime;
+    /**
+     * 写了就是三方积分红包（判定器要在 meta 里写 points: true）：所有金额都是
+     * 多少个最小单位，hongbao.unit、step、points 照它给；不写是 LDC 红包
+     */
+    points?: { name: string; unit: string; step: string; host?: string };
   };
   /**
    * 前面已经结算、领到钱的人：数字（补上占位记录，每人约 1 LDC）或完整列表；

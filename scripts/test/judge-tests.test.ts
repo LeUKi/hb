@@ -63,7 +63,7 @@ function readTestsOrThrow(text: string, protocol = OLD): TestCase[] {
 async function runOne(
   test: unknown,
   judge: Judge,
-  options?: { twice?: boolean; protocol?: number },
+  options?: { twice?: boolean; protocol?: number; points?: boolean },
 ) {
   const protocol = options?.protocol ?? OLD;
   const [only] = readTestsOrThrow(JSON.stringify({ tests: [test] }), protocol);
@@ -310,6 +310,9 @@ describe("tests.json: one submission", () => {
         remainingCount: 10,
         openedAt: NOW - 3_600_000,
         endsAt: NOW + 86_400_000,
+        unit: "LDC",
+        step: "0.01",
+        points: null,
       },
       share: { min: 1, max: 9991, last: false },
       claims: [],
@@ -1045,6 +1048,55 @@ describe("tests.json: protocol 5 (docs/multi-prize-design.md)", () => {
       max: 9880,
       last: false,
     });
+  });
+
+  it("runs a 三方积分红包 for a judge that declares meta.points, in 最小单位", async () => {
+    const points = {
+      name: "a",
+      input: "刮",
+      hongbao: {
+        total: 500,
+        points: { name: "星星", unit: "星星", step: "1" },
+      },
+      expect: { add: 50, pending: 50, message: "刮到了" },
+    };
+    expect(
+      problemOf(
+        {
+          tests: [
+            { ...points, hongbao: { points: { name: "星星", unit: "星星" } } },
+          ],
+        },
+        NEW,
+      ),
+    ).toBe(
+      '第 1 条测试（a）：hongbao.points.step 是最小单位，写成字符串，0.01 的整数倍，0.01 到 1 亿（"0.01"、"1"、"100"）',
+    );
+    const refused = await run(points, scratch);
+    expect(refused.result).toMatchObject({
+      passed: false,
+      problem:
+        "hongbao.points（三方积分红包）只能用在 meta 里写了 points: true 的判定器上",
+    });
+    expect(refused.seen).toEqual([]);
+    const { result, seen } = await runOne(points, scratch, {
+      protocol: NEW,
+      points: true,
+    });
+    expect(result.passed).toBe(true);
+    expect(seen[0]?.submission.hongbao).toMatchObject({
+      total: 500,
+      unclaimed: 500,
+      unit: "星星",
+      step: "1",
+      points: { name: "星星", unit: "星星", host: "points.example.com" },
+    });
+    // 50 steps of 1 星星: format() writes them as the site would.
+    const { tools } = createTools(seen[0]?.submission as Submission, {
+      submission: seed,
+      user: seed,
+    });
+    expect(tools.money.format(50)).toBe("50");
   });
 
   it("takes off to 0, settles once, and reads { ok, amount } as short for it", async () => {

@@ -141,6 +141,35 @@
           "minimum": 1,
           "default": 10000
         },
+        "points": {
+          "description": "写了就是三方积分红包（判定器要在 meta 里写 points: true）：所有金额都是多少个最小单位，hongbao.unit、step、points 照它给。不写就是 LDC 红包（单位 LDC，最小单位 0.01）。",
+          "type": "object",
+          "required": ["name", "unit", "step"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "积分的名称，1–6 个字",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6
+            },
+            "unit": {
+              "description": "积分的单位，1–4 个字",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4
+            },
+            "step": {
+              "description": "最小单位，写成字符串：\"0.01\"、\"1\"、\"100\"（0.01 的整数倍，到 1 亿）",
+              "type": "string",
+              "pattern": "^(?:0|[1-9]\\d{0,8})(?:\\.\\d{1,2})?$"
+            },
+            "host": {
+              "description": "发行方的域名，默认 points.example.com",
+              "type": "string"
+            }
+          }
+        },
         "count": { "description": "第五版没有份数，不能写", "not": {} },
         "minEach": { "description": "第五版没有每份至少，不能写", "not": {} },
         "openedAt": {

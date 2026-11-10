@@ -91,6 +91,7 @@ export async function testCommand({ dir, args = [], print = console.log }) {
   // 协议第三版: each test's params, held to what is declared and to check().
   const options = {
     params: declarations.params,
+    points: declarations.meta?.points === true,
     ...(declarations.check ? { check: sandbox.check } : {}),
   };
   let passed = 0;

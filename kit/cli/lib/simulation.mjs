@@ -10,6 +10,7 @@ import {
   defaultCount,
   fetchProblem,
   LIMITS,
+  pointsProblem,
   TEST_DEFAULTS,
   TEST_SEED,
 } from "../../runtime/index.mjs";
@@ -62,10 +63,12 @@ function hongbaoProblem(hongbao) {
     return `第五版没有份数和每份至少，只有总奖池：去掉 ${shares.map((key) => `hongbao.${key}`).join("、")}`;
   const extra = extraKey(
     hongbao,
-    ["title", "total", "openedAt", "endsAt"],
+    ["title", "total", "openedAt", "endsAt", "points"],
     "hongbao 里",
   );
   if (extra) return extra;
+  const points = pointsProblem(hongbao.points);
+  if (points) return points;
   const { title } = hongbao;
   if (
     title !== undefined &&

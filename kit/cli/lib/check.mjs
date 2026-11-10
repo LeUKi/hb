@@ -60,6 +60,7 @@ async function runAll(code, tests) {
   const options = {
     twice: true,
     params: declarations.params,
+    points: declarations.meta?.points === true,
     ...(declarations.check ? { check: sandbox.check } : {}),
   };
   try {

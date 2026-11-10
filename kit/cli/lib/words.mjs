@@ -1,5 +1,5 @@
 // How the commands say things: amounts, failures, console output.
-import { formatAmount } from "../../runtime/index.mjs";
+import { formatUnits } from "../../runtime/index.mjs";
 
 /**
  * On the site a judgment has 50 ms of CPU: slower than that here may time
@@ -8,8 +8,22 @@ import { formatAmount } from "../../runtime/index.mjs";
  */
 export const SLOW_MS = 50;
 
-/** 2000 → "20.00", as the site shows amounts. */
-export const yuan = (amount) => formatAmount(amount);
+/**
+ * The 最小单位 amounts count in and their unit: 分 and LDC unless
+ * simulate.json makes the 红包 a 三方积分红包 (hongbao.points), set once
+ * a run starts.
+ */
+let amountStep = "0.01";
+let amountUnit = "LDC";
+export function amountsIn(points) {
+  amountStep = points?.step ?? "0.01";
+  amountUnit = points?.unit ?? "LDC";
+}
+/** "LDC", or the 三方积分's unit. */
+export const unitNow = () => amountUnit;
+
+/** 2000 → "20.00", as the site shows amounts; in 最小单位 for 三方积分. */
+export const yuan = (amount) => formatUnits(amount, amountStep);
 
 /** Why a share was pulled into its range (the site's 我的提交 says the same). */
 export const NOTE_WORDS = {

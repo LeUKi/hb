@@ -1744,8 +1744,11 @@ describe("附带网页", () => {
         // Its pool and times (§13.7): simulate.json's 红包, nobody won, and
         // the default clock (12:00 Beijing time, opened an hour before).
         unit: "LDC",
+        step: "0.01",
+        points: null,
         pool: "30.00",
         unclaimed: "30.00",
+        units: { pool: 3000, unclaimed: 3000 },
         openedAt: "2026-10-24T03:00:00.000Z",
         deadlineAt: "2026-10-25T04:00:00.000Z",
         scope: null,
