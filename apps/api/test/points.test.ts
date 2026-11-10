@@ -191,7 +191,7 @@ beforeEach(async () => {
     notAllowed: "",
     insufficient: "",
     keyInvalid: "",
-    rate: 10,
+    rate: 100,
   });
   systemId = system.id;
   issuer.open(owner.externalId, owner.username, 1_000_00, "owner-test-key");
@@ -367,6 +367,50 @@ describe("三方积分红包", () => {
     expect(claimed.result).toBe("claimed");
     expect(await run(claimed.claim.payment?.id ?? "")).toBe("confirmed");
     expect(issuer.accounts.get(first.externalId)?.available).toBe(1000);
+  });
+
+  it("keeps to the issuer's calls a second, waiting untouched while over", async () => {
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "30",
+      count: 3,
+    });
+    const a = await actor();
+    issuer.open(a.externalId, a.username, 0);
+    const claimed = await claim(hongbao.id, a);
+    const id = claimed.claim.payment?.id ?? "";
+    await env.DB.prepare("UPDATE points_systems SET rate=2 WHERE id=?")
+      .bind(systemId)
+      .run();
+    const calls = (at: number) =>
+      env.DB.batch(
+        [0, 1].map(() =>
+          env.DB.prepare(
+            `INSERT INTO points_calls (id,system_id,kind,result,http_status,ms,payment_id,at)
+             VALUES (?,?,'balance','ok',200,5,NULL,?)`,
+          ).bind(crypto.randomUUID(), systemId, at),
+        ),
+      );
+    await env.DB.prepare(
+      "UPDATE points_calls SET at=at-2000 WHERE system_id=?",
+    )
+      .bind(systemId)
+      .run();
+    await calls(Date.now());
+    const before = issuer.calls.length;
+    expect(await run(id)).toBe("later");
+    expect(issuer.calls.length).toBe(before);
+    expect(await payout(claimed.claim.id)).toMatchObject({
+      status: "pending",
+    });
+    // A second on, under the cap again.
+    await env.DB.prepare(
+      "UPDATE points_calls SET at=at-2000 WHERE system_id=?",
+    )
+      .bind(systemId)
+      .run();
+    expect(await run(id)).toBe("confirmed");
   });
 
   it("refuses money that is not whole 最小单位, and an opening 额度 cannot cover", async () => {

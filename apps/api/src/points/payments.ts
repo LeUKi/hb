@@ -230,6 +230,26 @@ type Outcome =
 /** Run one payout: due, leased, one send (a query first after a miss). */
 export async function runPointsPayment(env: ApiBindings, id: string) {
   const now = Date.now();
+  // The issuer's own cap on calls a second (§6, rate): over it, this
+  // payout waits a second or two, untouched (no lease, no try counted, no
+  // word to the page). Counted from the calls kept, so roughly: two runs
+  // at the same moment may both go.
+  const busy = await env.DB.prepare(
+    `SELECT ps.rate AS rate,
+      (SELECT COUNT(*) FROM points_calls c WHERE c.system_id=ps.id AND c.at>?2) AS recent
+     FROM points_payments p JOIN points_systems ps ON ps.id=p.system_id
+     WHERE p.id=?1 AND p.status='pending' AND (p.next_run_at IS NULL OR p.next_run_at<=?3)`,
+  )
+    .bind(id, now - 1000, now)
+    .first<{ rate: number; recent: number }>();
+  if (busy && busy.recent >= busy.rate) {
+    await wakePointsPayment(env, id, 1 + Math.floor(Math.random() * 2)).catch(
+      () => {
+        // The sweep finds it when it is due.
+      },
+    );
+    return "later" as const;
+  }
   const token = crypto.randomUUID();
   const leased = await env.DB.prepare(
     `UPDATE points_payments SET status='sending',lease_token=?1,lease_until=?2,

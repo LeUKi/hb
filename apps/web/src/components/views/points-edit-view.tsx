@@ -223,6 +223,28 @@ function Editor({
                 onChange={(event) => set("baseUrl", event.target.value)}
               />
             </Field>
+            <Field
+              label="每秒最多调用"
+              htmlFor="pt-rate"
+              hint={`红包站每秒最多调你的接口这么多次（1 到 ${POINTS_LIMITS.rateMax}），多出来的发放等一两秒再发。随时可以改`}
+              error={
+                config.rate < 1 || config.rate > POINTS_LIMITS.rateMax
+                  ? `填 1 到 ${POINTS_LIMITS.rateMax}`
+                  : undefined
+              }
+            >
+              <TextInput
+                id="pt-rate"
+                inputMode="numeric"
+                value={config.rate > 0 ? String(config.rate) : ""}
+                onChange={(event) => {
+                  const digits = event.target.value
+                    .replace(/\D/g, "")
+                    .slice(0, 3);
+                  set("rate", digits ? Number(digits) : 0);
+                }}
+              />
+            </Field>
           </div>
           <StepField
             value={config.step}
