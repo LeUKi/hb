@@ -228,7 +228,7 @@
 | 4 | 判定器（`meta.points`）、附带网页 SDK、红包信息 | 完成（见提交记录） |
 | 5 | 本地完整应用走通：自检 11 步、审核、填密钥、开放、领取到账、找不到收款人后重新发送 | 完成 |
 | 6 | Stage：迁移 0062、部署、示例发行方上线 | 完成 |
-| 7 | 推送 GitHub | 完成到 d018534（2026-11-11）；之后的修正在本地 |
+| 7 | 推送 GitHub | 推到 d018534（2026-11-11），CI 通过；之后的提交留在本地，上完生产再考虑推送 |
 | 8 | Stage 上用接口走一遍（压测账号换成数字 ID，开关和审核直接写库） | 完成（build 1794352631）：自检 11 步、开放、领取到账、找不到收款人后重新发送到账、拼手气每份整数星星，发行方账本对得上；网页上的红包页标签、金额、隐私提示正常 |
 | 9 | 生产迁移和部署 | 等用户 |
 
@@ -263,13 +263,14 @@ Stage 上查出的两处：
 
 Stage 已经上了（build 1794352631，迁移 0062），并用接口走通（第 14 节第 8 步）。上生产按这个顺序：
 
-1. **推送**：`main` 推到 GitHub，等 CI（lint、typecheck、test、build）过。
+1. **本地检查**：`bun run lint`、`bun run typecheck`、`bun run test`、`bun run build`，和 CI 跑的一样。
 2. **备份**：发布前跑一次 `payment:checkpoint`（见发布备份的规矩）。
 3. **构建、校验**：`bun scripts/release.ts build --env production`，再 `verify --env production`。
 4. **迁移 0062**：`bun scripts/release.ts migrations --env production --execute`。只加表、给 `activities` 加两列、换两个触发器，不重建表，一次很快。
 5. **部署**：`bun scripts/release.ts deploy --env production --execute`；看 `version.json`（加个查询参数，绕开缓存）和两个 Worker 的 `wrangler deployments list`。
 6. **开关**：三方积分红包默认关着。站长在 网站管理 · 三方积分 打开以前，谁也建不了、开不了这种红包；打开前可以先在 Stage 用示例发行方、用站长账号在网页上走一遍（下面五步）。
 7. **第一位发行方**：请那位用整数积分的用户接入：配置、自检、提交，站长审核通过后上线。
+8. **推送**：上完生产以后再考虑推送 GitHub（用户 2026-11-11）；a12273c 起的提交都还在本地。
 
 Stage 上走一遍完整流程（要站长账号登录 `https://staging.hb.lafi.sh`）：
 
