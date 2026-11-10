@@ -210,6 +210,8 @@ export function drawPlanV2(input: {
   seed: string;
   registered: number;
   money: TimedDrawMoney;
+  /** 最小单位 in 分; 1 (LDC, 🐟) when left out. */
+  step?: number;
 }) {
   const bytes = seedStream(input.seed);
   const count = Math.min(input.registered, input.money.count);
@@ -218,6 +220,7 @@ export function drawPlanV2(input: {
     input.money,
     input.registered,
     bytes,
+    input.step ?? 1,
   );
   const winners = [...picked]
     .sort((left, right) => left - right)
@@ -258,11 +261,16 @@ export function hasQueue(money: LdcMoney, allocation: "sequential" | "random") {
  * A queue v2, from its seed: 拼手气's amounts generated then shuffled, or a
  * 自定义's own amounts shuffled. The k-th claim takes the k-th.
  */
-export function queueAmountsV2(input: { seed: string; money: LdcMoney }) {
+export function queueAmountsV2(input: {
+  seed: string;
+  money: LdcMoney;
+  /** 最小单位 in 分; 1 (LDC, 🐟) when left out. */
+  step?: number;
+}) {
   const bytes = seedStream(input.seed);
   const { money } = input;
   if (money.mode === "random")
-    return shuffle(generateRandomAmounts(money, bytes), bytes);
+    return shuffle(generateRandomAmounts(money, bytes, input.step ?? 1), bytes);
   if (money.mode === "custom")
     return shuffle(money.amounts.map(amountToMinor), bytes);
   throw new Error("No queue for this money");

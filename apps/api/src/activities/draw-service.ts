@@ -9,6 +9,9 @@ import type { ApiBindings } from "../env";
 import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
+import { pointsDrawStop, stepOf } from "../points/funding";
+import { pointsTradeNo } from "../points/issuer";
+import { pointsPaymentId, wakeActivityPoints } from "../points/payments";
 import { timedDrawMoney } from "./draw-storage";
 import { databaseNow } from "./lifecycle";
 import { drawRandomness, RANDOM_VERSION } from "./random-proof";
@@ -87,8 +90,10 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
   const v2 = activity.randomVersion === RANDOM_VERSION;
   const seed = v2 ? await drawRandomness(env, activityId) : null;
   if (v2 && !seed) return null;
+  // 三方积分 splits by its 最小单位 (docs/third-party-points-design.md §2).
+  const step = await stepOf(env, activity);
   const drawn = seed
-    ? drawPlanV2({ seed, registered: activity.registeredCount, money })
+    ? drawPlanV2({ seed, registered: activity.registeredCount, money, step })
     : null;
   const ordinals =
     drawn?.picked ?? sampleOrdinals(activity.registeredCount, count);
@@ -106,7 +111,7 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
   if (entries.results.length !== count)
     throw new Error("Drawing population is inconsistent");
   const { amounts, assignedPositions } =
-    drawn ?? drawAmounts(money, activity.registeredCount);
+    drawn ?? drawAmounts(money, activity.registeredCount, undefined, step);
   const now = Date.now();
   const inventory: InventoryRow[] = amounts.map((amountMinor, position) => ({
     id: crypto.randomUUID(),
@@ -139,6 +144,22 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
       };
     }),
   };
+  // 三方积分: 额度 asked once more before anyone is told they won (§5);
+  // not enough, and there is no draw: the 红包 ends with none drawn.
+  if (activity.funding === "points") {
+    const prizes = plan.winners
+      .filter((winner) => winner.userId !== activity.authorId)
+      .reduce((sum, winner) => sum + winner.amountMinor, 0);
+    const stop = await pointsDrawStop(env, activity, prizes);
+    if (stop) {
+      await env.DB.prepare(`UPDATE activities SET draw_state='empty',draw_published_at=${databaseNow},
+        end_reason='points',points_stop_reason=?,version=version+1,updated_at=${databaseNow}
+        WHERE id=? AND funding='points' AND draw_state='settling' AND claimed_count=0`)
+        .bind(stop, activityId)
+        .run();
+      return null;
+    }
+  }
   try {
     await env.DB.prepare(`INSERT INTO activity_draw_plans(activity_id,participant_count,payload,created_at)
       SELECT id,registered_count,?,${databaseNow} FROM activities WHERE id=? AND reward_type='ldc' AND draw_state='settling' AND registered_count=?`)
@@ -227,16 +248,23 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     const plan = JSON.parse(saved.payload) as DrawPlan;
     validatePlan(activity, plan, saved.participant_count);
     // A 🐟额红包's prizes move inside 🐟额: no merchant, no payments.
+    // A 三方积分红包's go through its issuer (points/payments.ts).
     const balance = activity.funding === "balance";
-    if ((!balance && !activity.merchantId) || !activity.paymentMode)
+    const points = activity.funding === "points";
+    if (
+      (!balance && !points && !activity.merchantId) ||
+      !activity.paymentMode ||
+      (points && !activity.pointsSystemId)
+    )
       throw new Error("Drawing merchant is missing");
-    const merchant = balance
-      ? { client_id: "", version: 0 }
-      : await env.DB.prepare(
-          "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
-        )
-          .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-          .first<{ client_id: string; version: number }>();
+    const merchant =
+      balance || points
+        ? { client_id: "", version: 0 }
+        : await env.DB.prepare(
+            "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
+          )
+            .bind(activity.merchantId, activity.authorId, activity.paymentMode)
+            .first<{ client_id: string; version: number }>();
     if (!merchant) throw new Error("Drawing merchant is inconsistent");
     const profiles =
       await env.DB.prepare(`SELECT u.id,u.username,u.external_id FROM users u
@@ -266,6 +294,14 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
             recipientUsername: user.username,
             deductId: crypto.randomUUID(),
             creditId: crypto.randomUUID(),
+          };
+        if (points)
+          return {
+            ...winner,
+            recipientUsername: user.username,
+            externalId: user.external_id,
+            pointsPaymentId: pointsPaymentId(),
+            outTradeNo: pointsTradeNo(winner.claimId),
           };
         const businessNo = paymentBusinessNo(winner.claimId);
         const recoveryPolicy =
@@ -307,7 +343,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         WHERE a.id=? AND a.reward_type='ldc' AND a.draw_state='settling' AND a.deleted_at IS NULL AND a.registered_count=d.participant_count AND d.payload=?
         AND a.merchant_id IS ? AND a.payment_mode=? AND a.claimed_count=0
         AND NOT EXISTS(SELECT 1 FROM reward_inventory WHERE activity_id=a.id)
-        AND (a.funding='merchant' OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id
+        AND (a.funding IN ('merchant','points') OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id
           AND l.status='active' AND l.remaining_minor=l.amount_minor)))
         AND (SELECT COUNT(*) FROM json_each(?) w JOIN users u ON u.id=json_extract(w.value,'$.userId')
           JOIN activity_registrations r ON r.id=json_extract(w.value,'$.registrationId')
@@ -330,25 +366,41 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         FROM json_each(?)`).bind(activityId, payload),
       ...(balance
         ? drawStatements(env, activityId, payload)
-        : [
-            env.DB.prepare(`INSERT INTO payment_tasks(id,claim_id,source,acceptance_id,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
+        : points
+          ? [
+              env.DB.prepare(`INSERT INTO points_payments(id,claim_id,activity_id,system_id,author_id,recipient_user_id,
+          recipient_external_id,recipient_username,amount_minor,out_trade_no,status,next_run_at,created_at,updated_at)
+        SELECT json_extract(value,'$.pointsPaymentId'),json_extract(value,'$.claimId'),?,?,?,json_extract(value,'$.userId'),
+          json_extract(value,'$.externalId'),json_extract(value,'$.recipientUsername'),json_extract(value,'$.amountMinor'),
+          json_extract(value,'$.outTradeNo'),'pending',?,?,? FROM json_each(?)`).bind(
+                activityId,
+                activity.pointsSystemId,
+                activity.authorId,
+                Date.now(),
+                Date.now(),
+                Date.now(),
+                paid,
+              ),
+            ]
+          : [
+              env.DB.prepare(`INSERT INTO payment_tasks(id,claim_id,source,acceptance_id,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
         SELECT json_extract(value,'$.taskId'),json_extract(value,'$.claimId'),'claim',NULL,?,
         (SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=? AND version=?),
         json_extract(value,'$.businessNo'),json_extract(value,'$.recipientId'),json_extract(value,'$.recipientUsername'),json_extract(value,'$.amountMinor'),?,
         'pending',${databaseNow},${databaseNow},${databaseNow},json_extract(value,'$.recoveryPolicy'),json_extract(value,'$.parameterDigest') FROM json_each(?)`).bind(
-              activity.merchantId,
-              activity.merchantId,
-              activity.authorId,
-              activity.paymentMode,
-              merchant.version,
-              activity.paymentMode,
-              paid,
-            ),
-            env.DB.prepare(`INSERT INTO payment_outbox(id,task_id,created_at)
+                activity.merchantId,
+                activity.merchantId,
+                activity.authorId,
+                activity.paymentMode,
+                merchant.version,
+                activity.paymentMode,
+                paid,
+              ),
+              env.DB.prepare(`INSERT INTO payment_outbox(id,task_id,created_at)
         SELECT json_extract(value,'$.outboxId'),json_extract(value,'$.taskId'),${databaseNow} FROM json_each(?)`).bind(
-              paid,
-            ),
-          ]),
+                paid,
+              ),
+            ]),
       env.DB.prepare(`UPDATE attempt_events SET claim_id=(SELECT json_extract(w.value,'$.claimId') FROM json_each(?) w
         JOIN redemption_submissions s ON s.registration_id=json_extract(w.value,'$.registrationId') AND s.outcome='registered'
         WHERE s.id=attempt_events.submission_row_id)
@@ -369,6 +421,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     ];
     try {
       await env.DB.batch(statements);
+      if (points) await wakeActivityPoints(env, activityId).catch(() => {});
       return true;
     } catch (error) {
       const current = await findActivity(env, activityId);

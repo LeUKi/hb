@@ -24,12 +24,14 @@ import {
   type PaymentMode,
   type PaymentView,
 } from "./payments";
+import { type ActivityPoints, pointsSnapshotSchema } from "./points";
 import type { PublicUserProfile } from "./profile";
 import type { AttemptCooldown } from "./rate-limits";
 import type { RecipientSpeedTitle } from "./recipient-speed";
 
 export * from "./activity-image";
 export * from "./admin";
+export * from "./amount";
 export * from "./balance";
 export * from "./claim-scope";
 export * from "./draw-proof";
@@ -39,6 +41,7 @@ export * from "./judge";
 export * from "./mini-app";
 export * from "./page-url";
 export * from "./payments";
+export * from "./points";
 export * from "./profile";
 export * from "./random";
 export * from "./rank";
@@ -354,7 +357,7 @@ export type CodeMoney = Extract<LdcMoney, { mode: "code" }>;
  * Credit merchant app paying each claim (商户直发), or their 🐟额, locked
  * when it opens and credited to each claimant's 🐟额 on the spot.
  */
-export const activityFundingSchema = z.enum(["merchant", "balance"]);
+export const activityFundingSchema = z.enum(["merchant", "balance", "points"]);
 export type ActivityFunding = z.infer<typeof activityFundingSchema>;
 /** Absent on everything saved before 🐟额红包: 商户直发. */
 export function fundingOf(value: { funding?: ActivityFunding | null }) {
@@ -365,8 +368,15 @@ const ldcActivitySchema = baseActivitySchema.extend({
   rewardType: z.literal("ldc"),
   // Optional (not defaulted) for the same reason as participationMode.
   funding: activityFundingSchema.optional(),
-  /** The paying merchant; empty for a 🐟额红包. */
+  /** The paying merchant; empty for a 🐟额红包 and a 三方积分红包. */
   merchantId: z.union([z.uuid(), z.literal("")]),
+  /**
+   * 三方积分 (docs/third-party-points-design.md): the points system paying
+   * each claim, from the sender's key for it; only with funding "points".
+   */
+  pointsSystemId: z.uuid().optional(),
+  /** Its system's name, unit, 最小单位 and host, written by the server. */
+  points: pointsSnapshotSchema.optional(),
   money: ldcMoneySchema,
   /** 代码判定 only: stored apart and encrypted, like the passwords. */
   judge: judgeInputSchema.optional(),
@@ -376,12 +386,27 @@ function validateActivity(
   activity: z.infer<typeof ldcActivitySchema>,
   context: z.RefinementCtx,
 ) {
-  const balance = fundingOf(activity) === "balance";
-  if (balance ? activity.merchantId !== "" : activity.merchantId === "")
+  const funding = fundingOf(activity);
+  const noMerchant = funding !== "merchant";
+  if (noMerchant ? activity.merchantId !== "" : activity.merchantId === "")
     context.addIssue({
       code: "custom",
       path: ["merchantId"],
-      message: balance ? "🐟额红包不用商户" : "请先配置 LDC 商户",
+      message:
+        funding === "balance"
+          ? "🐟额红包不用商户"
+          : funding === "points"
+            ? "三方积分红包不用商户"
+            : "请先配置 LDC 商户",
+    });
+  if ((funding === "points") !== (activity.pointsSystemId !== undefined))
+    context.addIssue({
+      code: "custom",
+      path: ["pointsSystemId"],
+      message:
+        funding === "points"
+          ? "请选择一种三方积分"
+          : "只有三方积分红包选三方积分",
     });
   // 首页领取 off: it is found in 红包广场 (docs/redesign/07 §6).
   if (activity.forceDedicated && !activity.joinSquare)
@@ -828,6 +853,8 @@ export type ActivitySummary = {
   rewardType: "ldc";
   /** Absent: 商户直发. */
   funding?: ActivityFunding;
+  /** 三方积分红包 (docs/third-party-points-design.md): its system. */
+  points?: ActivityPoints;
   forceDedicated: boolean;
   status: ActivityStatus;
   version: number;
@@ -892,6 +919,8 @@ export type PublicActivity = {
   rewardType: "ldc";
   /** Absent: 商户直发. */
   funding?: ActivityFunding;
+  /** 三方积分红包 (docs/third-party-points-design.md): its system. */
+  points?: ActivityPoints;
   status: ActivityStatus;
   author: ActivityAuthor;
   forceDedicated: boolean;
@@ -1165,6 +1194,8 @@ export type ParticipationActivity = {
   title: string;
   /** Absent: 商户直发. */
   funding?: ActivityFunding;
+  /** 三方积分红包 (docs/third-party-points-design.md): its system. */
+  points?: ActivityPoints;
   status: ActivityStatus;
   deadlineAt?: string | null;
   createdAt?: string;

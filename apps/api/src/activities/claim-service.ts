@@ -22,6 +22,12 @@ import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import {
+  claimBlockedBy,
+  pointsPaymentId,
+  pointsPaymentStatement,
+} from "../points/payments";
+import { readSystem } from "../points/systems";
+import {
   type ActivityAttempt,
   type AttemptRow,
   assertAttemptAllowed,
@@ -323,8 +329,10 @@ export async function admitClaim(
   const testPermission =
     permitsRealActivity(activity.id, executionPolicy) ||
     stageBalanceHongbao(env, activity.funding);
+  // 三方积分 pays through its issuer, not Credit: its own gate below.
   const realActivityPermitted =
     testPermission ||
+    activity.funding === "points" ||
     (activity.paymentMode === "real" && allowsRealClaim(env, read.controls));
   if (
     activity.rewardType === "ldc" &&
@@ -338,6 +346,16 @@ export async function admitClaim(
         : "REAL_LDC_NOT_ENABLED",
       "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
     );
+  // 三方积分 paused, resting or retired: stopped before a share is taken
+  // (docs/third-party-points-design.md §5).
+  if (activity.funding === "points") {
+    const blocked = claimBlockedBy(
+      activity.pointsSystemId
+        ? await readSystem(env, activity.pointsSystemId)
+        : null,
+    );
+    if (blocked) throw new ActivityError(409, "POINTS_UNAVAILABLE", blocked);
+  }
   // 领取范围: someone outside never reaches the 口令 or its cooldown.
   checkInScope(activity, read.viewer);
   checkAttempt(read.attempt, "activity", continuation);
@@ -360,7 +378,7 @@ export function claimGuardStatement(
 ) {
   return env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
     AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-    AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+    AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND (funding = 'points' OR (payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
     AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
     AND NOT EXISTS (SELECT 1 FROM activity_code WHERE activity_id = activities.id AND (paused_at IS NOT NULL OR stopped_at IS NOT NULL))
     AND NOT EXISTS (SELECT 1 FROM code_judge_people WHERE activity_id = activities.id AND user_id = ? AND settled_at IS NOT NULL)
@@ -659,6 +677,8 @@ export async function shareStatements(
     userId: string;
     inventoryId: string;
     amountMinor: number | null;
+    /** 三方积分: the payout's id, when the caller wants to know it. */
+    pointsPaymentId?: string;
   },
   /** The claimant's account and the merchant, read already (a batch's). */
   known?: {
@@ -680,6 +700,29 @@ export async function shareStatements(
         share.inventoryId,
       ),
     );
+  // 三方积分: a payout through the issuer, sent from the queue
+  // (docs/third-party-points-design.md §5); 自领 has none.
+  else if (activity.funding === "points") {
+    if (activity.authorId !== share.userId) {
+      if (!activity.pointsSystemId || share.amountMinor === null)
+        throw new Error("Points claim identity is incomplete");
+      const recipient = known
+        ? recipientOf(known.user, "real")
+        : await paymentRecipient(env, share.userId, "real");
+      statements.push(
+        pointsPaymentStatement(env, {
+          id: share.pointsPaymentId ?? pointsPaymentId(),
+          claimId: share.claimId,
+          activityId: activity.id,
+          systemId: activity.pointsSystemId,
+          authorId: activity.authorId,
+          userId: share.userId,
+          recipient: { externalId: recipient.id, username: recipient.username },
+          inventoryId: share.inventoryId,
+        }),
+      );
+    }
+  }
   // 自领 of a 商户直发 红包: no payment, its share never leaves the
   // merchant (docs/self-claim-design.md; payment_claim_policy_insert
   // refuses one to the sender anyway).
@@ -1184,7 +1227,8 @@ function allocationStatements(
   return [
     env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND ((funding = 'points' AND EXISTS(SELECT 1 FROM points_systems ps WHERE ps.id=activities.points_system_id AND ps.status='online') AND ?=?)
+            OR ((funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
           AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
@@ -1195,6 +1239,9 @@ function allocationStatements(
                 AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
           THEN version ELSE NULL END WHERE id = ?`).bind(
       submission.userId,
+      // The 三方积分 branch's placeholder pair (keeps the order below).
+      1,
+      1,
       Number(simulatesPayments(env)),
       Number(realActivityPermitted),
       Number(testPermission),

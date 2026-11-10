@@ -8,6 +8,7 @@ import { createDb } from "../db/client";
 import { oauthAttempts, users } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
 import { stuckPaymentCount } from "../payments/queries";
+import { pointsAttentionCount } from "../points/admin";
 import {
   decryptString,
   encryptString,
@@ -74,10 +75,11 @@ export const authRoutes = new Hono<ApiContext>()
     }
     if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
-    const [access, transfer, stuck] = await Promise.all([
+    const [access, transfer, stuck, points] = await Promise.all([
       balanceAccessFor(c.env, session.user.id, session.user.isAdmin),
       transferAccess(c.env, session.user.id),
       session.user.isAdmin ? stuckPaymentCount(c.env) : 0,
+      session.user.isAdmin ? pointsAttentionCount(c.env) : 0,
     ]);
     return c.json({
       user: {
@@ -88,6 +90,11 @@ export const authRoutes = new Hono<ApiContext>()
         balancePlus: transfer.allowed,
         /** The 站长's: payments stuck past every automatic try (0 for others). */
         stuckPayments: stuck,
+        /**
+         * The 站长's 三方积分 to look at: under review, words changed and
+         * not seen, payouts with no known result (0 for others).
+         */
+        pointsAttention: points,
       },
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,

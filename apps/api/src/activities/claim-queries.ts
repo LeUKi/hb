@@ -29,6 +29,8 @@ import {
   recipientRejections,
   resendDeadline,
 } from "../payments/resend-rules";
+import { activityPointsOf } from "../points/funding";
+import { pointsPaymentsOfClaims, pointsPaymentView } from "../points/payments";
 import { decryptString, encryptString } from "../security/crypto";
 import { attemptAssociatedData } from "./claim-service";
 import { activityNotFound, invalidActivity } from "./errors";
@@ -97,6 +99,7 @@ export function projectClaimSummary(
       ...(activity.funding === "balance"
         ? { funding: "balance" as const }
         : {}),
+      ...activityPointsOf(activity),
       status: activityStatus(activity),
       deadlineAt:
         activity.deadline === null
@@ -213,7 +216,14 @@ export async function claimSummariesBatch(
       activity.funding === "balance" || claim.userId === activity.authorId,
   );
   const unpaidInventory = unpaid.map(({ claim }) => claim.inventoryId);
-  const [sources, payments, shares] = await Promise.all([
+  // 三方积分's payouts are their own (docs/third-party-points-design.md §13).
+  const pointsClaims = rows
+    .filter(
+      ({ claim, activity }) =>
+        activity.funding === "points" && claim.userId !== activity.authorId,
+    )
+    .map(({ claim }) => claim.id);
+  const [sources, payments, shares, pointsPayouts] = await Promise.all([
     sourcePasswordsBatch(
       env,
       rows.map(({ claim }) => claim),
@@ -242,6 +252,7 @@ export async function claimSummariesBatch(
             ),
           )
       : Promise.resolve([]),
+    pointsPaymentsOfClaims(env, pointsClaims),
   ]);
   const shareOf = new Map(shares.map((row) => [row.id, row.amountMinor]));
   const byClaim = new Map(
@@ -276,6 +287,19 @@ export async function claimSummariesBatch(
             ...(sourcePassword === undefined ? {} : { sourcePassword }),
             amount: formatAmount(share),
             ...(self ? { self: true as const } : {}),
+          },
+        ];
+      }
+      if (activity.funding === "points") {
+        const payout = pointsPayouts.get(claim.id);
+        if (!payout) throw new Error("Points claim has no payout");
+        return [
+          claim.id,
+          {
+            ...projectClaimSummary(claim, activity),
+            ...(sourcePassword === undefined ? {} : { sourcePassword }),
+            amount: formatAmount(payout.amount_minor),
+            payment: pointsPaymentView(payout),
           },
         ];
       }

@@ -85,6 +85,14 @@ import {
   credentialVerificationView,
 } from "../payments/verification";
 import {
+  activityPointsOf,
+  pointsBlockedReason,
+  pointsOpeningProblem,
+  requirePointsFunding,
+  snapshotOf,
+} from "../points/funding";
+import { readSystem } from "../points/systems";
+import {
   allowsRealOpening,
   readPlatformControls,
   simulatesPayments,
@@ -305,6 +313,7 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
     claimedCount: row.claimedCount,
     reward: rewardSummary(row),
     ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
+    ...activityPointsOf(row),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
@@ -368,6 +377,18 @@ async function openingBlockedReason(
       (row.participationMode === "code"
         ? await codeOpeningBlocked(env, row)
         : undefined) ?? balance
+    );
+  }
+  // 三方积分: what can be told without asking the issuer; 额度 is asked
+  // when it opens (docs/third-party-points-design.md §5).
+  if (row.funding === "points") {
+    if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
+      return "TIMED_DRAW_NOT_ENABLED";
+    return (
+      (await pointsBlockedReason(env, row)) ??
+      (row.participationMode === "code"
+        ? await codeOpeningBlocked(env, row)
+        : undefined)
     );
   }
   if (!row.merchantId) return undefined;
@@ -582,6 +603,7 @@ export function projectPublicActivity(
     quantity: publicQuantity(row, config),
     reward: rewardSummary(row, config.quantityVisibility === "exact"),
     ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
+    ...activityPointsOf(row),
     ...(row.rewardType === "ldc" && row.paymentMode
       ? { paymentMode: row.paymentMode }
       : {}),
@@ -740,13 +762,18 @@ export async function createActivity(
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新红包的配置");
   const balance = fundingOf(input.activity) === "balance";
+  const points = fundingOf(input.activity) === "points";
   if (input.activity.money.mode === "code")
     await requireCodeHongbao(env, authorId);
   if (input.activity.pageUrl) await requirePageSwitch(env);
   if (balance) await requireBalanceFunding(env, authorId);
-  const merchant = balance
-    ? null
-    : await ownedMerchant(env, input.activity.merchantId, authorId);
+  const pointsSystem = points
+    ? await requirePointsFunding(env, authorId, input.activity)
+    : null;
+  const merchant =
+    balance || points
+      ? null
+      : await ownedMerchant(env, input.activity.merchantId, authorId);
   if (merchant?.usageStatus === "legacy")
     throw new ActivityError(
       409,
@@ -767,10 +794,11 @@ export async function createActivity(
   const config = {
     ...storedConfig(input.activity),
     scope: await resolveScope(env, input.activity.scope),
+    points: pointsSystem ? snapshotOf(pointsSystem) : undefined,
   };
   const [passwords, inventory, judge] = await Promise.all([
     preparePasswords(env, id, input.activity.passwords, [], now),
-    prepareLdcInventory(id, input.activity, [], now),
+    prepareLdcInventory(id, input.activity, [], now, pointsSystem?.step),
     input.activity.money.mode === "code" && input.activity.judge
       ? saveJudgeStatements(
           env,
@@ -785,8 +813,8 @@ export async function createActivity(
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO activities
-        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, funding, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
-        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, funding, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at, points_system_id)
+        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         1,
         authorId,
@@ -796,8 +824,8 @@ export async function createActivity(
         config.title,
         input.activity.rewardType,
         config.participationMode ?? "password",
-        balance ? null : input.activity.merchantId,
-        balance ? balancePaymentMode(env) : (merchant?.mode ?? null),
+        balance || points ? null : input.activity.merchantId,
+        balance || points ? balancePaymentMode(env) : (merchant?.mode ?? null),
         fundingOf(input.activity),
         Number(config.forceDedicated),
         Number(config.joinSquare),
@@ -809,6 +837,7 @@ export async function createActivity(
         input.activity.money.mode === "timed_draw" ? "waiting" : null,
         now,
         now,
+        pointsSystem?.id ?? null,
       ),
       insertPasswordRows(env.DB, passwords),
       insertInventoryRows(env.DB, inventory),
@@ -870,17 +899,35 @@ export async function updateActivity(
       invalidActivity("开放后不能修改领取范围");
     config.scope = storedScope;
   } else config.scope = await resolveScope(env, input.activity.scope);
-  const balance = fundingOf(input.activity) === "balance";
-  if (fixed && balance !== (row.funding === "balance"))
+  const funding = fundingOf(input.activity);
+  const balance = funding === "balance";
+  const points = funding === "points";
+  if (
+    fixed &&
+    (funding !== row.funding ||
+      (points && input.activity.pointsSystemId !== row.pointsSystemId))
+  )
     invalidActivity("开放后不能修改从哪发");
   if (balance && row.openedAt === null && row.funding !== "balance")
     await requireBalanceFunding(env, authorId);
+  // 三方积分 (docs/third-party-points-design.md §8): checked while a draft.
+  const pointsSystem =
+    points && !fixed
+      ? await requirePointsFunding(env, authorId, input.activity)
+      : null;
   const coded = input.activity.money.mode === "code";
   if (coded && row.participationMode !== "code")
     await requireCodeHongbao(env, authorId);
-  const merchant = balance
-    ? null
-    : await ownedMerchant(env, input.activity.merchantId, authorId);
+  const merchant =
+    balance || points
+      ? null
+      : await ownedMerchant(env, input.activity.merchantId, authorId);
+  // Its system as the 红包 shows it: written by the server only.
+  config.points = points
+    ? pointsSystem
+      ? snapshotOf(pointsSystem)
+      : configuration(row).points
+    : undefined;
   if (merchant?.usageStatus === "legacy" && merchant.id !== row.merchantId)
     throw new ActivityError(
       409,
@@ -897,9 +944,12 @@ export async function updateActivity(
       "SIMULATION_NOT_AVAILABLE",
       "此环境不支持编辑或绑定模拟红包的草稿。",
     );
-  const nextPaymentMode = balance
-    ? balancePaymentMode(env)
-    : (merchant?.mode ?? row.paymentMode);
+  // 三方积分 pays through its issuer: the mode is only kept as it was.
+  const nextPaymentMode = points
+    ? (row.paymentMode ?? balancePaymentMode(env))
+    : balance
+      ? balancePaymentMode(env)
+      : (merchant?.mode ?? row.paymentMode);
   if (row.paymentMode && nextPaymentMode !== row.paymentMode)
     invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
   if (fixed && config.forceDedicated !== row.forceDedicated)
@@ -958,7 +1008,8 @@ export async function updateActivity(
       input.activity.rewardType !== row.rewardType ||
       config.allocation !== row.allocation ||
       oldConfig.rewardType !== "ldc" ||
-      (balance ? null : input.activity.merchantId) !== row.merchantId ||
+      (balance || points ? null : input.activity.merchantId) !==
+        row.merchantId ||
       !sameLdcMoney(input.activity.money, oldConfig.money)
     ) {
       invalidActivity(
@@ -1027,7 +1078,13 @@ export async function updateActivity(
     sameLdcMoney(input.activity.money, oldConfig.money);
   const inventory =
     row.openedAt === null && !preserveLdcInventory
-      ? prepareLdcInventory(id, input.activity, old.inventory, now)
+      ? prepareLdcInventory(
+          id,
+          input.activity,
+          old.inventory,
+          now,
+          pointsSystem?.step,
+        )
       : [];
   // Setting a NOT NULL column to NULL makes a failed CAS abort the entire batch.
   const statements = [
@@ -1036,7 +1093,7 @@ export async function updateActivity(
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL
       AND (?=0 OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1))
       THEN version + 1 ELSE NULL END,
-      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, funding = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?
+      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, funding = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?, points_system_id = ?
       WHERE id = ?`).bind(
       input.version,
       authorId,
@@ -1044,7 +1101,7 @@ export async function updateActivity(
       config.title,
       input.activity.rewardType,
       config.participationMode ?? "password",
-      balance ? null : input.activity.merchantId,
+      balance || points ? null : input.activity.merchantId,
       nextPaymentMode ?? null,
       fundingOf(input.activity),
       Number(config.forceDedicated),
@@ -1061,6 +1118,7 @@ export async function updateActivity(
         : row.drawState,
       now,
       deadline,
+      points ? (input.activity.pointsSystemId ?? null) : null,
       id,
     ),
   ];
@@ -1234,6 +1292,13 @@ export async function openActivity(
           ? await insufficientMessage(env, authorId)
           : publicationMessages[blocked],
       );
+  } else if (row.funding === "points") {
+    // 三方积分 (docs/third-party-points-design.md §5): 额度 enough for this
+    // and what the sender's other open ones may still pay. A timed draw
+    // asks again before its draw.
+    const problem = await pointsOpeningProblem(env, row);
+    if (problem)
+      throw new ActivityError(409, "POINTS_OPENING_REFUSED", problem);
   } else {
     const merchant = await ownedMerchant(
       env,
@@ -1243,6 +1308,13 @@ export async function openActivity(
     if (row.paymentMode !== merchant.mode)
       invalidActivity("红包付款模式与商户配置不一致，无法开放");
   }
+  // Split by the 最小单位 (三方积分; 1 for LDC and 🐟).
+  const openingSystem =
+    row.funding === "points" && row.pointsSystemId
+      ? await readSystem(env, row.pointsSystemId)
+      : null;
+  const openingPoints = openingSystem ? snapshotOf(openingSystem) : null;
+  const step = openingSystem?.step ?? 1;
   // 代码判定, from 🐟额 or a 商户 alike (docs/programmable-hongbao-design.md §1).
   const codeBlocked = coded ? await codeOpeningBlocked(env, row) : undefined;
   if (codeBlocked)
@@ -1281,12 +1353,18 @@ export async function openActivity(
       ) !== BigInt(ldcTotalMinor(checked.data)))
   )
     invalidActivity("红包金额与库存不一致，无法开放");
+  if (
+    step > 1 &&
+    inventory.some((item) => (item.amountMinor ?? 0) % step !== 0)
+  )
+    invalidActivity("红包金额不是最小单位的整数倍，无法开放");
   if (checked.data.money.mode === "random") {
+    const unitStep = BigInt(step);
     if (checked.data.money.algorithm === "double_mean_v1") {
-      let remaining = BigInt(ldcTotalMinor(checked.data));
+      let remaining = BigInt(ldcTotalMinor(checked.data)) / unitStep;
       let count = BigInt(inventory.length);
       for (const item of inventory) {
-        const amount = BigInt(item.amountMinor ?? 0);
+        const amount = BigInt(item.amountMinor ?? 0) / unitStep;
         const reservingMinimum = remaining - count + 1n;
         const twiceMean = (2n * remaining) / count;
         const maximum =
@@ -1302,14 +1380,14 @@ export async function openActivity(
       }
     } else if (checked.data.money.algorithm === "bounded_mean_v1") {
       const limits = boundedMeanLimits(
-        ldcTotalMinor(checked.data),
+        ldcTotalMinor(checked.data) / step,
         ldcRewardCount(checked.data),
       );
       if (
         inventory.some(
           (item) =>
-            (item.amountMinor ?? 0) < limits.min ||
-            (item.amountMinor ?? 0) > limits.max,
+            (item.amountMinor ?? 0) / step < limits.min ||
+            (item.amountMinor ?? 0) / step > limits.max,
         )
       )
         invalidActivity("红包金额超出随机算法范围，无法开放");
@@ -1340,6 +1418,8 @@ export async function openActivity(
   if (deadline <= now) invalidActivity("截止时间必须晚于正式开放时间");
   const config = {
     ...storedConfig(checked.data),
+    // 三方积分: its system as it is now, as it opens.
+    points: openingPoints ?? undefined,
     // Names noted by LINUX DO ID as late as can be, before they are fixed.
     scope: await resolveScope(env, checked.data.scope),
     deadline: timed
@@ -1354,7 +1434,7 @@ export async function openActivity(
   const randomVersion = openingRandomVersion(checked.data);
   const sealed =
     randomVersion !== null && !timed
-      ? await sealQueue(env, id, checked.data.money, inventory, now)
+      ? await sealQueue(env, id, checked.data.money, inventory, now, step)
       : null;
   if (
     sealed &&
@@ -1422,11 +1502,15 @@ export async function openActivity(
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
-      AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current'))
-      AND (funding='merchant' OR EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND hongbao_enabled=1))
+      AND (funding IN ('balance','points') OR EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current'))
+      AND (funding='merchant'
+        OR (funding='balance' AND EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND hongbao_enabled=1))
+        OR (funding='points' AND EXISTS(SELECT 1 FROM points_settings WHERE id='global' AND enabled=1)
+          AND EXISTS(SELECT 1 FROM points_systems ps WHERE ps.id=activities.points_system_id AND ps.status='online')
+          AND EXISTS(SELECT 1 FROM points_keys k WHERE k.system_id=activities.points_system_id AND k.author_id=activities.author_id AND k.removed_at IS NULL)))
       AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1)
       AND ${CODE_OPENING_ALLOWED}
-      AND (payment_mode IS NOT 'real' OR ?=1 OR (
+      AND (payment_mode IS NOT 'real' OR funding='points' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)
         AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
           WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000))))

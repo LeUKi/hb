@@ -435,6 +435,13 @@
       "when": 1794294639352,
       "tag": "0061_username_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1794326299477,
+      "tag": "0062_points",
+      "breakpoints": true
     }
   ]
 }

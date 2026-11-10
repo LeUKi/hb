@@ -110,6 +110,7 @@ import {
 } from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
+import { isPointsPaymentId, wakePointsPayment } from "./points/payments";
 import {
   AttemptCooldownError,
   readAttemptCooldown,
@@ -570,6 +571,31 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (body.op === "finish") session?.finish(body.index, body.record);
     else if (body.op === "broken") session?.fail(body.index);
     return Response.json({ ok: true });
+  }
+
+  private async pointsMoved(id: string, request: Request) {
+    if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+      return Response.json(
+        { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+        { status: 400 },
+      );
+    const { userIds, ended } = (await request.json().catch(() => ({}))) as {
+      userIds?: unknown;
+      ended?: unknown;
+    };
+    if (
+      !Array.isArray(userIds) ||
+      userIds.length > 2 ||
+      !userIds.every((userId) => typeof userId === "string")
+    )
+      return Response.json(
+        { error: { code: "INVALID_REQUEST", message: "通知无效" } },
+        { status: 400 },
+      );
+    // Ended by 额度不够 or 密钥无效: everyone's page hears it.
+    if (ended === true) this.announce(id);
+    this.tellMine(userIds);
+    return new Response(null, { status: 204 });
   }
 
   private async paymentMoved(id: string, request: Request) {
@@ -1259,7 +1285,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         : result.result === "judged"
           ? result.settled?.claim?.payment
           : undefined;
-    if (payment) {
+    // 三方积分's payout goes from the queue (points/payments.ts).
+    if (payment && isPointsPaymentId(payment.id)) {
+      this.ctx.waitUntil(
+        wakePointsPayment(this.env, payment.id).catch(() => {
+          // The 5-minute sweep sends it when the wake fails.
+          console.error("points_claim_wake_failed", { activityId: id });
+        }),
+      );
+    } else if (payment) {
       this.ctx.waitUntil(
         flushPaymentOutbox(this.env, payment.id).catch(() => {
           // The committed Outbox and Cron retain responsibility if this wake fails.
@@ -1525,6 +1559,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
     if (moved && request.method === "POST")
       return this.paymentMoved(moved[1] ?? "", request);
+    // A 三方积分 payout moved, and maybe ended the 红包 (points/payments.ts).
+    const pointsMoved =
+      /^\/internal\/activities\/([a-f0-9-]{36})\/live\/points$/i.exec(
+        url.pathname,
+      );
+    if (pointsMoved && request.method === "POST")
+      return this.pointsMoved(pointsMoved[1] ?? "", request);
     // The gateway, about a judgment under way: never queued behind it,
     // which waits on its requests (judge/gateway.ts).
     const fetching =

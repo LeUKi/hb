@@ -276,6 +276,9 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       scheduled_open_at: null,
       schedule_failed_at: null,
       schedule_failure: null,
+      // 0062: not a 三方积分红包.
+      points_system_id: null,
+      points_stop_reason: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...oldConfig,
@@ -606,6 +609,9 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       scheduled_open_at: null,
       schedule_failed_at: null,
       schedule_failure: null,
+      // 0062: not a 三方积分红包.
+      points_system_id: null,
+      points_stop_reason: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...JSON.parse(String(row.config)),

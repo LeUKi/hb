@@ -176,13 +176,15 @@ export function prepareLdcInventory(
   input: LdcActivityInput,
   existing: InventoryRow[],
   now: number,
+  /** 三方积分's 最小单位 in 分; 1 for LDC and 🐟. */
+  step = 1,
 ): InventoryRow[] {
   // A draw's prizes come with its plan, a 代码判定's shares as judged.
   if (input.money.mode === "timed_draw" || input.money.mode === "code")
     return [];
   const amounts =
     input.money.mode === "random"
-      ? generateRandomAmounts(input.money)
+      ? generateRandomAmounts(input.money, undefined, step)
       : ldcAmounts(input);
   return amounts.map((amountMinor, position) => ({
     id: existing[position]?.id ?? crypto.randomUUID(),

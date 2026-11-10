@@ -181,9 +181,22 @@ export const activities = sqliteTable(
      * 商户直发 (merchant_id pays each claim) or 🐟额红包 (the author's 🐟额,
      * locked at opening; no merchant). docs/balance-design.md §14.
      */
-    funding: text("funding", { enum: ["merchant", "balance"] })
+    funding: text("funding", { enum: ["merchant", "balance", "points"] })
       .notNull()
       .default("merchant"),
+    /**
+     * 三方积分 (docs/third-party-points-design.md): the points system that
+     * pays each claim, from the author's key for it; only with funding
+     * 'points'.
+     */
+    pointsSystemId: text("points_system_id").references(
+      (): AnySQLiteColumn => pointsSystems.id,
+    ),
+    /**
+     * Why a 三方积分红包 ended on its own (§5): insufficient or key_invalid
+     * from the issuer, key_removed, or retired; end_reason is then 'points'.
+     */
+    pointsStopReason: text("points_stop_reason"),
     rewardType: text("reward_type", { enum: ["text", "ldc"] })
       .notNull()
       .default("text"),
@@ -228,7 +241,7 @@ export const activities = sqliteTable(
      * (docs/judge-page-design.md §2 end).
      */
     endReason: text("end_reason", {
-      enum: ["expired", "exhausted", "manual", "stopped", "judge"],
+      enum: ["expired", "exhausted", "manual", "stopped", "judge", "points"],
     }),
     archivedAt: integer("archived_at"),
     /**
@@ -2898,4 +2911,271 @@ export const tips = sqliteTable(
         AND (${table.method} <> 'merchant' OR (${table.tipperId} IS NOT NULL AND ${table.status} IN ('sending','done','not_sent')))`,
     ),
   ],
+);
+
+/**
+ * 三方积分 (docs/third-party-points-design.md): another site's points a
+ * PLUS member registered (§1), its config (§6), self-test (§4), review (§7)
+ * and breaker (§5).
+ */
+export const pointsSystems = sqliteTable(
+  "points_systems",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status", {
+      enum: ["draft", "reviewing", "online", "paused", "retired"],
+    }).notNull(),
+    name: text("name").notNull(),
+    unit: text("unit").notNull(),
+    /** 最小单位 in 分. */
+    step: integer("step").notNull(),
+    issuerName: text("issuer_name").notNull(),
+    baseUrl: text("base_url").notNull(),
+    host: text("host").notNull(),
+    intro: text("intro").notNull().default(""),
+    keyGuide: text("key_guide").notNull().default(""),
+    noRecipient: text("no_recipient").notNull().default(""),
+    arrival: text("arrival").notNull().default(""),
+    notAllowed: text("not_allowed").notNull().default(""),
+    insufficient: text("insufficient").notNull().default(""),
+    keyInvalid: text("key_invalid").notNull().default(""),
+    rate: integer("rate").notNull().default(10),
+    /** Bumped when base_url or step change: a new self-test is needed. */
+    endpointVersion: integer("endpoint_version").notNull().default(1),
+    testKeyCiphertext: text("test_key_ciphertext"),
+    testKeyVersion: integer("test_key_version").notNull().default(0),
+    testRecipientId: text("test_recipient_id"),
+    /** The last passed self-test, for this endpoint_version. */
+    passedTestId: text("passed_test_id"),
+    passedEndpointVersion: integer("passed_endpoint_version"),
+    lastTestStartedAt: integer("last_test_started_at"),
+    submittedAt: integer("submitted_at"),
+    reviewedAt: integer("reviewed_at"),
+    reviewedBy: text("reviewed_by").references(() => users.id),
+    reviewNote: text("review_note"),
+    onlineAt: integer("online_at"),
+    /** Who paused it: the 站长 or the owner (retired too). */
+    pausedBy: text("paused_by"),
+    pausedAt: integer("paused_at"),
+    retiredAt: integer("retired_at"),
+    /** 熔断 (§5): answers missed in a row, and until when it rests. */
+    missedInRow: integer("missed_in_row").notNull().default(0),
+    breakerUntil: integer("breaker_until"),
+    version: integer("version").notNull().default(1),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("points_systems_owner_idx").on(table.ownerId, table.createdAt),
+    index("points_systems_status_idx").on(table.status, table.updatedAt),
+    uniqueIndex("points_systems_name_unique")
+      .on(sql`lower(${table.name})`)
+      .where(sql`${table.status} <> 'retired'`),
+    check(
+      "points_systems_valid",
+      sql`${table.status} IN ('draft','reviewing','online','paused','retired')
+        AND ${table.step} BETWEEN 1 AND 10000000000
+        AND ${table.rate} BETWEEN 1 AND 100
+        AND ${table.version} >= 1 AND ${table.endpointVersion} >= 1
+        AND length(${table.baseUrl}) BETWEEN 9 AND 200
+        AND (${table.baseUrl} LIKE 'https://%' OR ${table.baseUrl} LIKE 'http://127.0.0.1:%')`,
+    ),
+  ],
+);
+
+/** Each change of a 三方积分's words (§6), before and after; seen by the 站长. */
+export const pointsCopyChanges = sqliteTable(
+  "points_copy_changes",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id),
+    field: text("field").notNull(),
+    before: text("before").notNull(),
+    after: text("after").notNull(),
+    createdAt: integer("created_at").notNull(),
+    seenAt: integer("seen_at"),
+  },
+  (table) => [
+    index("points_copy_changes_system_idx").on(table.systemId, table.createdAt),
+    index("points_copy_changes_unseen_idx")
+      .on(table.createdAt)
+      .where(sql`${table.seenAt} IS NULL`),
+  ],
+);
+
+/** 接入自检 (§4): one run, its steps as JSON (keys masked). */
+export const pointsSelfTests = sqliteTable(
+  "points_self_tests",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    startedBy: text("started_by")
+      .notNull()
+      .references(() => users.id),
+    endpointVersion: integer("endpoint_version").notNull(),
+    baseUrl: text("base_url").notNull(),
+    step: integer("step").notNull(),
+    status: text("status", { enum: ["running", "passed", "failed"] }).notNull(),
+    steps: text("steps").notNull().default("[]"),
+    startedAt: integer("started_at").notNull(),
+    finishedAt: integer("finished_at"),
+  },
+  (table) => [
+    index("points_self_tests_system_idx").on(table.systemId, table.startedAt),
+  ],
+);
+
+/** A sender's key at an issuer (§8): one each per points system, encrypted. */
+export const pointsKeys = sqliteTable(
+  "points_keys",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id),
+    version: integer("version").notNull().default(1),
+    ciphertext: text("ciphertext").notNull(),
+    /** The account the issuer said the key pays from, at the last check. */
+    accountId: text("account_id"),
+    accountUsername: text("account_username"),
+    status: text("status", { enum: ["ok", "invalid"] }).notNull(),
+    checkedAt: integer("checked_at").notNull(),
+    removedAt: integer("removed_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("points_keys_owner_unique")
+      .on(table.systemId, table.authorId)
+      .where(sql`${table.removedAt} IS NULL`),
+    index("points_keys_author_idx").on(table.authorId, table.createdAt),
+  ],
+);
+
+/**
+ * One payout of a 三方积分红包 (§5): a claim's share sent through the
+ * issuer's 发放, its order number fixed. No queued waits: business answers
+ * end it at once, missed answers are tried again at most three times.
+ */
+export const pointsPayments = sqliteTable(
+  "points_payments",
+  {
+    id: text("id").primaryKey(),
+    claimId: text("claim_id")
+      .notNull()
+      .references(() => claims.id),
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id),
+    recipientUserId: text("recipient_user_id")
+      .notNull()
+      .references(() => users.id),
+    recipientExternalId: text("recipient_external_id").notNull(),
+    recipientUsername: text("recipient_username").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    outTradeNo: text("out_trade_no").notNull(),
+    /**
+     * pending (to send), sending (leased), confirmed, held (找不到收款人:
+     * may be sent once more until resend_until), unknown (结果不明, for the
+     * 站长), failed (未发出).
+     */
+    status: text("status", {
+      enum: ["pending", "sending", "confirmed", "held", "unknown", "failed"],
+    }).notNull(),
+    /** The issuer's answer or ours: insufficient, no_recipient, network… */
+    reason: text("reason"),
+    tradeNo: text("trade_no"),
+    /** Sends that got no answer, tried again at most three times. */
+    misses: integer("misses").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    resendCount: integer("resend_count").notNull().default(0),
+    resendUntil: integer("resend_until"),
+    /** The next send or query is due then; null when nothing is left to do. */
+    nextRunAt: integer("next_run_at"),
+    /** Whether a query must come first: the last send got no answer. */
+    queryFirst: integer("query_first", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    leaseToken: text("lease_token"),
+    leaseUntil: integer("lease_until"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    doneAt: integer("done_at"),
+  },
+  (table) => [
+    uniqueIndex("points_payments_claim_unique").on(table.claimId),
+    uniqueIndex("points_payments_trade_unique").on(table.outTradeNo),
+    index("points_payments_due_idx")
+      .on(table.nextRunAt)
+      .where(sql`${table.nextRunAt} IS NOT NULL`),
+    index("points_payments_activity_idx").on(table.activityId, table.status),
+    index("points_payments_system_idx").on(
+      table.systemId,
+      table.status,
+      table.updatedAt,
+    ),
+    index("points_payments_author_idx").on(table.authorId, table.createdAt),
+    check(
+      "points_payments_valid",
+      sql`${table.amountMinor} > 0
+        AND ${table.status} IN ('pending','sending','confirmed','held','unknown','failed')
+        AND (${table.status} = 'confirmed') = (${table.tradeNo} IS NOT NULL)
+        AND ${table.misses} BETWEEN 0 AND 3
+        AND ${table.resendCount} BETWEEN 0 AND 1`,
+    ),
+  ],
+);
+
+/** Each call to an issuer (§7): for the 站长's numbers, kept 30 days. */
+export const pointsCalls = sqliteTable(
+  "points_calls",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    kind: text("kind", { enum: ["balance", "transfer", "query"] }).notNull(),
+    /** The answer's result, or none when there was no answer. */
+    result: text("result").notNull(),
+    httpStatus: integer("http_status"),
+    ms: integer("ms").notNull(),
+    paymentId: text("payment_id"),
+    at: integer("at").notNull(),
+  },
+  (table) => [
+    index("points_calls_system_time_idx").on(table.systemId, table.at),
+    index("points_calls_time_idx").on(table.at),
+  ],
+);
+
+/** The site switch for 三方积分 (§1), versioned like 🐟额's. */
+export const pointsSettings = sqliteTable(
+  "points_settings",
+  {
+    id: text("id").primaryKey(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+    version: integer("version").notNull().default(1),
+    updatedBy: text("updated_by").references(() => users.id),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [check("points_settings_singleton", sql`${table.id} = 'global'`)],
 );

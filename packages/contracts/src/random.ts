@@ -36,11 +36,20 @@ export function randomIntegerInclusive(
   }
 }
 
+/**
+ * 拼手气's amounts, in 分. A unit's 最小单位 (`step`, in 分; 三方积分,
+ * docs/third-party-points-design.md §2) splits the pool as so many steps
+ * and multiplies back: step 1 (LDC, 🐟) is the same draw as ever.
+ */
 export function generateRandomAmounts(
   money: RandomLdcMoney,
   fillRandom: RandomBytes = secureRandomBytes,
+  step = 1,
 ): number[] {
-  const total = amountToMinor(money.totalAmount);
+  const pool = amountToMinor(money.totalAmount);
+  if (!Number.isSafeInteger(step) || step < 1 || pool % step !== 0)
+    throw new Error("Invalid random amount configuration");
+  const total = pool / step;
   if (
     !Number.isInteger(money.count) ||
     money.count < 1 ||
@@ -77,7 +86,7 @@ export function generateRandomAmounts(
       throw new Error("Unsupported random amount algorithm");
     }
     const amount = randomIntegerInclusive(minimum, maximum, fillRandom);
-    amounts.push(Number(amount));
+    amounts.push(Number(amount) * step);
     remaining -= amount;
   }
   return amounts;
@@ -130,6 +139,7 @@ export function drawAmounts(
   money: TimedDrawMoney,
   participantCount: number,
   fillRandom: RandomBytes = secureRandomBytes,
+  step = 1,
 ) {
   const count = Math.min(participantCount, money.count);
   if (count === 0) return { amounts: [], assignedPositions: [] };
@@ -143,6 +153,7 @@ export function drawAmounts(
       count: poolCount,
     },
     fillRandom,
+    step,
   );
   const assignedPositions = shuffle(
     sampleOrdinals(poolCount, count, fillRandom).map((ordinal) => ordinal - 1),

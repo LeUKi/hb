@@ -143,6 +143,14 @@ export type Merchant = {
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =
   | "REAL_LDC_NOT_ENABLED"
+  /** 三方积分红包 (docs/third-party-points-design.md §5): its switch is off. */
+  | "POINTS_HONGBAO_PAUSED"
+  /** 三方积分红包: its system is paused, under review or retired. */
+  | "POINTS_NOT_ONLINE"
+  /** 三方积分红包: the sender has no key for its system. */
+  | "POINTS_KEY_NEEDED"
+  /** 三方积分 needs a 判定器 on protocol 6 or later (§10). */
+  | "JUDGE_PROTOCOL_TOO_OLD_FOR_POINTS"
   /** 🐟额红包 (docs/balance-design.md §14): its switch is off. */
   | "BALANCE_HONGBAO_PAUSED"
   /** 🐟额红包: 可用 does not cover the total. */

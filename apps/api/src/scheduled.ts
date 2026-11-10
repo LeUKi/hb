@@ -8,6 +8,7 @@ import { pruneJudgeUsage } from "./judge/usage";
 import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
+import { sweepPointsPayments } from "./points/payments";
 import { inMaintenanceMode } from "./runtime/maintenance-mode";
 import { maintenanceObject } from "./runtime/objects";
 import { sweepTips } from "./tips/service";
@@ -55,6 +56,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
         await settleEndedWithdrawals(env);
         // A payment refused for want of a Credit account, past its resend.
         await endLapsedResends(env);
+        // 三方积分's payouts: due, stale leases, lapsed resends.
+        await sweepPointsPayments(env);
         return woken;
       },
     },

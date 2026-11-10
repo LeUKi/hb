@@ -16,6 +16,7 @@ import { createDb } from "../db/client";
 import { activities, activityRegistrations, claims, users } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { ownStanding } from "../judge/ledger";
+import { activityPointsOf } from "../points/funding";
 import { decryptString, encryptString } from "../security/crypto";
 import {
   claimDetailsBatch,
@@ -138,6 +139,7 @@ async function registrationDetailsBatch(
             ...(activity.funding === "balance"
               ? { funding: "balance" as const }
               : {}),
+            ...activityPointsOf(activity),
             status: activityStatus(activity),
             deadlineAt:
               activity.deadline === null

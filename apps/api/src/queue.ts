@@ -2,6 +2,7 @@ export type QueueResult = "ack" | "retry";
 
 import type { ApiBindings } from "./env";
 import { wakePayment } from "./payments/scheduler";
+import { runPointsPayment } from "./points/payments";
 import {
   inMaintenanceMode,
   MAINTENANCE_QUEUE_DELAY_SECONDS,
@@ -75,6 +76,31 @@ export async function handleQueueMessage(
       return "ack";
     } catch {
       message.retry();
+      return "retry";
+    }
+  }
+
+  // 三方积分's payouts (docs/third-party-points-design.md §13).
+  if (
+    env &&
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "points.run" &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    /^pp_[a-f0-9-]{36}$/.test(value.id)
+  ) {
+    try {
+      await runPointsPayment(env, value.id);
+      message.ack();
+      return "ack";
+    } catch (error) {
+      console.error("points_payment_run_failed", {
+        id: value.id,
+        error: String(error),
+      });
+      message.retry({ delaySeconds: 30 });
       return "retry";
     }
   }

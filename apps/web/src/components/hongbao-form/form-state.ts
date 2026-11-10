@@ -48,8 +48,12 @@ export type TimeUnit = "seconds" | "minutes" | "hours" | "days";
 
 export type FormState = {
   title: string;
-  /** 从哪发: the merchant pays each claim, or 🐟额 (balance-design §14). */
-  funding: "merchant" | "balance";
+  /**
+   * 从哪发: the merchant pays each claim, 🐟额 (balance-design §14), or a
+   * 三方积分 (docs/third-party-points-design.md §8), pointsSystemId's.
+   */
+  funding: "merchant" | "balance" | "points";
+  pointsSystemId: string;
   mode: RewardMode;
   fixed: { unit: string; count: string };
   random: { total: string; count: string; algorithm: Algorithm };
@@ -212,6 +216,7 @@ export function emptyForm(now = Date.now()): FormState {
   return {
     title: "",
     funding: "merchant",
+    pointsSystemId: "",
     mode: "random",
     fixed: { unit: "", count: "" },
     random: { total: "", count: "", algorithm: "double_mean" },
@@ -713,6 +718,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     ...base,
     title: config.title,
     funding: config.funding ?? "merchant",
+    pointsSystemId: config.pointsSystemId ?? "",
     mode: money.mode,
     fixed:
       money.mode === "fixed"
@@ -895,7 +901,13 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
     ...(form.funding === "balance"
       ? { funding: "balance" as const, merchantId: "" }
-      : { merchantId }),
+      : form.funding === "points"
+        ? {
+            funding: "points" as const,
+            merchantId: "",
+            pointsSystemId: form.pointsSystemId,
+          }
+        : { merchantId }),
     money,
     ...(coded
       ? {
@@ -1030,6 +1042,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       afterEndInfo: input.afterEndInfo,
       merchantId: input.merchantId,
       funding: input.funding ?? "merchant",
+      pointsSystemId: input.pointsSystemId ?? "",
       humanCheck: input.humanCheck === true,
       humanCheckMethod:
         input.humanCheck === true

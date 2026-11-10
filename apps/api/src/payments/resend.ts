@@ -5,6 +5,7 @@ import { tellPaymentWatchers } from "../activities/live";
 import { createDb } from "../db/client";
 import { claims, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { resendPointsPayment } from "../points/payments";
 import { allowsRealSending, readPlatformControls } from "../runtime/controls";
 import { effectiveClaimPaymentTask } from "./identity";
 import { realQueryDecision } from "./policy";
@@ -47,7 +48,16 @@ export async function resendClaimPayment(
       ),
     )
     .get();
-  if (!row) activityNotFound();
+  // 三方积分's payouts are their own (points/payments.ts).
+  if (!row) {
+    const points = await env.DB.prepare(
+      "SELECT 1 AS found FROM points_payments WHERE claim_id=? AND recipient_user_id=?",
+    )
+      .bind(claimId, userId)
+      .first<{ found: number }>();
+    if (points) return resendPointsPayment(env, userId, claimId);
+    activityNotFound();
+  }
   const { task } = row;
   const now = Date.now();
   const rejections = (await recipientRejections(env, [task.id])).get(task.id);

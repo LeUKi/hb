@@ -69,6 +69,8 @@ export async function sealQueue(
   money: LdcMoney,
   existing: InventoryRow[],
   now: number,
+  /** 三方积分's 最小单位 in 分; 1 for LDC and 🐟. */
+  step = 1,
 ) {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -76,6 +78,7 @@ export async function sealQueue(
   const amounts = queueAmountsV2({
     seed: queueSeed(activityId, secret),
     money,
+    step,
   });
   const inventory: InventoryRow[] = amounts.map((amountMinor, position) => ({
     id: existing[position]?.id ?? crypto.randomUUID(),

@@ -72,4 +72,9 @@ export const publicationMessages = {
   JUDGE_VERSION_WITHDRAWN:
     "这一版判定器已经撤回了，换一个版本才能开放，草稿已保存。",
   JUDGE_KEY_MISSING: "判定器要的密钥还没填，草稿已保存。",
+  POINTS_HONGBAO_PAUSED: "三方积分红包暂时关闭，草稿已保存。",
+  POINTS_NOT_ONLINE: "这种三方积分现在没有上线，草稿已保存。",
+  POINTS_KEY_NEEDED: "还没填你在发行方的密钥，草稿已保存。",
+  JUDGE_PROTOCOL_TOO_OLD_FOR_POINTS:
+    "三方积分红包要用第六版及以后的判定器，草稿已保存。",
 } as const;

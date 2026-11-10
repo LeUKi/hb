@@ -19,6 +19,7 @@ import { judgeRoutes } from "./judge/routes";
 import { miniCors, miniRoutes } from "./mini/routes";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
+import { pointsRoutes } from "./points/routes";
 import { rankRoutes } from "./rank/routes";
 import { roadmapRoutes } from "./roadmap/routes";
 import { AttemptCooldownError } from "./runtime/attempt-cooldown";
@@ -149,3 +150,5 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", claimCancelRoutes);
 // 压测 accounts (docs/claim-capacity-design.md §3), on Stage only: 404 elsewhere.
 (app as unknown as Hono<ApiContext>).route("/api", stageLoadTestRoutes);
+// 三方积分 (docs/third-party-points-design.md), the same way.
+(app as unknown as Hono<ApiContext>).route("/api", pointsRoutes);

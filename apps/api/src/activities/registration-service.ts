@@ -138,7 +138,12 @@ export async function registerForDraw(
       testPermission ||
       (activity.paymentMode === "real" &&
         allowsRealClaim(env, await readPlatformControls(env)));
-    if (activity.paymentMode === "real" && !realPermitted)
+    // 三方积分 pays through its issuer, not Credit.
+    if (
+      activity.paymentMode === "real" &&
+      activity.funding !== "points" &&
+      !realPermitted
+    )
       throw new ActivityError(
         409,
         "REAL_LDC_CLAIMS_PAUSED",
@@ -184,7 +189,7 @@ export async function registerForDraw(
       AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL AND draw_state='waiting'
       AND deadline>${databaseNow} AND registered_count<9007199254740991
       AND (json_extract(config,'$.money.participantLimit') IS NULL OR registered_count<json_extract(config,'$.money.participantLimit'))
-      AND ((payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+      AND (funding='points' OR (payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
       AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1)
       AND NOT EXISTS(SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?)
       THEN version ELSE NULL END WHERE id=?`).bind(
@@ -290,6 +295,7 @@ export async function registerForDraw(
         continue;
       if (
         current.paymentMode === "real" &&
+        current.funding !== "points" &&
         !testPermission &&
         !allowsRealClaim(env, await readPlatformControls(env))
       )

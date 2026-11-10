@@ -30,6 +30,7 @@ import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiContext } from "../env";
 import { ledgerPool } from "../judge/ledger";
+import { activityPointsOf } from "../points/funding";
 import { decryptString, encryptString } from "../security/crypto";
 import { requireAppOrigin } from "../security/http";
 
@@ -68,7 +69,10 @@ type ActivityImageActivityRow = Pick<
   | "endReason"
   | "archivedAt"
   | "deletedAt"
+  | "pointsStopReason"
 > & {
+  /** 三方积分: its system as the 红包 keeps it, as JSON (points/funding.ts). */
+  pointsJson: string | null;
   quantityVisibility: "exact" | "fuzzy" | "availability" | "hidden";
   moneyMode: string | null;
   participantLimit: number | null;
@@ -242,6 +246,10 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
       endReason: activities.endReason,
       archivedAt: activities.archivedAt,
       deletedAt: activities.deletedAt,
+      pointsStopReason: activities.pointsStopReason,
+      pointsJson: sql<
+        string | null
+      >`json_extract(${activities.config}, '$.points')`,
       quantityVisibility: sql<
         ActivityImageActivityRow["quantityVisibility"]
       >`COALESCE(json_extract(${activities.config}, '$.quantityVisibility'), 'exact')`,
@@ -314,6 +322,13 @@ function imagePublicActivity(
     quantity: imagePublicQuantity(row),
     beforeInfo: "",
     ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
+    ...activityPointsOf({
+      funding: row.funding,
+      config: JSON.stringify({
+        points: row.pointsJson ? JSON.parse(row.pointsJson) : undefined,
+      }),
+      pointsStopReason: row.pointsStopReason,
+    }),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(imageDrawSummary(row) ? { draw: imageDrawSummary(row) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
