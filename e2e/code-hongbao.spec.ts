@@ -4101,6 +4101,9 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
         status: "active",
         endedByCode: false,
         unit: "🐟",
+        // 三方积分 (third-party-points §10): 0.01 for LDC and 🐟.
+        step: "0.01",
+        points: null,
         shares: { total: 5, claimed: 1, remaining: 4 },
         pool: "1.00",
         // A protocol 4 红包: shares, no 奖池还剩 (multi-prize §4.4).

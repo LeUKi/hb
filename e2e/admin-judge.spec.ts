@@ -297,7 +297,7 @@ test.describe("网站管理 · 判定器", () => {
   }) => {
     await mockSettings(page);
     await openApp(page, "/admin/judge");
-    // Its tab sits between 🐟额 and 施工.
+    // Its tab sits between 🐟额 and 三方积分 (then 施工).
     const tabs = page.getByRole("navigation", { name: "管理入口" });
     await expect(tabs.getByRole("link")).toHaveText([
       "概览",
@@ -306,6 +306,7 @@ test.describe("网站管理 · 判定器", () => {
       "付款",
       "🐟额",
       "判定器",
+      "三方积分",
       "施工",
       "网站设置",
       "操作记录",
