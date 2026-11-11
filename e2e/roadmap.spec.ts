@@ -7,9 +7,9 @@ import type {
 } from "../packages/contracts/src";
 import { type MockUser, mockSession, openApp, viewer } from "./support/app";
 
-// 施工中 (docs/roadmap-design.md): 正在施工 in gold, 已完成 and 不做的 folded,
-// 功能请求 with votes, asking for one, one's own changed or taken back, and
-// the 站长's moves in 网站管理.
+// 施工中 (docs/roadmap-design.md): 正在施工 in gold, 已完成 and 不做的 in
+// their own dialogs, 功能请求 with votes, asking for one, one's own changed
+// or taken back, and the 站长's moves in 网站管理 (list + detail).
 
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString();
@@ -183,7 +183,7 @@ async function mockRoadmap(page: Page, user: MockUser | null) {
 }
 
 test.describe("施工中", () => {
-  test("游客：正在施工的金色卡，已完成和不做的收起，功能请求按最热、最新；点赞先登录", async ({
+  test("游客：正在施工的金色卡，已完成和不做的在弹窗里看，功能请求按最热、最新；点赞先登录", async ({
     page,
   }) => {
     const { sent } = await mockRoadmap(page, null);
@@ -199,12 +199,21 @@ test.describe("施工中", () => {
     await expect(building).toContainText("“在写按人的列表”");
     await expect(building).toContainText("开工 3 天 · @xiaoming 提的");
     await expect(building).toHaveClass(/loading-sheen-gold/);
-    // 已完成, folded until asked.
+    // 已完成: not on the page; its list opens in a dialog, and one opened
+    // from there stacks over it.
     const done = page.getByRole("button", { name: "已完成 1 件" });
-    await expect(done).toHaveAttribute("aria-expanded", "false");
+    await expect(done).toHaveAttribute("aria-haspopup", "dialog");
     await expect(page.getByText("定时开放")).toHaveCount(0);
     await done.click();
-    await expect(page.getByText("定时开放")).toBeVisible();
+    const doneDialog = page.getByRole("dialog", { name: "已完成 · 1 件" });
+    await doneDialog.getByRole("button", { name: /定时开放/ }).click();
+    const opened = page.getByRole("dialog", { name: "定时开放" });
+    await expect(opened).toContainText("草稿定好时间，到点自己开放。");
+    await expect(page).toHaveURL(new RegExp(`[?&]item=${DONE}`));
+    await opened.getByRole("button", { name: "关闭" }).click();
+    await expect(opened).toBeHidden();
+    await doneDialog.getByRole("button", { name: "关闭" }).click();
+    await expect(doneDialog).toBeHidden();
     // 功能请求: 最热 first, then 最新 in the address.
     const cards = page.locator("article").filter({ hasNotText: "施工中" });
     await expect(cards.first()).toContainText("深色模式");
@@ -212,7 +221,10 @@ test.describe("施工中", () => {
     await expect(page).toHaveURL(/[?&]sort=new/);
     await expect(cards.first()).toContainText("红包记录能按金额排序");
     await page.getByRole("button", { name: "不做的 1 件" }).click();
-    await expect(page.getByText("不做：先不做图片上传")).toBeVisible();
+    const declined = page.getByRole("dialog", { name: "不做的 · 1 件" });
+    await expect(declined.getByText("不做：先不做图片上传")).toBeVisible();
+    await declined.getByRole("button", { name: "关闭" }).click();
+    await expect(declined).toBeHidden();
     // A guest's 赞 asks to sign in, and sends nothing.
     await page.getByRole("button", { name: /^点赞，现在 19 个/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();

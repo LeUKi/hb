@@ -38,6 +38,7 @@ import { Button } from "../ui/button";
 import { Field, Segmented, TextArea, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
+import { DetailPart, useSettled } from "./admin/admin-frame";
 
 // 施工中 /roadmap (docs/roadmap-design.md): what the 站长 is building, in
 // the site's gold; what is done, folded; what people asked for, with
@@ -64,6 +65,28 @@ function sinceLabel(at: string) {
 const askedBy = (item: RoadmapItem) =>
   item.byOwner ? "" : `@${item.author.username} 提的`;
 
+/** Only the count: for those done or declined. */
+function VoteCount({
+  votes,
+  className,
+}: {
+  votes: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 text-xs text-ink-3 tabular-nums",
+        className,
+      )}
+    >
+      <ThumbsUp className="size-3.5" aria-hidden="true" />
+      <span className="sr-only">赞</span>
+      {votes}
+    </span>
+  );
+}
+
 /**
  * 点赞 (§2.4): its count beside the thumb; given, in the accent. Those done
  * or declined only show the count.
@@ -79,15 +102,9 @@ function VoteButton({
   const vote = useRoadmapVote();
   const [failed, setFailed] = useState(false);
   if (item.status !== "request" && item.status !== "building")
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-3 tabular-nums">
-        <ThumbsUp className="size-3.5" aria-hidden="true" />
-        <span className="sr-only">赞</span>
-        {item.votes}
-      </span>
-    );
+    return <VoteCount votes={item.votes} />;
   return (
-    <span className="grid shrink-0 justify-items-end gap-1">
+    <span className="flex shrink-0 flex-col items-end gap-1">
       <Squircle radius={9}>
         <button
           type="button"
@@ -187,7 +204,7 @@ function BuildingCard({
   );
 }
 
-/** 功能请求 and 不做的 (§2.3): a panel card, smaller than the gold. */
+/** 功能请求 (§2.3): a panel card, smaller than the gold. */
 function RequestCard({
   item,
   onOpen,
@@ -218,9 +235,6 @@ function RequestCard({
         </h3>
         {item.detail && (
           <p className="line-clamp-2 text-sm text-ink-2">{item.detail}</p>
-        )}
-        {item.reason && (
-          <p className="text-sm text-ink-2">不做：{item.reason}</p>
         )}
         <div className="mt-auto flex items-end justify-between gap-2 pt-1 text-xs text-ink-3">
           <span title={fullTime(Date.parse(item.createdAt))}>
@@ -259,77 +273,193 @@ function listOf(query: UseInfiniteQueryResult<{ pages: RoadmapList[] }>) {
   };
 }
 
-/** “已完成 N 件 ›”, “不做的 N 件 ›” (§2.2, §2.3): a line that unfolds. */
-function Folded({
+/** The end of a list: “共 N 件” once the count is known. */
+const endOf = (total: number | undefined) =>
+  total === undefined ? "已全部加载" : `共 ${total} 件`;
+
+/**
+ * “已完成 N 件 ›”, “不做的 N 件 ›” (§2.2, §2.3): a quiet link-like button
+ * that opens the list in a dialog (as 🐟额's 已停用的密钥).
+ */
+function FoldedButton({
   label,
-  open,
-  onToggle,
-  children,
+  onOpen,
 }: {
   label: string;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
+  onOpen: () => void;
 }) {
   return (
-    <div className="grid gap-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="inline-flex w-fit items-center gap-0.5 px-1 text-sm text-ink-2 hover:text-ink"
-      >
-        {label}
-        <ChevronRight
-          className={cn("size-4 transition-transform", open && "rotate-90")}
-          aria-hidden="true"
-        />
-      </button>
-      <Reveal show={open}>{open && children}</Reveal>
-    </div>
+    <Button
+      variant="quiet"
+      size="xs"
+      aria-haspopup="dialog"
+      className="gap-0.5 justify-self-center pr-1.5"
+      onClick={onOpen}
+    >
+      {label}
+      <ChevronRight aria-hidden="true" />
+    </Button>
   );
 }
 
-/** 已完成, unfolded (§2.2): a line each, the newest first. */
-function DoneList({ onOpen }: { onOpen: (id: string) => void }) {
+/** 已完成 or 不做的, in a dialog: its list read as it scrolls. */
+function FoldedDialog({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  return (
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      width="34rem"
+    >
+      <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 id={titleId} className="text-lg font-semibold text-ink">
+          {title}
+        </h2>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="关闭"
+          className="-mr-2 shrink-0"
+          onClick={onClose}
+        >
+          <X />
+        </Button>
+      </header>
+      <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-4">
+        {children}
+      </div>
+    </WindowDialog>
+  );
+}
+
+/** A row in a folded list: the whole row opens it. */
+function FoldedRow({
+  onOpen,
+  className,
+  children,
+}: {
+  onOpen: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <li>
+      <Squircle radius={radius.row}>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={onOpen}
+          className={cn(
+            "grid w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-fill-2",
+            className,
+          )}
+        >
+          {children}
+        </button>
+      </Squircle>
+    </li>
+  );
+}
+
+/** 已完成 (§2.2): a line each, the newest first, with its date. */
+function DoneList({
+  total,
+  onOpen,
+}: {
+  total: number | undefined;
+  onOpen: (id: string) => void;
+}) {
   const query = useRoadmapList("done", "new");
   const { items, lazy } = listOf(query);
   const list = useQueryLazyList(lazy);
   return (
     <ResultLoad id="done" load={resultOf(query)}>
-      <Panel className="grid gap-0.5 p-1.5">
-        <ul className="grid" aria-busy={list.state === "loading" || undefined}>
-          {items.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                onClick={() => onOpen(item.id)}
-                className="grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-start gap-3 rounded-[12px] px-3 py-3 text-left transition-colors hover:bg-fill-2"
+      <ul
+        className="flex flex-col gap-0.5"
+        aria-busy={list.state === "loading" || undefined}
+      >
+        {items.map((item) => (
+          <FoldedRow
+            key={item.id}
+            onOpen={() => onOpen(item.id)}
+            className="grid-cols-[4.5rem_minmax(0,1fr)_auto]"
+          >
+            <span className="pt-0.5 text-xs text-ink-3 tabular-nums">
+              {item.doneAt ? dayLabel(Date.parse(item.doneAt)) : ""}
+            </span>
+            <span className="grid min-w-0 gap-0.5">
+              <span className="text-base font-medium text-ink">
+                {item.title}
+              </span>
+              {item.detail && (
+                <span className="line-clamp-1 text-sm text-ink-2">
+                  {item.detail}
+                </span>
+              )}
+            </span>
+            <VoteCount votes={item.votes} className="pt-0.5" />
+          </FoldedRow>
+        ))}
+      </ul>
+      <LazyListEnd list={list} done={endOf(total)} />
+    </ResultLoad>
+  );
+}
+
+/** 不做的 (§2.3): a line each, with why not. */
+function DeclinedList({
+  total,
+  onOpen,
+}: {
+  total: number | undefined;
+  onOpen: (id: string) => void;
+}) {
+  const query = useRoadmapList("declined", "new");
+  const { items, lazy } = listOf(query);
+  const list = useQueryLazyList(lazy);
+  return (
+    <ResultLoad id="declined" load={resultOf(query)}>
+      <ul
+        className="flex flex-col gap-0.5"
+        aria-busy={list.state === "loading" || undefined}
+      >
+        {items.map((item) => (
+          <FoldedRow
+            key={item.id}
+            onOpen={() => onOpen(item.id)}
+            className="grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <span className="grid min-w-0 gap-0.5">
+              <span className="text-base font-medium text-ink">
+                {item.title}
+              </span>
+              {item.reason && (
+                <span className="text-sm text-ink-2">不做：{item.reason}</span>
+              )}
+              <span
+                className="text-xs text-ink-3"
+                title={fullTime(Date.parse(item.createdAt))}
               >
-                <span className="pt-0.5 text-xs text-ink-3 tabular-nums">
-                  {item.doneAt ? dayLabel(Date.parse(item.doneAt)) : ""}
-                </span>
-                <span className="grid min-w-0 gap-0.5">
-                  <span className="text-base font-medium text-ink">
-                    {item.title}
-                  </span>
-                  {item.detail && (
-                    <span className="line-clamp-1 text-sm text-ink-2">
-                      {item.detail}
-                    </span>
-                  )}
-                </span>
-                <span className="inline-flex items-center gap-1 pt-0.5 text-xs text-ink-3 tabular-nums">
-                  <ThumbsUp className="size-3.5" aria-hidden="true" />
-                  <span className="sr-only">赞</span>
-                  {item.votes}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <LazyListEnd list={list} done="已全部加载" />
-      </Panel>
+                {item.byOwner ? "站长" : `@${item.author.username}`} ·{" "}
+                {sinceLabel(item.createdAt)}
+              </span>
+            </span>
+            <VoteCount votes={item.votes} className="pt-0.5" />
+          </FoldedRow>
+        ))}
+      </ul>
+      <LazyListEnd list={list} done={endOf(total)} />
     </ResultLoad>
   );
 }
@@ -338,6 +468,7 @@ function RequestGrid({
   query,
   list,
   items,
+  total,
   onOpen,
   onGuest,
   empty,
@@ -345,6 +476,7 @@ function RequestGrid({
   query: Parameters<typeof resultOf>[0];
   list: LazyList;
   items: RoadmapItem[];
+  total: number | undefined;
   onOpen: (id: string) => void;
   onGuest: () => void;
   empty: ReactNode;
@@ -365,32 +497,10 @@ function RequestGrid({
               />
             ))}
           </Cards>
-          <LazyListEnd list={list} done="已全部加载" />
+          <LazyListEnd list={list} done={endOf(total)} />
         </div>
       )}
     </ResultLoad>
-  );
-}
-
-function DeclinedList({
-  onOpen,
-  onGuest,
-}: {
-  onOpen: (id: string) => void;
-  onGuest: () => void;
-}) {
-  const query = useRoadmapList("declined", "new");
-  const { items, lazy } = listOf(query);
-  const list = useQueryLazyList(lazy);
-  return (
-    <RequestGrid
-      query={query}
-      list={list}
-      items={items}
-      onOpen={onOpen}
-      onGuest={onGuest}
-      empty={<EmptyNote title="没有不做的" />}
-    />
   );
 }
 
@@ -425,10 +535,14 @@ function RequestDialog({
     setDetail(editing?.detail ?? "");
     setError(null);
   }, [open, editing]);
-  const similar = useRoadmapSimilar(editing ? "" : title);
-  const like = (similar.data?.items ?? []).filter(
-    (item) => item.id !== editing?.id,
-  );
+  // Asked once typing pauses, not at every key; nothing while closed, so a
+  // new opening does not show the last one's.
+  const typed = useSettled(open && !editing ? title.trim() : "");
+  const similar = useRoadmapSimilar(typed);
+  const like =
+    Array.from(typed).length >= 2
+      ? (similar.data?.items ?? []).filter((item) => item.id !== editing?.id)
+      : [];
   const tooLong =
     Array.from(title.trim()).length > ROADMAP_LIMITS.title ||
     Array.from(detail.trim()).length > ROADMAP_LIMITS.detail;
@@ -449,7 +563,7 @@ function RequestDialog({
           setError(
             refused(failure)
               ? failure.message
-              : "没有提交上：网络或服务出了问题。可以再试一次。",
+              : "提交没有完成：网络或服务出了问题。可以再试一次。",
           ),
       },
     );
@@ -463,7 +577,7 @@ function RequestDialog({
       width="32rem"
     >
       <form
-        className="grid gap-4 p-5"
+        className="flex flex-col gap-4 p-5"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
@@ -556,7 +670,8 @@ function ItemDialog({
 }: {
   id: string | null;
   onClose: () => void;
-  onEdit: (item: RoadmapItem) => void;
+  /** 改 one's own (none from 已完成 and 不做的: nothing there to change). */
+  onEdit?: (item: RoadmapItem) => void;
   onGuest: () => void;
 }) {
   const titleId = useId();
@@ -592,83 +707,78 @@ function ItemDialog({
         </header>
         <div className="view-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           <Swap id={item ? item.id : detail.isError ? "failed" : "loading"}>
-            {item ? (
-              <div className="grid gap-3">
-                {item.detail && (
-                  <p className="text-sm whitespace-pre-wrap text-ink">
-                    {item.detail}
+            <DetailPart query={detail} lines={3}>
+              {({ item, notes }) => (
+                <div className="grid gap-3">
+                  {item.detail && (
+                    <p className="text-sm whitespace-pre-wrap text-ink">
+                      {item.detail}
+                    </p>
+                  )}
+                  <p className="text-sm text-ink-2">
+                    {[
+                      item.byOwner ? "站长写的" : askedBy(item),
+                      sinceLabel(item.createdAt),
+                      item.status === "building" &&
+                        startedLabel(item.startedAt),
+                      item.status === "done" &&
+                        item.doneAt &&
+                        `${dayLabel(Date.parse(item.doneAt))}完成`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
-                )}
-                <p className="text-sm text-ink-2">
-                  {[
-                    item.byOwner ? "站长写的" : askedBy(item),
-                    sinceLabel(item.createdAt),
-                    item.status === "building" && startedLabel(item.startedAt),
-                    item.status === "done" &&
-                      item.doneAt &&
-                      `${dayLabel(Date.parse(item.doneAt))}完成`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                {item.reason && (
-                  <p className="text-sm text-ink">不做：{item.reason}</p>
-                )}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <VoteButton item={item} onGuest={onGuest} />
-                  {item.mine && item.status === "request" && (
-                    <span className="flex gap-2">
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        onClick={() => onEdit(item)}
-                      >
-                        改
-                      </Button>
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        onClick={() => {
-                          setError(null);
-                          setAsking(true);
-                        }}
-                      >
-                        删掉
-                      </Button>
-                    </span>
+                  {item.reason && (
+                    <p className="text-sm text-ink">不做：{item.reason}</p>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <VoteButton item={item} onGuest={onGuest} />
+                    {item.mine && item.status === "request" && (
+                      <span className="flex gap-2">
+                        <Button
+                          variant="quiet"
+                          size="sm"
+                          onClick={() => onEdit?.(item)}
+                        >
+                          改
+                        </Button>
+                        <Button
+                          variant="quiet"
+                          size="sm"
+                          aria-haspopup="dialog"
+                          onClick={() => {
+                            setError(null);
+                            setAsking(true);
+                          }}
+                        >
+                          删掉
+                        </Button>
+                      </span>
+                    )}
+                  </div>
+                  {notes.length > 0 && (
+                    <div className="grid gap-2">
+                      <p className="text-xs text-ink-3">进展</p>
+                      <Panel as="ul" className="grid px-4">
+                        {notes.map((note) => (
+                          <li
+                            key={`${note.at}-${note.text}`}
+                            className="grid gap-0.5 border-line border-b py-2.5 last:border-b-0"
+                          >
+                            <span className="text-sm text-ink">
+                              {note.text}
+                            </span>
+                            <span className="text-xs text-ink-3">
+                              {agoLabel(Date.parse(note.at))}
+                            </span>
+                          </li>
+                        ))}
+                      </Panel>
+                    </div>
                   )}
                 </div>
-                {(detail.data?.notes.length ?? 0) > 0 && (
-                  <div className="grid gap-2">
-                    <p className="text-xs text-ink-3">进展</p>
-                    <Panel as="ul" className="grid px-4">
-                      {detail.data?.notes.map((note) => (
-                        <li
-                          key={`${note.at}-${note.text}`}
-                          className="grid gap-0.5 border-line border-b py-2.5 last:border-b-0"
-                        >
-                          <span className="text-sm text-ink">{note.text}</span>
-                          <span className="text-xs text-ink-3">
-                            {agoLabel(Date.parse(note.at))}
-                          </span>
-                        </li>
-                      ))}
-                    </Panel>
-                  </div>
-                )}
-              </div>
-            ) : detail.isError ? (
-              <p className="flex items-center gap-3 text-sm text-danger">
-                没有读到这一件
-                <Button size="xs" onClick={() => void detail.refetch()}>
-                  重试
-                </Button>
-              </p>
-            ) : (
-              <p role="status" className="loading-sheen text-sm text-ink-3">
-                正在读取…
-              </p>
-            )}
+              )}
+            </DetailPart>
           </Swap>
         </div>
       </div>
@@ -682,7 +792,9 @@ function ItemDialog({
         actions={
           <>
             <Button
-              onClick={() => setAsking(false)}
+              onClick={() => {
+                if (!remove.isPending) setAsking(false);
+              }}
               aria-disabled={remove.isPending || undefined}
             >
               返回
@@ -692,6 +804,7 @@ function ItemDialog({
               aria-disabled={remove.isPending || undefined}
               onClick={() => {
                 if (!item || remove.isPending) return;
+                setError(null);
                 remove.mutate(item.id, {
                   onSuccess: () => {
                     setAsking(false);
@@ -701,12 +814,12 @@ function ItemDialog({
                     setError(
                       refused(failure)
                         ? failure.message
-                        : "没有删掉：网络或服务出了问题。可以再试一次。",
+                        : "删掉没有完成：网络或服务出了问题。可以再试一次。",
                     ),
                 });
               }}
             >
-              {remove.isPending ? "正在删除…" : "删掉"}
+              {remove.isPending ? "正在删除…" : error ? "再试一次" : "删掉"}
             </Button>
           </>
         }
@@ -746,8 +859,8 @@ export function RoadmapView() {
   const requests = useRoadmapList("request", sort);
   const { items: requestItems, lazy } = listOf(requests);
   const requestList = useQueryLazyList(lazy);
-  const [doneOpen, setDoneOpen] = useState(false);
-  const [declinedOpen, setDeclinedOpen] = useState(false);
+  // 已完成 or 不做的, open in a dialog.
+  const [folded, setFolded] = useState<"done" | "declined" | null>(null);
   const [openId, setOpenId] = useOpenItem();
   const [asking, setAsking] = useState(false);
   const [editing, setEditing] = useState<RoadmapItem | null>(null);
@@ -783,9 +896,7 @@ export function RoadmapView() {
             }
           >
             {building.length === 0 ? (
-              <Panel className="px-4 py-6 text-center text-sm text-ink-3">
-                现在没有在施工的。
-              </Panel>
+              <EmptyNote title="现在没有在施工的。" />
             ) : (
               <Cards>
                 {building.map((item) => (
@@ -799,13 +910,10 @@ export function RoadmapView() {
               </Cards>
             )}
             {(counts?.done ?? 0) > 0 && (
-              <Folded
+              <FoldedButton
                 label={`已完成 ${counts?.done} 件`}
-                open={doneOpen}
-                onToggle={() => setDoneOpen(!doneOpen)}
-              >
-                <DoneList onOpen={setOpenId} />
-              </Folded>
+                onOpen={() => setFolded("done")}
+              />
             )}
           </PageSection>
           <PageSection
@@ -827,6 +935,7 @@ export function RoadmapView() {
               query={requests}
               list={requestList}
               items={requestItems}
+              total={counts?.request}
               onOpen={setOpenId}
               onGuest={openAccount}
               empty={
@@ -841,15 +950,37 @@ export function RoadmapView() {
               }
             />
             {(counts?.declined ?? 0) > 0 && (
-              <Folded
+              <FoldedButton
                 label={`不做的 ${counts?.declined} 件`}
-                open={declinedOpen}
-                onToggle={() => setDeclinedOpen(!declinedOpen)}
-              >
-                <DeclinedList onOpen={setOpenId} onGuest={openAccount} />
-              </Folded>
+                onOpen={() => setFolded("declined")}
+              />
             )}
           </PageSection>
+          {/* Each opens its own one over it; the page's below stays shut. */}
+          <FoldedDialog
+            open={folded === "done"}
+            title={`已完成 · ${counts?.done ?? 0} 件`}
+            onClose={() => setFolded(null)}
+          >
+            <DoneList total={counts?.done} onOpen={setOpenId} />
+            <ItemDialog
+              id={openId}
+              onClose={() => setOpenId(null)}
+              onGuest={openAccount}
+            />
+          </FoldedDialog>
+          <FoldedDialog
+            open={folded === "declined"}
+            title={`不做的 · ${counts?.declined ?? 0} 件`}
+            onClose={() => setFolded(null)}
+          >
+            <DeclinedList total={counts?.declined} onOpen={setOpenId} />
+            <ItemDialog
+              id={openId}
+              onClose={() => setOpenId(null)}
+              onGuest={openAccount}
+            />
+          </FoldedDialog>
           <RequestDialog
             open={asking}
             editing={editing}
@@ -865,7 +996,7 @@ export function RoadmapView() {
             }}
           />
           <ItemDialog
-            id={openId}
+            id={folded ? null : openId}
             onClose={() => setOpenId(null)}
             onGuest={openAccount}
             onEdit={(item) => {
