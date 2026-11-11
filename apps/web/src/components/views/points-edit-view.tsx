@@ -14,7 +14,7 @@ import {
   pointsTagHint,
   stepDecimals,
 } from "@hb/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   CircleCheck,
   CircleX,
@@ -165,6 +165,14 @@ function Editor({
         back={{ label: "三方积分", href: "/points" }}
         title={system ? `配置「${system.name}」` : "接入一种三方积分"}
         description="每一项旁边是它在红包站上的样子。改文案立即生效；改接口地址或最小单位要先暂停，并重新自检、审核。"
+        actions={
+          <Link
+            to="/help/points"
+            className="text-sm text-accent-ink hover:underline"
+          >
+            三个接口怎么写：接入说明
+          </Link>
+        }
       />
       {system && <StatusPart system={system} />}
       <PageSection title="基本">

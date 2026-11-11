@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Braces, ChevronRight, Compass, FolderCode, Globe } from "lucide-react";
+import {
+  Braces,
+  ChevronRight,
+  Coins,
+  Compass,
+  FolderCode,
+  Globe,
+} from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -60,6 +67,11 @@ const questions: { q: string; a: string }[] = [
   {
     q: "领到的 LDC 什么时候到账？",
     a: "领取后本站马上发起付款，通常几秒内确认。Credit 站暂时出问题时会自动核对和重试，不会重复付款；在“红包记录 → 我参与的”能看到每一笔的状态。标着“🐟额”的红包，领到的当场存进你的🐟额，可以随时转出到 Credit。",
+  },
+  {
+    // 三方积分 (docs/third-party-points-design.md §9).
+    q: "标着“三方”的红包是什么？",
+    a: "用别的网站的积分发的红包。领到的直接存进你在那个网站的账户，要先在那个网站开户；没开户会提示你怎么开，开好以后 5 分钟内可以重新发送一次。积分能做什么、值多少由那个网站决定，红包站不核对，也不兑换。点红包皮上的“三方”标签，能看到是哪个网站的。",
   },
   {
     // 打赏 (docs/tip-design.md).
@@ -224,6 +236,23 @@ export function HelpView() {
               <Globe className="size-[18px] shrink-0 text-ink-2" />
               <span className="min-w-0 flex-1 truncate text-ink">
                 附带网页 · 接入说明
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </Link>
+          </Squircle>
+        </li>
+        <li>
+          <Squircle radius={radius.row}>
+            <Link
+              to="/help/points"
+              className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+            >
+              <Coins className="size-[18px] shrink-0 text-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                三方积分 · 接入说明
               </span>
               <ChevronRight
                 className="size-4 shrink-0 text-ink-3"

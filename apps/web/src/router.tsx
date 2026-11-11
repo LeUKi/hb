@@ -342,6 +342,12 @@ const helpPageRoute = createRoute({
   path: "/help/page",
   staticData: { chrome: "docked", command: "help", subpage: "附带网页" },
 });
+// 三方积分's 接入说明 for an issuer (third-party-points §3–§5): a subpage too.
+const helpPointsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/points",
+  staticData: { chrome: "docked", command: "help", subpage: "三方积分" },
+});
 // Production's connection check: kept, with no entry (06 §5).
 const statusRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -406,6 +412,7 @@ const routeTree = rootRoute.addChildren([
   helpStartRoute,
   helpCodeRoute,
   helpPageRoute,
+  helpPointsRoute,
   statusRoute,
   notFoundRoute,
 ]);

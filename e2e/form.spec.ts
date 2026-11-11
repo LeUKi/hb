@@ -655,6 +655,37 @@ test.describe("发红包", () => {
       await expect(page.locator(`#${id}`)).toHaveCount(1);
   });
 
+  test("三方积分 · 接入说明：帮助子页写清三个接口、自检和每种回复，复制给 AI 的说明在 #ai", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await openApp(page, "/help");
+    await page.getByRole("link", { name: /三方积分 · 接入说明/ }).click();
+    await expect(page).toHaveURL(/\/help\/points$/);
+    for (const title of [
+      "给 AI 的说明",
+      "1. 怎么接进来",
+      "2. 共同的规则",
+      "3. 额度",
+      "4. 发放",
+      "5. 查单",
+      "6. 接入自检",
+      "7. 红包站怎么处理你的回复",
+      "8. 密钥和文案",
+      "9. 示例发行方",
+    ])
+      await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByText(/说明文档：.*\/help\/points/)).toBeVisible();
+    await expect(
+      page.getByText(/除了 ok，其他回复都必须保证没有建单、没有转/).first(),
+    ).toBeVisible();
+    await expect(page.getByText("第 11 步")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "examples/points-issuer ↗" }),
+    ).toHaveAttribute("href", /examples\/points-issuer$/);
+    await expect(page.locator("#ai")).toHaveCount(1);
+  });
+
   test("做一个玩法：七种做法接着读哪里，一段给 AI 的说明，详细文档都能到", async ({
     page,
   }) => {

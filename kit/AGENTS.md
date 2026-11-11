@@ -359,7 +359,7 @@ export function judge({ input, state, user, hongbao }) {
 
 网页里加 `<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，就有全局的 `hb`。每个方法的返回和每种原因写在 `page/hb.d.ts`。
 
-- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；只用来显示，后端要用的从红包信息接口读）等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
+- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`unit`、`step`、`points`（同红包信息的）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；只用来显示，后端要用的从红包信息接口读）等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
 - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce" | "me" | "myView", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
 - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`，这时 `hb.me()` 和 `hb.myView()` 已经是这次判定之后的，接着读就行；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
 - `await hb.fill(text)`：把内容填进指令框（换掉里面原来打的字），不提交，按提交的是看的人自己；所有红包都能用，直接领的红包没有指令框，回 `no_input`。
@@ -460,8 +460,11 @@ export async function claimsOf(request, kind) {
   "fingerprint": "…",
   "params": { "challenge": "拍一只猫", "tries": 3 },
   "unit": "LDC",
+  "step": "0.01",
+  "points": null,
   "pool": "100.00",
   "unclaimed": "87.50",
+  "units": { "pool": 10000, "unclaimed": 8750 },
   "openedAt": "2026-11-02T02:30:00.123Z",
   "deadlineAt": "2026-11-03T02:30:00.123Z",
   "scope": { "levels": [2, 3, 4], "users": [{ "username": "someone" }] }
@@ -472,7 +475,7 @@ export async function claimsOf(request, kind) {
 - `paused`：判定器连续出错 5 次，领取暂停，这时判定器不判。
 - `judge`：判定器和第几版，没有判定器时是 `null`；`fingerprint`：代码指纹（同红包页上的），不是代码判定时是 `null`。
 - `params`：现在公开的参数，同 `hongbao.params`：结束后公开的结束以后才有，密钥永远没有。
-- `unit`（`LDC`，🐟额红包是 `🐟`）、`pool`（总奖池）、`unclaimed`（奖池还剩，第五版以前的红包是 `null`），金额写成 `"100.00"`：后端要按奖池做预算时读这里，不信网页交来的。
+- `unit`（`LDC`，🐟额红包是 `🐟`，三方积分红包是积分的单位）、`step`（最小单位，LDC 和🐟是 `"0.01"`）、`points`（三方积分的名称、单位和发行方的域名，别的红包是 `null`）、`pool`（总奖池）、`unclaimed`（奖池还剩，第五版以前的红包是 `null`），金额按最小单位的小数位写（`"100.00"`，整数积分是 `"100"`）；`units` 是这两个数有多少个最小单位，判定器和凭证用的就是它。后端要按奖池做预算时读这里，不信网页交来的。
 - `openedAt`、`deadlineAt`：开放和截止时间，ISO 8601，精确到毫秒（没有截止时间是 `null`）。`openedAt` 解析成毫秒，就是判定器拿到的 `submission.hongbao.openedAt`：后端签名、交给判定器核对的东西带上它，就绑在了这个红包上，拿到别的红包用不了。
 - `scope`：领取范围（2026-11-07 起有），没有范围（谁都能领）是 `null`：`levels` 是能领的信任等级，`users` 是指定的人（现在的用户名）；两样有一样对得上就能领。范围以外的人提交了也不判、领不到；后端要在认人时就拦下他们：令牌里的 `level` 在 `levels` 里，或者 `username`（不分大小写）在 `users` 里才行，不然积分、名额、奖池预算都被白白占掉。网页那边先看 `hb.me()`：`open` 是 `false`、`why` 是 `not_in_scope` 时直接告诉他，不让他开始玩。
 - 参数开放后就不变了，按红包编号缓存；`status`、`paused` 几十秒读一次就够。读不到时先用上次的；从没读到过就拒绝这一次，回一句“稍后再试”。

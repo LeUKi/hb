@@ -31,13 +31,18 @@ export function PointsView() {
             title="三方积分"
             description="把你网站的积分接进红包站：大家发红包时就能选它，领到的直接进领取者在你网站的账户。"
             actions={
-              <Button
-                variant="primary"
-                disabled={!data.canAdd}
-                onClick={() => void navigate({ href: "/points/new" })}
-              >
-                接入一种
-              </Button>
+              <>
+                <Button onClick={() => void navigate({ href: "/help/points" })}>
+                  接入说明
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={!data.canAdd}
+                  onClick={() => void navigate({ href: "/points/new" })}
+                >
+                  接入一种
+                </Button>
+              </>
             }
           />
           {!data.plus && (

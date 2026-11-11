@@ -148,7 +148,7 @@ const aiPrompt = (
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
    - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它；payload.judge、payload.judgeVersion 是代码判定红包的判定器编号和第几版：大家共用的后端只给自己的判定器用时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
-   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）, unit（LDC 或 🐟）, pool（总奖池）, unclaimed（奖池还剩，第五版以前是 null）, openedAt, deadlineAt（ISO，精确到毫秒；openedAt 就是判定器拿到的 submission.hongbao.openedAt）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
+   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）, unit（LDC、🐟 或三方积分的单位）, step（最小单位："0.01"、"1"…）, points（三方积分的名称、单位和发行方的域名，别的红包是 null）, pool（总奖池）, unclaimed（奖池还剩，第五版以前是 null；金额按最小单位的小数位写）, units（{ pool, unclaimed }：多少个最小单位）, openedAt, deadlineAt（ISO，精确到毫秒；openedAt 就是判定器拿到的 submission.hongbao.openedAt）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器核对才算数（联网问后端，或者验后端签的凭证）；令牌不能用来替他提交。
 9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
@@ -311,8 +311,12 @@ export function HelpPageView() {
             ；草稿只有这一项）、<Code>paused</Code>（领取暂停）、
             <Code>sender</Code>、<Code>judge</Code>（判定器和第几版）、
             <Code>fingerprint</Code>、<Code>params</Code>
-            （现在公开的参数）、<Code>unit</Code>、<Code>pool</Code>
-            （总奖池）、<Code>unclaimed</Code>（奖池还剩）、
+            （现在公开的参数）、<Code>unit</Code>（LDC、🐟 或三方积分的单位）、
+            <Code>step</Code>（最小单位）、
+            <Code>points</Code>（三方积分的名称、单位和发行方的域名，别的红包是
+            null）、<Code>pool</Code>
+            （总奖池）、<Code>unclaimed</Code>（奖池还剩）、<Code>units</Code>
+            （这两个数是多少个最小单位）、
             <Code>openedAt</Code>、<Code>deadlineAt</Code>
             （开放和截止时间）。参数开放后不变，可以缓存。别信网页交来的参数，也别用本站别的接口，它们的结构会改。
           </p>
