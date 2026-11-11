@@ -9,6 +9,7 @@ import type {
 } from "@hb/contracts";
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -119,6 +120,12 @@ export const pointsKeys = {
     ["points", userId, "balance", id] as const,
   admin: ["points", "admin"] as const,
   adminOne: (id: string) => ["points", "admin", id] as const,
+  records: (
+    scope: RecordsScope,
+    id: string,
+    kind: "payouts" | "calls",
+    filter: PayoutFilter,
+  ) => ["points", "records", scope, id, kind, filter] as const,
 };
 
 async function get<T>(path: string, signal?: AbortSignal) {
@@ -418,6 +425,108 @@ export function useAdminPointsActions() {
       onSuccess: settle,
     }),
   };
+}
+
+/** Why a payout stopped, for the 站长 and the issuer (§7). */
+export const payoutReasonWords: Record<string, string> = {
+  insufficient: "余额不够",
+  key_invalid: "密钥无效",
+  key_removed: "密钥删了",
+  no_recipient: "找不到收款人",
+  not_allowed: "不允许",
+  bad_request: "参数不对",
+  conflict: "单号冲突",
+  network: "连不上",
+  stopped: "红包已停",
+  retired: "已下架",
+  admin: "站长标为未发出",
+  mismatch: "回复对不上",
+  final_query: "等最后一次查单",
+};
+
+/** Whose view of the records: the 站长's panel or the issuer's own page. */
+export type RecordsScope = "admin" | "own";
+export type PayoutFilter = "all" | "confirmed" | "waiting" | "failed";
+
+/** One payout in 发放记录 (§7). */
+export type PayoutRecord = {
+  id: string;
+  activityId: string;
+  title: string;
+  authorUsername: string;
+  recipientUsername: string;
+  /** The recipient's LINUX DO ID, as the issuer got it. */
+  recipientId: string;
+  amountMinor: number;
+  outTradeNo: string;
+  tradeNo: string | null;
+  status: "pending" | "sending" | "held" | "unknown" | "confirmed" | "failed";
+  reason: string | null;
+  attempts: number;
+  misses: number;
+  resent: boolean;
+  createdAt: number;
+  updatedAt: number;
+  doneAt: number | null;
+};
+
+type Totals = Record<
+  "confirmed" | "waiting" | "failed",
+  { count: number; amountMinor: number }
+>;
+export type PayoutTotals = { today: Totals; week: Totals };
+
+/** One call to the issuer in 调用记录 (§7). */
+export type CallRecord = {
+  id: string;
+  kind: "balance" | "transfer" | "query";
+  /** The issuer's result, or "missed:<why>" when there was no answer. */
+  result: string;
+  httpStatus: number | null;
+  ms: number;
+  at: number;
+  outTradeNo: string | null;
+};
+
+const recordsPath = (scope: RecordsScope, id: string) =>
+  `${scope === "admin" ? "admin" : "me"}/points/${encodeURIComponent(id)}/records`;
+
+/** 发放记录, 50 at a time; the first page carries the totals. */
+export function usePayoutRecords(
+  scope: RecordsScope,
+  id: string,
+  filter: PayoutFilter,
+) {
+  return useInfiniteQuery({
+    queryKey: pointsKeys.records(scope, id, "payouts", filter),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      get<{
+        items: PayoutRecord[];
+        next: string | null;
+        totals: PayoutTotals | null;
+      }>(
+        `${recordsPath(scope, id)}?filter=${filter}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.next,
+    enabled: id !== "",
+  });
+}
+
+/** 调用记录, 50 at a time. */
+export function useCallRecords(scope: RecordsScope, id: string) {
+  return useInfiniteQuery({
+    queryKey: pointsKeys.records(scope, id, "calls", "all"),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      get<{ items: CallRecord[]; next: string | null }>(
+        `${recordsPath(scope, id)}?kind=calls${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.next,
+    enabled: id !== "",
+  });
 }
 
 /** Why a payout of a 三方积分 did not go, in the claimant's words (§5 §9). */

@@ -69,11 +69,24 @@ export function PointsDetailView({ id }: { id: string }) {
             }
             actions={
               system.mine ? (
-                <Button
-                  onClick={() => void navigate({ href: `/points/${id}/edit` })}
-                >
-                  设置
-                </Button>
+                <>
+                  {system.onlineAt !== null && (
+                    <Button
+                      onClick={() =>
+                        void navigate({ href: `/points/${id}/records` })
+                      }
+                    >
+                      发放记录
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() =>
+                      void navigate({ href: `/points/${id}/edit` })
+                    }
+                  >
+                    设置
+                  </Button>
+                </>
               ) : undefined
             }
           />

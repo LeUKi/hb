@@ -239,6 +239,11 @@ const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
 // 配置页; a system's 详情页 is anyone's (a 红包's tag leads there).
 const pointsNewRoute = subRoute("/points/new", "points", "添加积分");
 const pointsEditRoute = subRoute("/points/$id/edit", "points", "设置积分");
+const pointsRecordsRoute = subRoute(
+  "/points/$id/records",
+  "points",
+  "发放记录",
+);
 const pointsDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/points/$id",
@@ -392,6 +397,7 @@ const routeTree = rootRoute.addChildren([
   pointsRoute,
   pointsNewRoute,
   pointsEditRoute,
+  pointsRecordsRoute,
   pointsDetailRoute,
   tipNewRoute,
   tipEditRoute,

@@ -27,6 +27,13 @@ import {
   requeryPayout,
 } from "./admin";
 import { availableNow, keyView, readKey, removeKey, saveKey } from "./keys";
+import {
+  listCallRecords,
+  listPayoutRecords,
+  POINTS_PAYOUT_FILTERS,
+  type PointsPayoutFilter,
+  payoutTotals,
+} from "./records";
 import { listSelfTests, runSelfTest } from "./self-test";
 import {
   copyOf,
@@ -81,6 +88,26 @@ const settingsSchema = z.strictObject({
   version: z.number().int().positive(),
 });
 
+const filterOf = (value: string | undefined): PointsPayoutFilter =>
+  value && value in POINTS_PAYOUT_FILTERS
+    ? (value as PointsPayoutFilter)
+    : "all";
+
+/** 发放记录 and 调用记录 (§7): the same for the 站长 and the issuer. */
+async function records(
+  env: ApiContext["Bindings"],
+  systemId: string,
+  query: { kind?: string; filter?: string; before?: string },
+) {
+  if (query.kind === "calls")
+    return listCallRecords(env, systemId, query.before);
+  const [page, totals] = await Promise.all([
+    listPayoutRecords(env, systemId, filterOf(query.filter), query.before),
+    query.before ? null : payoutTotals(env, systemId),
+  ]);
+  return { ...page, totals };
+}
+
 export const pointsRoutes = new Hono<ApiContext>()
   // The form's choices: the switch, and the systems online (§8).
   .get("/points", async (c) => {
@@ -127,6 +154,16 @@ export const pointsRoutes = new Hono<ApiContext>()
       });
     },
   )
+  // The issuer's own 发放记录 and 调用记录 (§7).
+  .get("/me/points/:id/records", async (c) => {
+    const session = await requireAuth(c);
+    const row = await requireOwnSystem(
+      c.env,
+      session.user.id,
+      c.req.param("id"),
+    );
+    return c.json(await records(c.env, row.id, c.req.query()));
+  })
   .get("/me/points/:id", async (c) => {
     const session = await requireAuth(c);
     const row = await requireOwnSystem(
@@ -265,6 +302,11 @@ export const pointsRoutes = new Hono<ApiContext>()
       });
     },
   )
+  .get("/admin/points/:id/records", async (c) => {
+    await requireAdmin(c);
+    const row = await requireSystem(c.env, c.req.param("id"));
+    return c.json(await records(c.env, row.id, c.req.query()));
+  })
   .get("/admin/points/:id", async (c) => {
     await requireAdmin(c);
     return c.json(await adminSystemDetail(c.env, c.req.param("id")));

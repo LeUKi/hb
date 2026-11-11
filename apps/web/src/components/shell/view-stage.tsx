@@ -46,6 +46,7 @@ import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
 import { PointsDetailView } from "../views/points-detail-view";
 import { PointsEditView } from "../views/points-edit-view";
+import { PointsRecordsView } from "../views/points-records";
 import { PointsView } from "../views/points-view";
 import { RankView } from "../views/rank-view";
 import { ResultsView } from "../views/results-view";
@@ -148,6 +149,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="points"
           page={<PointsEditView id={params.id ?? ""} />}
+        />
+      );
+    case "/points/$id/records":
+      return (
+        <CommandPageView
+          id="points"
+          page={<PointsRecordsView id={params.id ?? ""} />}
         />
       );
     case "/points/$id":

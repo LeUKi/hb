@@ -112,6 +112,18 @@ export function PointsView() {
                         >
                           查看详情
                         </Button>
+                        {item.onlineAt !== null && (
+                          <Button
+                            size="xs"
+                            onClick={() =>
+                              void navigate({
+                                href: `/points/${item.id}/records`,
+                              })
+                            }
+                          >
+                            发放记录
+                          </Button>
+                        )}
                       </div>
                     </Panel>
                   );

@@ -21,6 +21,11 @@ import {
   runPointsPayment,
   sweepPointsPayments,
 } from "../src/points/payments";
+import {
+  listCallRecords,
+  listPayoutRecords,
+  payoutTotals,
+} from "../src/points/records";
 import { runSelfTest } from "../src/points/self-test";
 import {
   createSystem,
@@ -575,6 +580,93 @@ describe("三方积分红包", () => {
       .run();
     await sweepPointsPayments(bindings);
     expect((await payout(claimed.claim.id))?.status).toBe("failed");
+  });
+
+  it("lists every payout and call, a page at a time, ties included (§7)", async () => {
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "50",
+      count: 5,
+    });
+    const paid: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const person = await actor();
+      issuer.open(person.externalId, person.username, 0);
+      const claimed = await claim(hongbao.id, person);
+      expect(await run(claimed.claim.payment?.id ?? "")).toBe("confirmed");
+      paid.push(claimed.claim.payment?.id ?? "");
+    }
+    const stranger = await actor();
+    const held = await claim(hongbao.id, stranger);
+    expect(await run(held.claim.payment?.id ?? "")).toBe("held");
+    // Three changed in the same millisecond, as a 红包's end settles them.
+    await env.DB.prepare(
+      "UPDATE points_payments SET updated_at=? WHERE id IN (?,?,?)",
+    )
+      .bind(Date.now() - 1000, paid[0], paid[1], paid[2])
+      .run();
+
+    const seen: string[] = [];
+    let before: string | undefined;
+    for (let page = 0; page < 5; page += 1) {
+      const result = await listPayoutRecords(
+        bindings,
+        systemId,
+        "all",
+        before,
+        2,
+      );
+      seen.push(...result.items.map((item) => item.id));
+      if (!result.next) break;
+      before = result.next;
+    }
+    expect(new Set(seen).size).toBe(5);
+    expect(seen.length).toBe(5);
+    expect(seen[0]).toBe(held.claim.payment?.id);
+
+    const first = await listPayoutRecords(bindings, systemId, "all", undefined);
+    expect(first.items[0]).toMatchObject({
+      title: "星星红包",
+      authorUsername: sender.username,
+      recipientUsername: stranger.username,
+      recipientId: stranger.externalId,
+      amountMinor: 1000,
+      status: "held",
+      reason: "no_recipient",
+    });
+    const confirmed = await listPayoutRecords(
+      bindings,
+      systemId,
+      "confirmed",
+      undefined,
+    );
+    expect(confirmed.items.map((item) => item.status)).toEqual(
+      Array(4).fill("confirmed"),
+    );
+    expect(confirmed.items.every((item) => item.tradeNo)).toBe(true);
+    const waiting = await listPayoutRecords(
+      bindings,
+      systemId,
+      "waiting",
+      undefined,
+    );
+    expect(waiting.items.map((item) => item.id)).toEqual([
+      held.claim.payment?.id,
+    ]);
+
+    const totals = await payoutTotals(bindings, systemId);
+    expect(totals.week.confirmed).toEqual({ count: 4, amountMinor: 4000 });
+    expect(totals.week.waiting).toEqual({ count: 1, amountMinor: 1000 });
+    expect(totals.today.confirmed.count).toBeGreaterThan(0);
+
+    const calls = await listCallRecords(bindings, systemId, undefined);
+    expect(calls.items.length).toBeGreaterThan(5);
+    expect(calls.items[0]).toMatchObject({
+      kind: "transfer",
+      result: "no_recipient",
+    });
+    expect(calls.items.some((call) => call.outTradeNo)).toBe(true);
   });
 });
 

@@ -1,13 +1,16 @@
 // 网站管理 · 三方积分 (docs/third-party-points-design.md §7): the site
 // switch; each system with its state and today's calls; one opened, its
-// review, pause, resume and retire, payouts with no known result or a broken
-// answer (再查一次 / 标为未发出), failures by reason, words changed (seen
-// once shown here) and its self-tests. Read on 刷新 only.
+// whole 配置 (each word as it renders), review, pause, resume and retire,
+// payouts with no known result or a broken answer (再查一次 / 标为未发出),
+// every payout and call (记录), failures by reason, words changed (seen once
+// shown here) and its self-tests. Read on 刷新 only.
 import { useState } from "react";
 import { ActivityRequestError } from "../../../lib/activities";
 import {
   type AdminPayout,
   type AdminPointsRow,
+  type PointsCopy,
+  payoutReasonWords,
   statusWords,
   useAdminPoints,
   useAdminPointsActions,
@@ -15,29 +18,16 @@ import {
 } from "../../../lib/points";
 import { clockLabel } from "../../../lib/roster-time";
 import { amountText } from "../../../lib/units";
-import { Facts, PageSection, Panel } from "../../page/page";
+import { PageSection, Panel } from "../../page/page";
 import { PageLoad, queryLoad } from "../../page/page-state";
 import { Button } from "../../ui/button";
+import { ButtonLink } from "../../ui/button-link";
 import { Field, Switch, TextInput } from "../../ui/field";
+import { NoteMarkdown } from "../../ui/markdown";
 import { StatusChip } from "../../ui/status-chip";
+import { PointsRecords } from "../points-records";
 import { statusTones } from "../points-view";
 import { AdminFrame } from "./admin-frame";
-
-const reasonWords: Record<string, string> = {
-  insufficient: "余额不够",
-  key_invalid: "密钥无效",
-  key_removed: "密钥删了",
-  no_recipient: "找不到收款人",
-  not_allowed: "不允许",
-  bad_request: "参数不对",
-  conflict: "单号冲突",
-  network: "连不上",
-  stopped: "红包已停",
-  retired: "已下架",
-  admin: "站长标为未发出",
-  mismatch: "回复对不上",
-  final_query: "等最后一次查单",
-};
 
 const fieldWords: Record<string, string> = {
   name: "名称",
@@ -54,6 +44,17 @@ const fieldWords: Record<string, string> = {
   baseUrl: "接口地址",
   step: "最小单位",
 };
+
+/** The words an issuer writes (§6), in the 设置页's order. */
+const copyFields = [
+  ["intro", "介绍"],
+  ["keyGuide", "怎么拿到密钥"],
+  ["noRecipient", "领取的人还没开户时"],
+  ["arrival", "到账后"],
+  ["notAllowed", "不能发给他时"],
+  ["insufficient", "余额不够时"],
+  ["keyInvalid", "密钥失效时"],
+] as const satisfies readonly (readonly [keyof PointsCopy, string])[];
 
 export function AdminPoints() {
   const query = useAdminPoints();
@@ -173,20 +174,60 @@ function SystemDetail({ id }: { id: string }) {
   const unseen = data.changes.filter((change) => change.seenAt === null);
   return (
     <div className="grid gap-4 border-line border-t pt-3">
-      <Facts
-        items={[
-          { label: "发行方", value: system.issuerName },
-          { label: "接口地址", value: system.baseUrl },
-          {
-            label: "自检",
-            value: system.passed ? "当前接口已通过" : "当前接口没通过",
-          },
-          {
-            label: "提交审核",
-            value: system.submittedAt ? clockLabel(system.submittedAt) : "—",
-          },
-        ]}
-      />
+      <Part
+        title="配置"
+        action={
+          <ButtonLink size="xs" href={`/points/${id}`}>
+            看详情页
+          </ButtonLink>
+        }
+      >
+        <dl className="grid gap-x-4 gap-y-1.5 text-sm @wide/window:grid-cols-[8rem_1fr]">
+          {[
+            ["名称", system.name],
+            ["单位", system.unit],
+            ["最小单位", amountText(system.step, unit)],
+            ["网站名称", system.issuerName],
+            ["接口地址", system.baseUrl],
+            ["每秒最多调用", `${system.rate} 次`],
+            ["添加的人", `@${system.ownerUsername}`],
+            [
+              "接口测试",
+              system.passed ? "当前接口地址已通过" : "当前接口地址没通过",
+            ],
+            [
+              "提交审核",
+              system.submittedAt ? clockLabel(system.submittedAt) : "—",
+            ],
+            ["上线", system.onlineAt ? clockLabel(system.onlineAt) : "—"],
+            ["审核意见", system.reviewNote || "—"],
+          ].map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-ink-3">{label}</dt>
+              <dd className="mb-1 break-all text-ink @wide/window:mb-0">
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="grid gap-2">
+          {copyFields.map(([key, label]) => (
+            <div
+              key={key}
+              className="grid gap-1 rounded-xl bg-fill-2 px-3 py-2"
+            >
+              <span className="text-xs text-ink-3">{label}</span>
+              {system[key] ? (
+                <NoteMarkdown className="text-sm">{system[key]}</NoteMarkdown>
+              ) : (
+                <span className="text-sm text-ink-3">
+                  没写，用本站的默认说法
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </Part>
       {error && (
         <p role="alert" className="text-sm text-danger">
           {error instanceof ActivityRequestError
@@ -261,6 +302,9 @@ function SystemDetail({ id }: { id: string }) {
           ))
         )}
       </Part>
+      <Part title="记录">
+        <PointsRecords scope="admin" systemId={id} unit={unit} />
+      </Part>
       <Part title="最近 7 天没发出的，按原因">
         {data.failures.length === 0 ? (
           <p className="text-sm text-ink-3">没有。</p>
@@ -269,7 +313,7 @@ function SystemDetail({ id }: { id: string }) {
             {data.failures
               .map(
                 (item) =>
-                  `${reasonWords[item.reason] ?? item.reason} ${item.count} 笔`,
+                  `${payoutReasonWords[item.reason] ?? item.reason} ${item.count} 笔`,
               )
               .join(" · ")}
           </p>
@@ -371,7 +415,7 @@ function PayoutRow({
           {payout.outTradeNo} ·{" "}
           {payout.status === "unknown"
             ? "结果不明"
-            : (reasonWords[payout.reason ?? ""] ?? payout.reason)}{" "}
+            : (payoutReasonWords[payout.reason ?? ""] ?? payout.reason)}{" "}
           · {clockLabel(payout.updatedAt)}
         </span>
       </span>

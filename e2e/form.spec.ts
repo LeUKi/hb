@@ -672,7 +672,8 @@ test.describe("发红包", () => {
       "6. 接口测试",
       "7. 红包站怎么处理你的回复",
       "8. 密钥和说明文字",
-      "9. 示例发行方",
+      "9. 发放记录",
+      "10. 示例发行方",
     ])
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText(/说明文档：.*\/help\/points/)).toBeVisible();

@@ -318,7 +318,21 @@ export function HelpPointsView() {
           </p>
         </Panel>
       </PageSection>
-      <PageSection id="example" title="9. 示例发行方">
+      <PageSection id="records" title="9. 发放记录">
+        <Panel className={text}>
+          <p>
+            上线以后，在“我添加的积分”或详情页点“发放记录”，能看到红包站每一次给领取的人发你的积分：数量、领取的人（LINUX
+            DO 用户名和
+            ID）、到账没有、没发出的原因、哪个红包、谁发的、本站单号和你的单号；可以只看已到账、处理中或没发出的。另有今天和近
+            7 天的合计。
+          </p>
+          <p>
+            “调用记录”里是红包站每一次调你的接口：查余额、发放、查单，你回了什么（或者为什么没拿到回复）、HTTP
+            状态和耗时。对账、查问题都从这里开始。
+          </p>
+        </Panel>
+      </PageSection>
+      <PageSection id="example" title="10. 示例发行方">
         <Panel className={text}>
           <p>
             一个最小的实现：三个接口加一个开户、发密钥的演示页，账本放在
