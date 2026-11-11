@@ -54,6 +54,7 @@ import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { SearchBox, useSettled } from "./admin/admin-frame";
+import { MessageView } from "./message-view";
 
 const payoutStatus: Record<
   PayoutRecord["status"],
@@ -61,7 +62,7 @@ const payoutStatus: Record<
 > = {
   pending: { text: "等待发放", tone: "neutral" },
   sending: { text: "发放中", tone: "neutral" },
-  held: { text: "等领取的人开户", tone: "warning" },
+  held: { text: "等领取者开户", tone: "warning" },
   unknown: { text: "结果不明", tone: "danger" },
   confirmed: { text: "已到账", tone: "success" },
   failed: { text: "没发出", tone: "danger" },
@@ -105,6 +106,17 @@ export function PointsRecordsView({
   const admin = useAdminPointsDetail(scope === "admin" ? id : "");
   const query = scope === "admin" ? admin : own;
   const system = query.data?.system;
+  if (query.error instanceof ActivityRequestError && query.error.status === 404)
+    return (
+      <MessageView
+        title="没有找到这种积分"
+        text={
+          scope === "admin"
+            ? "地址不对，或者它已经不在了。"
+            : "地址不对，或者它不是你添加的。"
+        }
+      />
+    );
   return (
     <PageLoad load={queryLoad(query)}>
       {system && (
@@ -127,7 +139,7 @@ export function PointsRecordsView({
             description={
               scope === "admin"
                 ? system.issuerName
-                : "红包站每一次给领取的人发你的积分、每一次调用你的接口，都在这里。"
+                : "红包站每一次给领取者发你的积分、每一次调用你的接口，都在这里。"
             }
           />
           <Records
@@ -310,7 +322,7 @@ function Attention({ scope, systemId, unit }: Props) {
       empty={
         <EmptyNote
           title="没有要处理的发放"
-          text="结果不明的、在等领取的人开户的、近 7 天没发出的会列在这里。"
+          text="结果不明的、在等领取者开户的、近 7 天没发出的会列在这里。"
         />
       }
     >

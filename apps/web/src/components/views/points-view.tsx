@@ -1,14 +1,28 @@
 // 三方积分 (/points, docs/third-party-points-design.md §1): the systems one
 // registered, each with where it stands; a way to register one (PLUS, at
 // most three at a time).
-import { useNavigate } from "@tanstack/react-router";
-import { statusWords, useMyPoints } from "../../lib/points";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
+import {
+  type PointsOwnerView,
+  statusWords,
+  useMyPoints,
+} from "../../lib/points";
 import { useSessionUser } from "../../lib/session";
 import { amountText } from "../../lib/units";
-import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
+import {
+  Callout,
+  EmptyNote,
+  Page,
+  PageHeader,
+  PageSection,
+  Panel,
+} from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { PointsCapsule } from "../ui/points-mark";
+import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 
 export const statusTones: Record<string, ChipTone> = {
@@ -33,13 +47,19 @@ export function PointsView() {
             description="让大家用你网站的积分发红包：领到的直接存进领取者在你网站的账户。"
             actions={
               <>
-                <Button onClick={() => void navigate({ href: "/help/points" })}>
+                <ButtonLink
+                  variant="secondary"
+                  href="/help/points"
+                  onGo={() => void navigate({ href: "/help/points" })}
+                >
                   接口说明
-                </Button>
+                </ButtonLink>
                 <Button
                   variant="primary"
-                  disabled={!data.canAdd}
-                  onClick={() => void navigate({ href: "/points/new" })}
+                  aria-disabled={!data.canAdd || undefined}
+                  onClick={() => {
+                    if (data.canAdd) void navigate({ href: "/points/new" });
+                  }}
                 >
                   添加积分
                 </Button>
@@ -59,81 +79,89 @@ export function PointsView() {
             }
           >
             {data.items.length === 0 ? (
-              <Panel className="p-5 text-sm text-ink-2">
-                还没有。添加以后，这里会显示它的状态、站长的审核意见和接口测试的结果。
-              </Panel>
+              <EmptyNote
+                title="还没有添加积分"
+                text="添加以后，这里会显示它的状态、站长的审核意见和接口测试的结果。"
+                action={
+                  data.canAdd ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => void navigate({ href: "/points/new" })}
+                    >
+                      添加积分
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : (
-              <div className="grid gap-3">
-                {data.items.map((item) => {
-                  const unit = { unit: item.unit, step: item.step };
-                  return (
-                    <Panel key={item.id} className="grid gap-3 p-4">
-                      <div className="grid gap-1 text-sm text-ink-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <b className="text-base text-ink">{item.name}</b>
-                          <StatusChip tone={statusTones[item.status]}>
-                            {statusWords[item.status]}
-                          </StatusChip>
-                          {item.status === "online" &&
-                            item.breakerUntil !== null &&
-                            item.breakerUntil > Date.now() && (
-                              <StatusChip tone="warning">
-                                连不上你的网站，暂停发放中
-                              </StatusChip>
-                            )}
-                        </div>
-                        <span>
-                          {item.host} · 最小单位 {amountText(item.step, unit)}
-                        </span>
-                        <span>
-                          {item.passed ? "接口测试已通过" : "还没通过接口测试"}
-                          {item.status === "paused" && item.pausedBy === "admin"
-                            ? " · 站长暂停了它"
-                            : ""}
-                        </span>
-                        {item.reviewNote && (
-                          <span>站长说：{item.reviewNote}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="xs"
-                          onClick={() =>
-                            void navigate({ href: `/points/${item.id}/edit` })
-                          }
-                        >
-                          设置
-                        </Button>
-                        <Button
-                          size="xs"
-                          onClick={() =>
-                            void navigate({ href: `/points/${item.id}` })
-                          }
-                        >
-                          查看详情
-                        </Button>
-                        {item.onlineAt !== null && (
-                          <Button
-                            size="xs"
-                            onClick={() =>
-                              void navigate({
-                                href: `/points/${item.id}/records`,
-                              })
-                            }
-                          >
-                            发放记录
-                          </Button>
-                        )}
-                      </div>
-                    </Panel>
-                  );
-                })}
-              </div>
+              <Panel className="grid gap-0.5 p-1.5">
+                <ul className="grid gap-0.5">
+                  {data.items.map((item) => (
+                    <MyPointsRow key={item.id} item={item} />
+                  ))}
+                </ul>
+              </Panel>
             )}
           </PageSection>
         </Page>
       )}
     </PageLoad>
+  );
+}
+
+/**
+ * One of mine, as 我的判定器 lists them: the whole row goes to its 设置页
+ * (status, actions, settings, 接口测试), where 详情页 and 发放记录 are too.
+ */
+function MyPointsRow({ item }: { item: PointsOwnerView }) {
+  const unit = { unit: item.unit, step: item.step };
+  const resting =
+    item.status === "online" &&
+    item.breakerUntil !== null &&
+    item.breakerUntil > Date.now();
+  return (
+    <li>
+      <Squircle radius={radius.row}>
+        <Link
+          to="/points/$id/edit"
+          params={{ id: item.id }}
+          className="flex w-full items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
+        >
+          <span className="grid min-w-0 flex-1 gap-0.5 text-sm">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <PointsCapsule name={item.name} small />
+              <span className="truncate text-base font-medium text-ink">
+                {item.issuerName}
+              </span>
+              <StatusChip tone={statusTones[item.status]}>
+                {statusWords[item.status]}
+              </StatusChip>
+              {resting && (
+                <StatusChip tone="warning">
+                  连不上你的网站，暂停发放中
+                </StatusChip>
+              )}
+            </span>
+            <span className="truncate text-ink-2">
+              {item.host} · 最小单位 {amountText(item.step, unit)} ·{" "}
+              {item.passed ? "接口测试已通过" : "还没通过接口测试"}
+              {item.status === "paused" && item.pausedBy === "admin"
+                ? " · 站长暂停了它"
+                : ""}
+            </span>
+            {item.reviewNote && (
+              <span className="truncate text-xs text-ink-3">
+                站长说：{item.reviewNote}
+              </span>
+            )}
+          </span>
+          <ChevronRight
+            className="size-5 shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+        </Link>
+      </Squircle>
+    </li>
   );
 }
 

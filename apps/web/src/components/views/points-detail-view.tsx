@@ -4,7 +4,7 @@
 import { POINTS_EXPLAINER } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, KeyRound } from "lucide-react";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import {
   statusWords,
@@ -17,19 +17,20 @@ import { amountText } from "../../lib/units";
 import { KeyDialog } from "../hongbao-form/points-funding";
 import {
   Callout,
-  Facts,
+  InfoList,
   Page,
   PageHeader,
   PageSection,
   Panel,
 } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
-import { WindowDialog } from "../shell/window-dialog";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { NoteMarkdown } from "../ui/markdown";
 import { PointsCapsule } from "../ui/points-mark";
 import { StatusChip } from "../ui/status-chip";
+import { MessageView } from "./message-view";
 import { statusTones } from "./points-view";
 
 export function PointsDetailView({ id }: { id: string }) {
@@ -41,12 +42,21 @@ export function PointsDetailView({ id }: { id: string }) {
   const data = query.data;
   const system = data?.system;
   const unit = system ? { unit: system.unit, step: system.step } : undefined;
+  if (query.error instanceof ActivityRequestError && query.error.status === 404)
+    return (
+      <MessageView
+        title="没有找到这种积分"
+        text="链接不对，或者它已经不在了。"
+      />
+    );
   return (
     <PageLoad load={queryLoad(query)}>
       {system && unit && (
         <Page>
           <PageHeader
-            eyebrow="三方积分"
+            {...(system.mine
+              ? { back: { label: "三方积分", href: "/points" } }
+              : { eyebrow: "三方积分" })}
             title={
               <span className="inline-flex flex-wrap items-center gap-2">
                 <PointsCapsule name={system.name} />
@@ -71,21 +81,23 @@ export function PointsDetailView({ id }: { id: string }) {
               system.mine ? (
                 <>
                   {system.onlineAt !== null && (
-                    <Button
-                      onClick={() =>
+                    <ButtonLink
+                      variant="secondary"
+                      href={`/points/${id}/records`}
+                      onGo={() =>
                         void navigate({ href: `/points/${id}/records` })
                       }
                     >
                       发放记录
-                    </Button>
+                    </ButtonLink>
                   )}
-                  <Button
-                    onClick={() =>
-                      void navigate({ href: `/points/${id}/edit` })
-                    }
+                  <ButtonLink
+                    variant="secondary"
+                    href={`/points/${id}/edit`}
+                    onGo={() => void navigate({ href: `/points/${id}/edit` })}
                   >
                     设置
-                  </Button>
+                  </ButtonLink>
                 </>
               ) : undefined
             }
@@ -122,31 +134,26 @@ export function PointsDetailView({ id }: { id: string }) {
             </Panel>
           </PageSection>
           <PageSection title="基本信息">
-            <Panel className="p-4">
-              <Facts
-                items={[
-                  {
-                    label: "状态",
-                    value: (
-                      <StatusChip tone={statusTones[system.status]}>
-                        {statusWords[system.status]}
-                      </StatusChip>
-                    ),
-                  },
-                  {
-                    label: "最小单位",
-                    value: amountText(system.step, unit),
-                  },
-                  { label: "添加的人", value: `@${system.ownerUsername}` },
-                  {
-                    label: "上线时间",
-                    value: system.onlineAt
-                      ? clockLabel(system.onlineAt)
-                      : "还没上线",
-                  },
-                ]}
-              />
-            </Panel>
+            <InfoList
+              items={[
+                {
+                  label: "状态",
+                  value: (
+                    <StatusChip tone={statusTones[system.status]}>
+                      {statusWords[system.status]}
+                    </StatusChip>
+                  ),
+                },
+                { label: "最小单位", value: amountText(system.step, unit) },
+                { label: "添加的人", value: `@${system.ownerUsername}` },
+                {
+                  label: "上线时间",
+                  value: system.onlineAt
+                    ? clockLabel(system.onlineAt)
+                    : "还没上线",
+                },
+              ]}
+            />
           </PageSection>
           {user && system.status === "online" && (
             <PageSection
@@ -221,36 +228,24 @@ function RemoveKeyDialog({
   onClose: () => void;
 }) {
   const user = useSessionUser();
-  const titleId = useId();
   const { remove } = usePointsKeyActions(user?.id ?? "", systemId);
   const error = remove.error
     ? remove.error instanceof ActivityRequestError
-      ? remove.error.message
-      : "没有删掉，请稍后再试。"
+      ? `删掉密钥没有完成：${remove.error.message}`
+      : "删掉密钥没有完成，请稍后再试。"
     : null;
   return (
-    <WindowDialog
+    <ConfirmDialog
       open={open}
       onClose={onClose}
-      labelledBy={titleId}
+      onClosed={() => remove.reset()}
       busy={remove.isPending}
-    >
-      <div className="grid gap-3 p-5">
-        <h2 id={titleId} className="text-lg font-semibold text-ink">
-          删掉你在 {host} 的密钥？
-        </h2>
-        <p className="text-sm text-ink-2">
-          用它发的、还开着的红包会立即结束，没发出的不再发。
-        </p>
-        {error && (
-          <p role="alert" className="text-sm text-danger">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button variant="quiet" onClick={onClose}>
-            返回
-          </Button>
+      title={`删掉你在 ${host} 的密钥`}
+      text="用它发的、还开着的红包会立即结束，没发出的不再发。"
+      error={error}
+      actions={
+        <>
+          <Button onClick={onClose}>返回</Button>
           <Button
             variant="danger"
             aria-disabled={remove.isPending || undefined}
@@ -259,10 +254,10 @@ function RemoveKeyDialog({
               remove.mutate(undefined, { onSuccess: onClose });
             }}
           >
-            {remove.isPending ? "正在删掉…" : "删掉"}
+            {remove.isPending ? "正在删掉…" : error ? "再试一次" : "删掉"}
           </Button>
-        </div>
-      </div>
-    </WindowDialog>
+        </>
+      }
+    />
   );
 }

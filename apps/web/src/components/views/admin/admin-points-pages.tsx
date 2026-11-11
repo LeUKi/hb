@@ -5,6 +5,7 @@
 // from (/admin/points?id=). 发放记录 is points-records.tsx, shared with the
 // issuer.
 import type { ReactNode } from "react";
+import { ActivityRequestError } from "../../../lib/activities";
 import {
   type AdminPointsDetail,
   type PointsCopy,
@@ -26,12 +27,13 @@ import { Button } from "../../ui/button";
 import { NoteMarkdown } from "../../ui/markdown";
 import { PointsCapsule } from "../../ui/points-mark";
 import { StatusChip } from "../../ui/status-chip";
+import { MessageView } from "../message-view";
 
 /** The words an issuer writes (§6), in the 设置页's order. */
 const copyFields = [
   ["intro", "介绍"],
   ["keyGuide", "怎么拿到密钥"],
-  ["noRecipient", "领取的人还没开户时"],
+  ["noRecipient", "领取者还没开户时"],
   ["arrival", "到账后"],
   ["notAllowed", "不能发给他时"],
   ["insufficient", "余额不够时"],
@@ -64,6 +66,13 @@ function SystemPage({
 }) {
   const query = useAdminPointsDetail(id);
   const detail = query.data;
+  if (query.error instanceof ActivityRequestError && query.error.status === 404)
+    return (
+      <MessageView
+        title="没有找到这种积分"
+        text="地址不对，或者它已经不在了。"
+      />
+    );
   return (
     <PageLoad load={queryLoad(query)}>
       {detail && (

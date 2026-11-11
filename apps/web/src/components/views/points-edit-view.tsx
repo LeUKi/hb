@@ -15,7 +15,7 @@ import {
   pointsTagHint,
   stepDecimals,
 } from "@hb/contracts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import {
   CircleCheck,
   CircleX,
@@ -39,14 +39,17 @@ import { useSessionUser } from "../../lib/session";
 import { amountText } from "../../lib/units";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
-import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { Field, TextArea, TextInput } from "../ui/field";
 import { NoteMarkdown } from "../ui/markdown";
 import { PointsCapsule } from "../ui/points-mark";
-import { Reveal } from "../ui/reveal";
+import { Reveal, RevealInline } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { MessageView } from "./message-view";
 import { PointsTag, statusTones } from "./points-view";
 
 const empty: PointsSystemConfig = {
@@ -90,11 +93,19 @@ export function PointsEditView({ id }: { id?: string }) {
   const user = useSessionUser();
   const query = useOwnPoints(user?.id ?? "", id ?? "");
   if (!id) return <Editor />;
+  if (query.error instanceof ActivityRequestError && query.error.status === 404)
+    return (
+      <MessageView
+        title="没有找到这种积分"
+        text="地址不对，或者它不是你添加的。"
+      />
+    );
   return (
     <PageLoad load={queryLoad(query)}>
       {query.data && (
+        // Kept mounted across saves: focus stays on 保存, which says 已保存.
         <Editor
-          key={`${query.data.system.id}:${query.data.system.version}`}
+          key={query.data.system.id}
           system={query.data.system}
           tests={query.data.tests}
         />
@@ -118,7 +129,13 @@ function Editor({
   const user = useSessionUser();
   const navigate = useNavigate();
   const actions = usePointsOwnerActions(user?.id ?? "");
-  const saved = system ? configOf(system) : empty;
+  // The last save's answer until the page has read it again.
+  const [lastSaved, setLastSaved] = useState<PointsOwnerView | null>(null);
+  const latest =
+    lastSaved && (!system || lastSaved.version >= system.version)
+      ? lastSaved
+      : system;
+  const saved = latest ? configOf(latest) : empty;
   const [config, setConfig] = useState<PointsSystemConfig>(saved);
   const dirty = !same(config, saved);
   // Created: on to its 配置页 once the guard has let go of this one.
@@ -136,21 +153,25 @@ function Editor({
   const save = system ? actions.update : actions.create;
   const saveError = save.error
     ? save.error instanceof ActivityRequestError
-      ? save.error.message
-      : "没有保存，请稍后再试。"
+      ? `保存没有完成：${save.error.message}`
+      : "保存没有完成，请稍后再试。"
     : null;
   const endpointMoved =
-    system !== undefined &&
-    (config.baseUrl.replace(/\/+$/, "") !== system.baseUrl ||
-      config.step !== system.step);
+    latest !== undefined &&
+    (config.baseUrl.replace(/\/+$/, "") !== latest.baseUrl ||
+      config.step !== latest.step);
   const submit = () => {
     if (save.isPending) return;
-    if (system)
-      actions.update.mutate({
-        id: system.id,
-        version: system.version,
-        config,
-      });
+    if (latest)
+      actions.update.mutate(
+        { id: latest.id, version: latest.version, config },
+        {
+          onSuccess: ({ system: next }) => {
+            setLastSaved(next);
+            setConfig(configOf(next));
+          },
+        },
+      );
     else
       actions.create.mutate(config, {
         onSuccess: ({ system: made }) => setCreated(made.id),
@@ -161,19 +182,39 @@ function Editor({
     <Page>
       <LeaveGuard
         when={dirty && created === null}
-        message="积分的修改还没保存，确定离开吗？"
+        message="积分设置改过的内容还没保存，离开后会丢失。"
       />
       <PageHeader
         back={{ label: "三方积分", href: "/points" }}
         title={system ? `设置「${system.name}」` : "添加积分"}
         description="每一项旁边是它在红包站上的样子，只是预览，不会调用你的接口。说明文字改了马上生效；改接口地址或最小单位要先暂停，再重新测试、审核。"
         actions={
-          <Link
-            to="/help/points"
-            className="text-sm text-accent-ink hover:underline"
-          >
-            接口说明
-          </Link>
+          <>
+            {latest?.onlineAt != null && (
+              <ButtonLink
+                href={`/points/${latest.id}/records`}
+                onGo={() =>
+                  void navigate({ href: `/points/${latest.id}/records` })
+                }
+              >
+                发放记录
+              </ButtonLink>
+            )}
+            {latest && (
+              <ButtonLink
+                href={`/points/${latest.id}`}
+                onGo={() => void navigate({ href: `/points/${latest.id}` })}
+              >
+                详情页
+              </ButtonLink>
+            )}
+            <ButtonLink
+              href="/help/points"
+              onGo={() => void navigate({ href: "/help/points" })}
+            >
+              接口说明
+            </ButtonLink>
+          </>
         }
       />
       {system && <StatusPart system={system} />}
@@ -259,20 +300,22 @@ function Editor({
           <Row
             where="领取按钮下面"
             preview={
-              <div
-                className="grid gap-1 rounded-xl px-3 py-2.5 text-center"
-                style={{
-                  background:
-                    "linear-gradient(var(--color-cover-top), var(--color-cover-bottom))",
-                }}
-              >
-                <span className="text-sm font-semibold text-[var(--color-cream)]">
-                  领取
-                </span>
-                <span className="text-xs text-[var(--color-cream-2)]">
-                  {pointsPrivacyLine(host)}
-                </span>
-              </div>
+              <Squircle radius={radius.row}>
+                <div
+                  className="grid gap-1 px-3 py-2.5 text-center"
+                  style={{
+                    background:
+                      "linear-gradient(var(--color-cover-top), var(--color-cover-bottom))",
+                  }}
+                >
+                  <span className="text-sm font-semibold text-[var(--color-cream)]">
+                    领取
+                  </span>
+                  <span className="text-xs text-[var(--color-cream-2)]">
+                    {pointsPrivacyLine(host)}
+                  </span>
+                </div>
+              </Squircle>
             }
           >
             <Field
@@ -345,7 +388,7 @@ function Editor({
             />
           </Row>
           <Row
-            where="发红包的人选了它、要填密钥时"
+            where="红包作者选了它、要填密钥时"
             preview={<KeyGuidePreview config={config} host={host} />}
           >
             <CopyField
@@ -358,14 +401,14 @@ function Editor({
             />
           </Row>
           <Row
-            where="领取的人还没在你网站开户时，他的结果"
+            where="领取者还没在你网站开户时，他的结果"
             preview={
               <NoRecipientPreview config={config} host={host} amount={amount} />
             }
           >
             <CopyField
               id="pt-none"
-              label="领取的人还没开户时"
+              label="领取者还没开户时"
               max={POINTS_LIMITS.noRecipientMax}
               value={config.noRecipient}
               markdown
@@ -374,7 +417,7 @@ function Editor({
             />
           </Row>
           <Row
-            where="领到以后，领取的人的结果"
+            where="领到以后，领取者的结果"
             preview={<ArrivedPreview config={config} host={host} />}
           >
             <CopyField
@@ -386,7 +429,7 @@ function Editor({
             />
           </Row>
           <Row
-            where="你的接口不让发给他时（回 not_allowed），领取的人的结果"
+            where="你的接口不让发给他时（回 not_allowed），领取者的结果"
             preview={
               <div className="grid justify-items-center gap-1 text-center">
                 <StatusChip tone="danger" dot>
@@ -407,7 +450,7 @@ function Editor({
             />
           </Row>
           <Row
-            where="发红包的人的余额不够、红包提前结束时，他的红包页"
+            where="红包作者的余额不够、红包提前结束时，他的红包页"
             preview={
               <Callout
                 tone="danger"
@@ -428,7 +471,7 @@ function Editor({
             />
           </Row>
           <Row
-            where="发红包的人的密钥失效、红包提前结束时，他的红包页"
+            where="红包作者的密钥失效、红包提前结束时，他的红包页"
             preview={
               <Callout
                 tone="danger"
@@ -461,7 +504,12 @@ function Editor({
             已上线时不能改接口地址或最小单位：先在上面暂停。
           </p>
         </Reveal>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          <RevealInline show={save.isSuccess && !dirty && system !== undefined}>
+            <span role="status" className="text-sm text-ink-3">
+              已保存
+            </span>
+          </RevealInline>
           <Button
             variant="primary"
             aria-disabled={
@@ -576,11 +624,13 @@ function TagPreview({ name, host }: { name: string; host: string }) {
   return (
     <div className="flex flex-wrap items-start gap-3">
       <PointsTag name={name} />
-      <span className="glass-pop max-w-60 rounded-xl px-3 py-2 text-[13px] leading-5 text-ink-2">
-        {pointsTagHint(host)}
-        <br />
-        <span className="font-medium text-ink">查看详情 ›</span>
-      </span>
+      <Squircle radius={radius.row}>
+        <span className="glass-pop max-w-60 px-3 py-2 text-[13px] leading-5 text-ink-2">
+          {pointsTagHint(host)}
+          <br />
+          <span className="font-medium text-ink">查看详情 ›</span>
+        </span>
+      </Squircle>
     </div>
   );
 }
@@ -741,16 +791,32 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
   const user = useSessionUser();
   const actions = usePointsOwnerActions(user?.id ?? "");
   const [retiring, setRetiring] = useState(false);
+  // Which one was pressed: that button says 正在… (the others wait).
+  const [pressed, setPressed] = useState<
+    "submit" | "pause" | "resume" | "retire" | null
+  >(null);
   const act = actions.act;
-  const error = act.error
-    ? act.error instanceof ActivityRequestError
-      ? act.error.message
-      : "没有完成，请稍后再试。"
-    : null;
-  const run = (action: "submit" | "pause" | "resume" | "retire") => {
-    if (act.isPending) return;
+  const busy = act.isPending;
+  const failed = (what: string) =>
+    act.error
+      ? act.error instanceof ActivityRequestError
+        ? `${what}没有完成：${act.error.message}`
+        : `${what}没有完成，请稍后再试。`
+      : null;
+  const words = {
+    submit: "提交审核",
+    pause: "暂停",
+    resume: "恢复",
+    retire: "下架",
+  } as const;
+  const error = pressed && pressed !== "retire" ? failed(words[pressed]) : null;
+  const run = (action: "submit" | "pause" | "resume") => {
+    if (busy) return;
+    setPressed(action);
     act.mutate({ id: system.id, action });
   };
+  const label = (action: "submit" | "pause" | "resume", idle: string) =>
+    busy && pressed === action ? `正在${words[action]}…` : idle;
   return (
     <Panel className="grid gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
@@ -795,85 +861,70 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
             <Button
               size="sm"
               variant="primary"
-              aria-disabled={!system.passed || act.isPending || undefined}
+              aria-disabled={!system.passed || busy || undefined}
               onClick={() => system.passed && run("submit")}
             >
-              提交审核
+              {label("submit", "提交审核")}
             </Button>
           )}
           {system.status === "online" && (
-            <Button size="sm" onClick={() => run("pause")}>
-              暂停
+            <Button
+              size="sm"
+              aria-disabled={busy || undefined}
+              onClick={() => run("pause")}
+            >
+              {label("pause", "暂停")}
             </Button>
           )}
           {system.status === "paused" && system.pausedBy !== "admin" && (
-            <Button size="sm" onClick={() => run("resume")}>
-              恢复
+            <Button
+              size="sm"
+              aria-disabled={busy || undefined}
+              onClick={() => run("resume")}
+            >
+              {label("resume", "恢复")}
             </Button>
           )}
-          <Button size="sm" variant="quiet" onClick={() => setRetiring(true)}>
+          <Button
+            size="sm"
+            variant="quiet"
+            onClick={() => {
+              act.reset();
+              setPressed("retire");
+              setRetiring(true);
+            }}
+          >
             下架
           </Button>
         </div>
       )}
-      <RetireDialog
+      <ConfirmDialog
         open={retiring}
-        name={system.name}
-        busy={act.isPending}
         onClose={() => setRetiring(false)}
-        onConfirm={() =>
-          act.mutate(
-            { id: system.id, action: "retire" },
-            { onSuccess: () => setRetiring(false) },
-          )
+        busy={busy}
+        title={`下架「${system.name}」`}
+        text="下架以后不能再用它发红包，还开着的红包立即结束，没发出的不再发。下架不能撤回。"
+        error={pressed === "retire" ? failed("下架") : null}
+        actions={
+          <>
+            <Button onClick={() => setRetiring(false)}>返回</Button>
+            <Button
+              variant="danger"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                act.mutate(
+                  { id: system.id, action: "retire" },
+                  { onSuccess: () => setRetiring(false) },
+                );
+              }}
+            >
+              {busy ? "正在下架…" : act.error ? "再试一次" : "下架"}
+            </Button>
+          </>
         }
       />
     </Panel>
-  );
-}
-
-function RetireDialog({
-  open,
-  name,
-  busy,
-  onClose,
-  onConfirm,
-}: {
-  open: boolean;
-  name: string;
-  busy: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const titleId = useId();
-  return (
-    <WindowDialog
-      open={open}
-      onClose={onClose}
-      labelledBy={titleId}
-      busy={busy}
-    >
-      <div className="grid gap-3 p-5">
-        <h2 id={titleId} className="text-lg font-semibold text-ink">
-          下架「{name}」？
-        </h2>
-        <p className="text-sm text-ink-2">
-          下架以后不能再用它发红包，还开着的红包立即结束，没发出的不再发。下架不能撤回。
-        </p>
-        <div className="flex justify-end gap-2">
-          <Button variant="quiet" onClick={onClose}>
-            返回
-          </Button>
-          <Button
-            variant="danger"
-            aria-disabled={busy || undefined}
-            onClick={() => !busy && onConfirm()}
-          >
-            {busy ? "正在下架…" : "下架"}
-          </Button>
-        </div>
-      </div>
-    </WindowDialog>
   );
 }
 
@@ -1002,38 +1053,51 @@ function SelfTest({
 
 function StepRow({ step }: { step: SelfTestStep }) {
   const [open, setOpen] = useState(!step.ok);
+  const detail = useId();
+  const more = Boolean(step.sent || step.got);
   return (
-    <li className="grid gap-1 rounded-xl bg-fill-2 px-3 py-2 text-sm">
-      <button
-        type="button"
-        className="flex items-start gap-2 text-left"
-        onClick={() => setOpen((value) => !value)}
-      >
-        {step.ok ? (
-          <CircleCheck
-            className="mt-0.5 size-4 shrink-0 text-success"
-            aria-hidden="true"
-          />
-        ) : (
-          <CircleX
-            className="mt-0.5 size-4 shrink-0 text-danger"
-            aria-hidden="true"
-          />
-        )}
-        <span className="min-w-0 flex-1 text-ink">
-          {step.n}. {step.title}
-        </span>
-        <span className="shrink-0 text-xs text-ink-3 tabular-nums">
-          {step.ms} ms
-        </span>
-      </button>
-      {open && (step.sent || step.got) && (
-        <div className="grid gap-1 pl-6 font-mono text-xs break-all text-ink-2">
-          {step.sent && <p>发出：{step.sent}</p>}
-          {step.got && <p>收到：{step.got}</p>}
-          {step.note && <p className="font-sans text-warning">{step.note}</p>}
+    <li>
+      <Squircle radius={radius.row}>
+        <div className="grid gap-1 bg-fill-2 px-3 py-2 text-sm">
+          <button
+            type="button"
+            className="flex items-start gap-2 text-left"
+            aria-expanded={more ? open : undefined}
+            aria-controls={more ? detail : undefined}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {step.ok ? (
+              <CircleCheck
+                className="mt-0.5 size-4 shrink-0 text-success"
+                aria-hidden="true"
+              />
+            ) : (
+              <CircleX
+                className="mt-0.5 size-4 shrink-0 text-danger"
+                aria-hidden="true"
+              />
+            )}
+            <span className="min-w-0 flex-1 text-ink">
+              {step.n}. {step.title}
+            </span>
+            <span className="shrink-0 text-xs text-ink-3 tabular-nums">
+              {step.ms} ms
+            </span>
+          </button>
+          {open && more && (
+            <div
+              id={detail}
+              className="grid gap-1 pl-6 font-mono text-xs break-all text-ink-2"
+            >
+              {step.sent && <p>发出：{step.sent}</p>}
+              {step.got && <p>收到：{step.got}</p>}
+              {step.note && (
+                <p className="font-sans text-warning">{step.note}</p>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </Squircle>
     </li>
   );
 }

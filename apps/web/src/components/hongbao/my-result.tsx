@@ -7,7 +7,14 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, Lock, UserRoundX, X } from "lucide-react";
 import { motion } from "motion/react";
-import { type Ref, useContext, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { useResendPayment } from "../../lib/claims";
 import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
@@ -20,6 +27,7 @@ import { useIdentity } from "../../lib/session";
 import { amountText } from "../../lib/units";
 import { useBefore } from "../../lib/use-before";
 import { Callout } from "../page/page";
+import { Bone } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Avatar } from "../ui/avatar";
@@ -29,6 +37,7 @@ import { FishMark } from "../ui/fish";
 import { NoteMarkdown } from "../ui/markdown";
 import { MorphLabel } from "../ui/morph-label";
 import { PersonName } from "../ui/person";
+import { Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { useNow } from "./clock";
@@ -350,9 +359,13 @@ function NoPointsAccount({
         这笔 {amountText(amount, unit)}{" "}
         暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
       </p>
-      {words ? (
-        <NoteMarkdown className="mt-2 text-sm">{words}</NoteMarkdown>
-      ) : null}
+      {/* The issuer's words are read on their own: a bar while they are,
+          then they open in (none written: nothing). */}
+      <IssuerWords pending={detail.isPending} className="mt-2">
+        {words ? (
+          <NoteMarkdown className="text-sm">{words}</NoteMarkdown>
+        ) : null}
+      </IssuerWords>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <ResendButton
           account={`已经在 ${points.host} 开好账户`}
@@ -395,11 +408,22 @@ function PointsPaymentNote({
             : ""}
           。
         </p>
-        {detail.data?.system.arrival ? (
-          <p>{detail.data.system.arrival}</p>
-        ) : null}
+        <IssuerWords pending={detail.isPending}>
+          {detail.data?.system.arrival ? (
+            <p>{detail.data.system.arrival}</p>
+          ) : null}
+        </IssuerWords>
       </div>
     );
+  // 不允许 says the issuer's own sentence: a bar until it is read, never
+  // the default first and then another.
+  if (
+    payment.status === "failed" &&
+    payment.reason === "not_allowed" &&
+    !resending &&
+    detail.isPending
+  )
+    return <IssuerWords pending>{null}</IssuerWords>;
   const text = resending
     ? "正在重新发送，稍等十几秒。"
     : payment.status === "failed"
@@ -410,6 +434,33 @@ function PointsPaymentNote({
           ? `${points.host} 刚才没有回复，稍后会再试。`
           : `正在发到你在 ${points.host} 的账户。`;
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
+}
+
+/**
+ * Words an issuer wrote, read apart from the 红包: a sheen bar in their
+ * place while they are read, then they open in (redesign-ui-feedback: no
+ * text that arrives late or swaps).
+ */
+function IssuerWords({
+  pending,
+  className,
+  children,
+}: {
+  pending: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (pending)
+    return (
+      <div className={className} aria-hidden="true">
+        <Bone className="h-3.5 w-3/4" />
+      </div>
+    );
+  return (
+    <Reveal show={children !== null} className={className}>
+      {children}
+    </Reveal>
+  );
 }
 
 /** 报名 that is waiting or being drawn: the ticket's times and one rule. */
@@ -669,7 +720,9 @@ export function MyResult({
       ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
           1 🐟 it goes to Credit all at once, balance-design §5). */
       amount && activity.fish ? null : amount && payment && activity.points ? (
-        payment.status === "attention" &&
+        // Still no account: the one 重新发送 while it lasts, then (also once
+        // it ended 未发出) why it was not paid.
+        (payment.status === "attention" || payment.status === "failed") &&
         payment.reason === "recipient" &&
         mine.claimId ? (
           <NoPointsAccount

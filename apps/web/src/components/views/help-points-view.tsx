@@ -62,16 +62,16 @@ const selfTest = [
 
 /** What this site does with each answer (§5). */
 const handling = [
-  ["ok", "已发放，领取的人看到你写的到账说明"],
+  ["ok", "已发放，领取者看到你写的到账说明"],
   [
     "insufficient、key_invalid",
-    "这一份未发出，红包立刻结束，发红包的人看到你写的提醒；这个红包后面的发放不再调用你",
+    "这一份未发出，红包立刻结束，红包作者看到你写的提醒；这个红包后面的发放不再调用你",
   ],
   [
     "no_recipient",
-    "领取的人看到你写的说明和 5 分钟倒计时，开好户可以重新发送一次；过时算未发出",
+    "领取者看到你写的说明和 5 分钟倒计时，开好户可以重新发送一次；过时算未发出",
   ],
-  ["not_allowed", "这一份未发出，领取的人看到你写的一句话"],
+  ["not_allowed", "这一份未发出，领取者看到你写的一句话"],
   ["bad_request、conflict", "这一份未发出，记进站长后台的异常：你的实现有问题"],
   [
     "没拿到回复",
@@ -86,7 +86,7 @@ const aiPrompt = (
 说明文档：${origin}/help/points （网页要用浏览器打开，直接抓取读不到内容；下面是要点）
 
 1. 我提供一个接口地址（https，比如 https://我的网站/hb），三个接口都在它下面：POST /balance、/transfer、/query。请求和回复都是 JSON（UTF-8）。
-2. 请求头：Authorization: Bearer <密钥>、Content-Type: application/json、Hb-Points-Protocol: 1。密钥是我网站发给用户的，一个用户一把（或几把），能随时收回；红包站用发红包的人自己的密钥，从他的账户扣。
+2. 请求头：Authorization: Bearer <密钥>、Content-Type: application/json、Hb-Points-Protocol: 1。密钥是我网站发给用户的，一个用户一把（或几把），能随时收回；红包站用红包作者自己的密钥，从他的账户扣。
 3. 红包站只看回复 JSON 里的 result，不看 HTTP 状态码。${seconds} 秒内回复，不超过 ${kb} KB，不跳转（3xx）。
 4. 人一律按 LINUX DO 数字 ID 认，用户名只用来显示。我网站的用户要绑定 LINUX DO 数字 ID。
 5. 数量一律是“整数分”的字符串（"10000" 是 100 积分）。我的积分最小单位是多少（比如整数积分就是 100 分），红包站发的每一笔都是它的整数倍；不是整数倍的回 bad_request。
@@ -109,8 +109,9 @@ export function HelpPointsView() {
   return (
     <Page>
       <PageHeader
+        back={{ label: "帮助", href: "/help" }}
         title="三方积分 · 接入说明"
-        description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。发红包的人从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
+        description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。红包作者从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
       />
       <PageSection
         id="ai"
@@ -133,7 +134,7 @@ export function HelpPointsView() {
               在
               <Link
                 to="/points"
-                className="mx-1 text-accent-ink hover:underline"
+                className="mx-1 text-accent-ink underline underline-offset-2"
               >
                 三方积分
               </Link>
@@ -212,7 +213,7 @@ export function HelpPointsView() {
       <PageSection
         id="balance"
         title="3. 查余额"
-        description="这把密钥的账户和可用。发红包的人填密钥、开放红包、限时开奖开奖前都会查。"
+        description="这把密钥的账户和可用。红包作者填密钥、开放红包、限时开奖开奖前都会查。"
       >
         <Block
           label="POST {接口地址}/balance，请求体 {}"
@@ -222,7 +223,7 @@ export function HelpPointsView() {
         <Panel className={text}>
           <p>
             <Code>account.id</Code> 是这把密钥的账户的 LINUX DO 数字
-            ID；发红包的人填密钥时看到“将从 @用户名 的账户扣”。密钥不对回{" "}
+            ID；红包作者填密钥时看到“将从 @用户名 的账户扣”。密钥不对回{" "}
             <Code>{`{ "result": "key_invalid" }`}</Code>。
           </p>
         </Panel>
@@ -230,7 +231,7 @@ export function HelpPointsView() {
       <PageSection
         id="transfer"
         title="4. 发放"
-        description="有人领到时，红包站用发红包的人的密钥调一次，从他的账户转给领取的人。"
+        description="有人领到时，红包站用红包作者的密钥调一次，从他的账户转给领取者。"
       >
         <Block label="POST {接口地址}/transfer" code={transferAsk} wrap />
         <Block label="转好了" code={transferAnswer} wrap />
@@ -299,7 +300,7 @@ export function HelpPointsView() {
             ），多出来的发放等一两秒再发。
           </p>
           <p>
-            开放红包时查一次余额：要够这个红包的总额，加上同一把密钥下其他开放中红包还没发出的部分。领取时直接从发红包的人的账户扣，没有预扣，也没有要退的。
+            开放红包时查一次余额：要够这个红包的总额，加上同一把密钥下其他开放中红包还没发出的部分。领取时直接从红包作者的账户扣，没有预扣，也没有要退的。
           </p>
         </Panel>
       </PageSection>
@@ -314,7 +315,7 @@ export function HelpPointsView() {
           <p>
             这些说明文字由你写，在设置页每一项旁边能看到它在红包站上的样子：介绍、怎么拿到密钥（支持
             Markdown
-            和链接，不显示图片）、领取的人还没开户时（告诉他怎么开户）、到账后、不能发给他时，以及余额不够、密钥失效时给发红包的人的说明。改过的说明文字站长能看到改动记录。
+            和链接，不显示图片）、领取者还没开户时（告诉他怎么开户）、到账后、不能发给他时，以及余额不够、密钥失效时给红包作者的说明。改过的说明文字站长能看到改动记录。
           </p>
         </Panel>
       </PageSection>
@@ -322,12 +323,11 @@ export function HelpPointsView() {
         <Panel className={text}>
           <p>
             上线以后，在“我添加的积分”或详情页点“发放记录”。最上面是今天和近 7
-            天的合计，下面分三页：“要处理的”是结果不明的、在等领取的人开户的、近
-            7
+            天的合计，下面分三页：“要处理的”是结果不明的、在等领取者开户的、近 7
             天没发出的；“按红包”列出用你的积分发的红包，每个写着到账、处理中、没发出各几笔，点进去才是这个红包的每一笔；“调用记录”默认只列出错的调用：你回了什么，或者为什么没拿到回复。
           </p>
           <p>
-            要找某一笔，在搜索框里输入领取的人的用户名或 LINUX DO
+            要找某一笔，在搜索框里输入领取者的用户名或 LINUX DO
             ID，或者本站单号、你的单号。对账、查问题都从这里开始。
           </p>
         </Panel>
@@ -344,7 +344,7 @@ export function HelpPointsView() {
               href={EXAMPLE_URL}
               target="_blank"
               rel="noreferrer"
-              className="text-accent-ink hover:underline"
+              className="text-accent-ink underline underline-offset-2"
             >
               examples/points-issuer ↗
             </a>

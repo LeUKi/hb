@@ -6,6 +6,7 @@ import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { Check, ChevronRight, KeyRound, X } from "lucide-react";
 import { useId, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import {
   type PointsSystemView,
@@ -36,10 +37,12 @@ export function useOnlineSystems(enabled = true) {
 
 /** The unit a form's amounts are in: its 三方积分's, or LDC. */
 export function useFormUnit(form: FormState): AmountUnit {
-  const { items } = useOnlineSystems(form.funding === "points");
+  const { items, loaded } = useOnlineSystems(form.funding === "points");
   if (form.funding !== "points") return LDC_UNIT;
   const system = items.find((item) => item.id === form.pointsSystemId);
-  return system ? { unit: system.unit, step: system.step } : LDC_UNIT;
+  if (system) return { unit: system.unit, step: system.step };
+  // Still reading which 三方积分: no unit yet rather than LDC for a moment.
+  return loaded ? LDC_UNIT : { unit: "…", step: LDC_UNIT.step };
 }
 
 /** The form's 三方积分 as a judge sees it (试一试, check()), or none. */
@@ -70,7 +73,7 @@ export function PointsChoice({
   form: FormState;
   onPick: (id: string) => void;
 }) {
-  const { items } = useOnlineSystems();
+  const { items, loaded } = useOnlineSystems();
   const [open, setOpen] = useState(false);
   const chosen = form.funding === "points";
   const system = chosen
@@ -92,18 +95,27 @@ export function PointsChoice({
               三方积分
               {system && <PointsCapsule name={system.name} small />}
             </span>
-            <span className="text-xs text-ink-3">
+            <span
+              className={cn(
+                "text-xs text-ink-3",
+                chosen && !system && !loaded && "loading-sheen",
+              )}
+            >
               {system
                 ? `从你在 ${system.host} 的账户发，领到的进领取者在那边的账户`
                 : chosen
-                  ? "选的积分现在不能用了，换一个"
+                  ? loaded
+                    ? "选的积分现在不能用了，换一个"
+                    : "正在读选的积分"
                   : "用别的网站的积分发：点这里选是哪一种"}
             </span>
           </span>
           {chosen ? (
-            <span className="shrink-0 rounded-full bg-fill-2 px-3 py-1 text-xs font-medium text-ink">
-              更换
-            </span>
+            <Squircle radius={radius.chip}>
+              <span className="shrink-0 bg-fill-2 px-3 py-1 text-xs font-medium text-ink">
+                更换
+              </span>
+            </Squircle>
           ) : (
             <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-accent-ink">
               选择
@@ -200,7 +212,7 @@ function PickDialog({
           ))
         )}
         <p className="px-1 text-xs text-ink-3">
-          领到的积分进领取的人在那个网站的账户；发出的从你在那边的账户扣，要先填你在那边的密钥。
+          领到的积分进领取者在那个网站的账户；发出的从你在那边的账户扣，要先填你在那边的密钥。
         </p>
       </div>
     </WindowDialog>
@@ -224,7 +236,7 @@ function KeyLine({ system }: { system: PointsSystemView }) {
           : data?.kind === "unreachable"
             ? `暂时连不上 ${system.host}，查不到余额`
             : balance.isError
-              ? "查不到余额，请稍后再试"
+              ? "余额读取失败，请稍后再试"
               : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-sm">
@@ -271,8 +283,8 @@ export function KeyDialog({
   const unit = { unit: system.unit, step: system.step };
   const error = save.error
     ? save.error instanceof ActivityRequestError
-      ? save.error.message
-      : "没有保存，请稍后再试。"
+      ? `保存没有完成：${save.error.message}`
+      : "保存没有完成，请稍后再试。"
     : null;
   return (
     <WindowDialog
@@ -343,15 +355,15 @@ export function KeyDialog({
           </p>
         </Reveal>
         <div className="flex justify-end gap-2">
-          <Button variant="quiet" onClick={onClose} type="button">
-            取消
+          <Button onClick={onClose} type="button">
+            返回
           </Button>
           <Button
             variant="primary"
             type="submit"
             aria-disabled={save.isPending || !key.trim() || undefined}
           >
-            保存
+            {save.isPending ? "正在核对…" : "保存"}
           </Button>
         </div>
       </form>
