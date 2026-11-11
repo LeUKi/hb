@@ -120,12 +120,8 @@ export const pointsKeys = {
     ["points", userId, "balance", id] as const,
   admin: ["points", "admin"] as const,
   adminOne: (id: string) => ["points", "admin", id] as const,
-  records: (
-    scope: RecordsScope,
-    id: string,
-    kind: "payouts" | "calls",
-    filter: PayoutFilter,
-  ) => ["points", "records", scope, id, kind, filter] as const,
+  records: (scope: RecordsScope, id: string) =>
+    ["points", "records", scope, id] as const,
 };
 
 async function get<T>(path: string, signal?: AbortSignal) {
@@ -470,11 +466,20 @@ export type PayoutRecord = {
   doneAt: number | null;
 };
 
-type Totals = Record<
-  "confirmed" | "waiting" | "failed",
-  { count: number; amountMinor: number }
->;
+type Sum = { count: number; amountMinor: number };
+type Totals = Record<"confirmed" | "waiting" | "failed", Sum>;
 export type PayoutTotals = { today: Totals; week: Totals };
+
+/** One 红包 of a system, with its payouts summed (§7 按红包). */
+export type HongbaoRecord = {
+  id: string;
+  title: string;
+  authorUsername: string;
+  openedAt: number;
+  endedAt: number | null;
+  deleted: boolean;
+  claimedCount: number;
+} & Totals;
 
 /** One call to the issuer in 调用记录 (§7). */
 export type CallRecord = {
@@ -488,25 +493,32 @@ export type CallRecord = {
   outTradeNo: string | null;
 };
 
-const recordsPath = (scope: RecordsScope, id: string) =>
-  `${scope === "admin" ? "admin" : "me"}/points/${encodeURIComponent(id)}/records`;
+const recordsPath = (scope: RecordsScope, id: string, query: string) =>
+  `${scope === "admin" ? "admin" : "me"}/points/${encodeURIComponent(id)}/records?${query}`;
+const after = (cursor: string | null) =>
+  cursor ? `&before=${encodeURIComponent(cursor)}` : "";
 
-/** 发放记录, 50 at a time; the first page carries the totals. */
-export function usePayoutRecords(
-  scope: RecordsScope,
-  id: string,
-  filter: PayoutFilter,
-) {
+/** The top of 发放记录: today's and 7 days' sums, and 要处理的. */
+export function useRecordsOverview(scope: RecordsScope, id: string) {
+  return useQuery({
+    queryKey: [...pointsKeys.records(scope, id), "overview"],
+    queryFn: ({ signal }) =>
+      get<{ totals: PayoutTotals; attention: PayoutRecord[] }>(
+        recordsPath(scope, id, "kind=overview"),
+        signal,
+      ),
+    enabled: id !== "",
+  });
+}
+
+/** The system's 红包, the latest opened first, 20 at a time. */
+export function useHongbaoRecords(scope: RecordsScope, id: string) {
   return useInfiniteQuery({
-    queryKey: pointsKeys.records(scope, id, "payouts", filter),
+    queryKey: [...pointsKeys.records(scope, id), "hongbao"],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
-      get<{
-        items: PayoutRecord[];
-        next: string | null;
-        totals: PayoutTotals | null;
-      }>(
-        `${recordsPath(scope, id)}?filter=${filter}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
+      get<{ items: HongbaoRecord[]; next: string | null }>(
+        recordsPath(scope, id, `kind=hongbao${after(pageParam)}`),
         signal,
       ),
     getNextPageParam: (last) => last.next,
@@ -514,14 +526,60 @@ export function usePayoutRecords(
   });
 }
 
-/** 调用记录, 50 at a time. */
-export function useCallRecords(scope: RecordsScope, id: string) {
+/** One 红包's payouts, 50 at a time. */
+export function useHongbaoPayouts(
+  scope: RecordsScope,
+  id: string,
+  hongbaoId: string,
+  filter: PayoutFilter,
+) {
   return useInfiniteQuery({
-    queryKey: pointsKeys.records(scope, id, "calls", "all"),
+    queryKey: [...pointsKeys.records(scope, id), "payouts", hongbaoId, filter],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      get<{ items: PayoutRecord[]; next: string | null }>(
+        recordsPath(
+          scope,
+          id,
+          `kind=payouts&hongbao=${encodeURIComponent(hongbaoId)}&filter=${filter}${after(pageParam)}`,
+        ),
+        signal,
+      ),
+    getNextPageParam: (last) => last.next,
+    enabled: id !== "" && hongbaoId !== "",
+  });
+}
+
+/** 搜一笔: by order number, LINUX DO ID or name. */
+export function useSearchPayouts(scope: RecordsScope, id: string, q: string) {
+  return useQuery({
+    queryKey: [...pointsKeys.records(scope, id), "search", q],
+    queryFn: ({ signal }) =>
+      get<{ items: PayoutRecord[] }>(
+        recordsPath(scope, id, `kind=search&q=${encodeURIComponent(q)}`),
+        signal,
+      ),
+    enabled: id !== "" && q !== "",
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** 调用记录, 50 at a time: only the failures (7 days), or every one. */
+export function useCallRecords(
+  scope: RecordsScope,
+  id: string,
+  problems: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: [...pointsKeys.records(scope, id), "calls", problems],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       get<{ items: CallRecord[]; next: string | null }>(
-        `${recordsPath(scope, id)}?kind=calls${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
+        recordsPath(
+          scope,
+          id,
+          `kind=calls${problems ? "&problems=1" : ""}${after(pageParam)}`,
+        ),
         signal,
       ),
     getNextPageParam: (last) => last.next,

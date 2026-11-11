@@ -28,11 +28,14 @@ import {
 } from "./admin";
 import { availableNow, keyView, readKey, removeKey, saveKey } from "./keys";
 import {
+  attentionPayouts,
   listCallRecords,
-  listPayoutRecords,
+  listHongbaoPayouts,
+  listHongbaoRecords,
   POINTS_PAYOUT_FILTERS,
   type PointsPayoutFilter,
   payoutTotals,
+  searchPayouts,
 } from "./records";
 import { listSelfTests, runSelfTest } from "./self-test";
 import {
@@ -93,19 +96,51 @@ const filterOf = (value: string | undefined): PointsPayoutFilter =>
     ? (value as PointsPayoutFilter)
     : "all";
 
-/** 发放记录 and 调用记录 (§7): the same for the 站长 and the issuer. */
+/**
+ * 发放记录 and 调用记录 (§7), the same for the 站长 and the issuer: the
+ * overview (totals, 要处理的), the 红包 a page at a time, one 红包's
+ * payouts, a search, or the calls.
+ */
 async function records(
   env: ApiContext["Bindings"],
   systemId: string,
-  query: { kind?: string; filter?: string; before?: string },
+  query: {
+    kind?: string;
+    filter?: string;
+    before?: string;
+    hongbao?: string;
+    q?: string;
+    problems?: string;
+  },
 ) {
-  if (query.kind === "calls")
-    return listCallRecords(env, systemId, query.before);
-  const [page, totals] = await Promise.all([
-    listPayoutRecords(env, systemId, filterOf(query.filter), query.before),
-    query.before ? null : payoutTotals(env, systemId),
-  ]);
-  return { ...page, totals };
+  switch (query.kind) {
+    case "calls":
+      return listCallRecords(
+        env,
+        systemId,
+        query.before,
+        query.problems === "1",
+      );
+    case "hongbao":
+      return listHongbaoRecords(env, systemId, query.before);
+    case "payouts":
+      return listHongbaoPayouts(
+        env,
+        systemId,
+        query.hongbao ?? "",
+        filterOf(query.filter),
+        query.before,
+      );
+    case "search":
+      return { items: await searchPayouts(env, systemId, query.q ?? "") };
+    default: {
+      const [totals, attention] = await Promise.all([
+        payoutTotals(env, systemId),
+        attentionPayouts(env, systemId),
+      ]);
+      return { totals, attention };
+    }
+  }
 }
 
 export const pointsRoutes = new Hono<ApiContext>()

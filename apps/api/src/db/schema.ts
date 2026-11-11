@@ -286,6 +286,17 @@ export const activities = sqliteTable(
       .where(
         sql`${table.deletedAt} IS NULL AND ${table.archivedAt} IS NULL AND ${table.openedAt} IS NOT NULL`,
       ),
+    // 三方积分's 发放记录 by 红包 (third-party-points §7): one system's
+    // opened 红包, newest first.
+    index("activities_points_opened_idx")
+      .on(
+        table.pointsSystemId,
+        sql`${table.openedAt} DESC`,
+        sql`${table.id} DESC`,
+      )
+      .where(
+        sql`${table.pointsSystemId} IS NOT NULL AND ${table.openedAt} IS NOT NULL`,
+      ),
     // 即将开放 on the 红包广场: drafts with a time, nearest first.
     index("activities_scheduled_idx")
       .on(table.scheduledOpenAt, table.id)
@@ -3127,13 +3138,27 @@ export const pointsPayments = sqliteTable(
     index("points_payments_due_idx")
       .on(table.nextRunAt)
       .where(sql`${table.nextRunAt} IS NOT NULL`),
-    index("points_payments_activity_idx").on(table.activityId, table.status),
+    // One 红包's payouts by status, the latest change first (§7 records).
+    index("points_payments_activity_idx").on(
+      table.activityId,
+      table.status,
+      table.updatedAt,
+    ),
     index("points_payments_system_idx").on(
       table.systemId,
       table.status,
       table.updatedAt,
     ),
     index("points_payments_author_idx").on(table.authorId, table.createdAt),
+    // 发放记录's search (§7): a recipient's payouts, and the issuer's number.
+    index("points_payments_recipient_idx").on(
+      table.systemId,
+      table.recipientExternalId,
+      table.updatedAt,
+    ),
+    index("points_payments_trade_no_idx")
+      .on(table.tradeNo)
+      .where(sql`${table.tradeNo} IS NOT NULL`),
     check(
       "points_payments_valid",
       sql`${table.amountMinor} > 0

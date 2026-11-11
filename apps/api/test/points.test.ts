@@ -22,9 +22,13 @@ import {
   sweepPointsPayments,
 } from "../src/points/payments";
 import {
+  attentionPayouts,
   listCallRecords,
+  listHongbaoPayouts,
+  listHongbaoRecords,
   listPayoutRecords,
   payoutTotals,
+  searchPayouts,
 } from "../src/points/records";
 import { runSelfTest } from "../src/points/self-test";
 import {
@@ -582,16 +586,19 @@ describe("三方积分红包", () => {
     expect((await payout(claimed.claim.id))?.status).toBe("failed");
   });
 
-  it("lists every payout and call, a page at a time, ties included (§7)", async () => {
+  it("keeps records by 红包: sums, 要处理的, one 红包 a page at a time, search, failed calls (§7)", async () => {
     await online();
     const hongbao = await opened({
       mode: "fixed",
       totalAmount: "50",
       count: 5,
     });
+    const other = await opened({ mode: "fixed", totalAmount: "10", count: 1 });
     const paid: string[] = [];
+    const people: Actor[] = [];
     for (let i = 0; i < 4; i += 1) {
       const person = await actor();
+      people.push(person);
       issuer.open(person.externalId, person.username, 0);
       const claimed = await claim(hongbao.id, person);
       expect(await run(claimed.claim.payment?.id ?? "")).toBe("confirmed");
@@ -607,12 +614,14 @@ describe("三方积分红包", () => {
       .bind(Date.now() - 1000, paid[0], paid[1], paid[2])
       .run();
 
+    // One 红包's payouts, two at a time: none skipped or repeated.
     const seen: string[] = [];
     let before: string | undefined;
     for (let page = 0; page < 5; page += 1) {
-      const result = await listPayoutRecords(
+      const result = await listHongbaoPayouts(
         bindings,
         systemId,
+        hongbao.id,
         "all",
         before,
         2,
@@ -624,20 +633,10 @@ describe("三方积分红包", () => {
     expect(new Set(seen).size).toBe(5);
     expect(seen.length).toBe(5);
     expect(seen[0]).toBe(held.claim.payment?.id);
-
-    const first = await listPayoutRecords(bindings, systemId, "all", undefined);
-    expect(first.items[0]).toMatchObject({
-      title: "星星红包",
-      authorUsername: sender.username,
-      recipientUsername: stranger.username,
-      recipientId: stranger.externalId,
-      amountMinor: 1000,
-      status: "held",
-      reason: "no_recipient",
-    });
-    const confirmed = await listPayoutRecords(
+    const confirmed = await listHongbaoPayouts(
       bindings,
       systemId,
+      hongbao.id,
       "confirmed",
       undefined,
     );
@@ -645,16 +644,70 @@ describe("三方积分红包", () => {
       Array(4).fill("confirmed"),
     );
     expect(confirmed.items.every((item) => item.tradeNo)).toBe(true);
-    const waiting = await listPayoutRecords(
+    // Not this system's 红包: as if there were none.
+    await expect(
+      listHongbaoPayouts(bindings, "another", hongbao.id, "all", undefined),
+    ).rejects.toThrow("没有这个红包");
+
+    // The system's 红包, newest first, each with its sums.
+    const list = await listHongbaoRecords(bindings, systemId, undefined, 1);
+    expect(list.items.map((item) => item.id)).toEqual([other.id]);
+    const rest = await listHongbaoRecords(bindings, systemId, list.next ?? "");
+    expect(rest.items[0]).toMatchObject({
+      id: hongbao.id,
+      title: "星星红包",
+      authorUsername: sender.username,
+      claimedCount: 5,
+      confirmed: { count: 4, amountMinor: 4000 },
+      waiting: { count: 1, amountMinor: 1000 },
+      failed: { count: 0, amountMinor: 0 },
+    });
+
+    // 要处理的: the one waiting for an account.
+    const attention = await attentionPayouts(bindings, systemId);
+    expect(attention.map((item) => item.id)).toEqual([held.claim.payment?.id]);
+    expect(attention[0]).toMatchObject({
+      recipientUsername: stranger.username,
+      recipientId: stranger.externalId,
+      status: "held",
+      reason: "no_recipient",
+    });
+
+    // 搜一笔: by name (any case, with @), ID, or either order number.
+    const person = people[1] as Actor;
+    const byName = await searchPayouts(
       bindings,
       systemId,
-      "waiting",
+      `@${person.username.toUpperCase()}`,
+    );
+    expect(byName.map((item) => item.id)).toEqual([paid[1]]);
+    expect(
+      (await searchPayouts(bindings, systemId, person.externalId)).map(
+        (item) => item.id,
+      ),
+    ).toEqual([paid[1]]);
+    const found = byName[0];
+    expect(
+      (await searchPayouts(bindings, systemId, found?.outTradeNo ?? "")).map(
+        (item) => item.id,
+      ),
+    ).toEqual([paid[1]]);
+    expect(
+      (await searchPayouts(bindings, systemId, found?.tradeNo ?? "")).map(
+        (item) => item.id,
+      ),
+    ).toEqual([paid[1]]);
+    expect(await searchPayouts(bindings, "another", person.externalId)).toEqual(
+      [],
+    );
+
+    const all = await listPayoutRecords(
+      bindings,
+      { systemId },
+      "all",
       undefined,
     );
-    expect(waiting.items.map((item) => item.id)).toEqual([
-      held.claim.payment?.id,
-    ]);
-
+    expect(all.items).toHaveLength(5);
     const totals = await payoutTotals(bindings, systemId);
     expect(totals.week.confirmed).toEqual({ count: 4, amountMinor: 4000 });
     expect(totals.week.waiting).toEqual({ count: 1, amountMinor: 1000 });
@@ -667,6 +720,16 @@ describe("三方积分红包", () => {
       result: "no_recipient",
     });
     expect(calls.items.some((call) => call.outTradeNo)).toBe(true);
+    const failedCalls = await listCallRecords(
+      bindings,
+      systemId,
+      undefined,
+      true,
+    );
+    expect(failedCalls.items.every((call) => call.result !== "ok")).toBe(true);
+    expect(failedCalls.items.map((call) => call.result)).toContain(
+      "no_recipient",
+    );
   });
 });
 
