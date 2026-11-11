@@ -86,6 +86,8 @@ type ActivityImageRow = {
   amount_minor: number | null;
   inventory_amount_minor: number | null;
   payment_status: string | null;
+  /** 三方积分: its payout's status (points_payments). */
+  points_status: string | null;
   registration_id: string | null;
 };
 
@@ -402,11 +404,12 @@ async function readViewerState(
   if (activity.authorId === userId) return { kind: "public" };
   const row = await env.DB.prepare(
     `SELECT c.id AS claim_id,c.claimed_at,p.amount_minor,i.amount_minor AS inventory_amount_minor,p.status AS payment_status,
-      r.id AS registration_id
+      pp.status AS points_status,r.id AS registration_id
      FROM activities a
      LEFT JOIN claims c ON c.activity_id=a.id AND c.user_id=?
      LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'
      LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
+     LEFT JOIN points_payments pp ON pp.claim_id=c.id
      LEFT JOIN activity_registrations r ON r.activity_id=a.id AND r.user_id=?
      WHERE a.id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL`,
   )
@@ -426,7 +429,10 @@ async function readViewerState(
           kind: "claimed",
           amount: formatAmount(amountMinor),
           claimedAt: new Date(row.claimed_at).toISOString(),
-          paymentStatus: paymentStatus(row.payment_status) ?? "pending",
+          paymentStatus:
+            (row.points_status === null
+              ? paymentStatus(row.payment_status)
+              : pointsStatus(row.points_status)) ?? "pending",
         };
   }
   if (row?.registration_id) {
@@ -447,6 +453,13 @@ async function readViewerState(
     kind: "eligible",
     action: activity.drawState ? "register" : "claim",
   };
+}
+
+/** A 三方积分 payout as the image says it (as pointsPaymentView). */
+function pointsStatus(value: string) {
+  return value === "held" || value === "unknown"
+    ? ("attention" as const)
+    : paymentStatus(value);
 }
 
 function paymentStatus(value: string | null) {

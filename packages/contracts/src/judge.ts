@@ -547,6 +547,18 @@ const triedHongbaoSchema = z.strictObject({
   total: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   count: z.number().int().min(1).max(1000).optional(),
   minEach: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  /**
+   * A 三方积分红包 (docs/third-party-points-design.md §10): the code counts
+   * its 最小单位 (step, in 分), as on a real claim.
+   */
+  points: z
+    .strictObject({
+      name: z.string().min(1).max(20),
+      unit: z.string().min(1).max(20),
+      step: z.number().int().positive().max(10_000_000_000),
+      host: z.string().min(1).max(200),
+    })
+    .optional(),
 });
 
 /** check(params, hongbao) on a version (docs/judge-square-design.md §3). */

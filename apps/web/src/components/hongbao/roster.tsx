@@ -177,8 +177,9 @@ function Row({
                 )}
                 {detail?.judge?.asked && detail.judge.note && (
                   <span className="shrink-0">
-                    判定器给 {detail.judge.asked}，{pulledIn[detail.judge.note]}{" "}
-                    {row.amount}
+                    判定器给 {shownAmount(detail.judge.asked, unit).text}，
+                    {pulledIn[detail.judge.note]}{" "}
+                    {row.amount ? shownAmount(row.amount, unit).text : ""}
                   </span>
                 )}
                 {detail?.self ? (

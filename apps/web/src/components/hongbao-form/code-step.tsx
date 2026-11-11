@@ -5,6 +5,7 @@ import {
   type JudgeDeclarations,
   type JudgeNetworkEntry,
   type JudgeParam,
+  type JudgeTryInput,
   type MyJudge,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -847,7 +848,7 @@ export function CodeStep({
   /** A param's problem: its declaration's rules, then the code's check(). */
   paramErrorOf: (key: string) => string | undefined;
   /** The 红包 试一试 judges on, as filled in so far, in 分. */
-  tried: { title: string; total: number };
+  tried: JudgeTryInput["hongbao"];
   /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
   borrow: BorrowJudge;
   /**
@@ -1209,6 +1210,7 @@ export function CodeStep({
                 hongbao={tried}
                 prompt={form.judge.prompt}
                 disabled={frozen}
+                unit={formUnit}
               />
             )}
           </Reveal>

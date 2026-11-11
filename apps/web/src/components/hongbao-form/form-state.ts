@@ -673,14 +673,6 @@ export function timingLine(form: FormState) {
   return `开放后 ${value} ${unitLabels[form.timing.unit]}${draw ? "内开奖" : "截止"}`;
 }
 
-/** One line for lists: "固定均分 · 1.00 LDC / 份", "限时开奖 · 5.00 LDC 奖池". */
-export function rewardSummaryOf(form: FormState) {
-  const { total, unit } = plan(form);
-  if (form.mode === "fixed")
-    return `固定均分 · ${unit !== null ? ldc(unit) : "—"} LDC / 份`;
-  return `${modeLabels[form.mode]} · ${total !== null ? ldc(total) : "—"} LDC 奖池`;
-}
-
 // ── Production ────────────────────────────────────────────────────────
 
 const unitSeconds: Record<TimeUnit, number> = {

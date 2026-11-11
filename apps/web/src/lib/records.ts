@@ -73,6 +73,9 @@ export function sentRecordOf(
     id: summary.id,
     title: summary.title,
     rewardType: "ldc",
+    // Its money's unit (LDC, 🐟额, a 三方积分) on every line it shows.
+    ...(summary.funding ? { funding: summary.funding } : {}),
+    ...(summary.points ? { points: summary.points } : {}),
     status: summary.status,
     author,
     forceDedicated: summary.forceDedicated,

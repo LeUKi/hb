@@ -1,14 +1,22 @@
-import type {
-  AttemptStatisticsRow,
-  JudgeNote,
-  JudgeRecordFilter,
-  JudgeRecordPeopleRow,
-  JudgeRecordPeopleSort,
-  JudgeRecordRow,
-  ManagedActivity,
+import {
+  type AmountUnit,
+  type AttemptStatisticsRow,
+  type JudgeNote,
+  type JudgeRecordFilter,
+  type JudgeRecordPeopleRow,
+  type JudgeRecordPeopleSort,
+  type JudgeRecordRow,
+  LDC_UNIT,
+  type ManagedActivity,
 } from "@hb/contracts";
 import { X } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useId,
+  useState,
+} from "react";
 import { activityPath } from "../../lib/activity-route";
 import { useStatisticsPages } from "../../lib/discovery";
 import {
@@ -19,6 +27,7 @@ import {
   useJudgeTimeline,
 } from "../../lib/judge";
 import { agoLabel, clockSeconds, fullTime } from "../../lib/roster-time";
+import { amountText, shownAmount, unitOf } from "../../lib/units";
 import {
   type LazyList,
   LazyListEnd,
@@ -65,6 +74,9 @@ const pulledIn: Record<JudgeNote, string> = {
 };
 
 /** Whose, and its time: a face and name to open their whole record. */
+/** The 红包's unit (LDC, or its 三方积分's) for every amount below. */
+const UnitContext = createContext<AmountUnit>(LDC_UNIT);
+
 function Who({
   user,
   side,
@@ -109,6 +121,7 @@ function RecordRow({
   row: JudgeRecordRow;
   onOpen?: (person: JudgeRecordRow["user"]) => void;
 }) {
+  const unit = useContext(UnitContext);
   const at = Date.parse(row.at);
   const level = row.user.level === null ? "" : ` · 等级 ${row.user.level}`;
   return (
@@ -134,18 +147,18 @@ function RecordRow({
             {row.moved ? (
               row.claimed ? (
                 <StatusChip tone="success">
-                  {moveLabel(row.moved, row.amount)}
+                  {moveLabel(row.moved, row.amount, false, unit)}
                 </StatusChip>
               ) : (
                 <span className="text-ink-2 tabular-nums">
-                  {moveLabel(row.moved, row.amount)}
+                  {moveLabel(row.moved, row.amount, false, unit)}
                 </span>
               )
             ) : row.claimed ? (
               <StatusChip tone="success">
                 {row.asked && row.note
-                  ? `判定器给 ${row.asked}，${pulledIn[row.note]} ${row.amount}`
-                  : `领到 ${row.amount}`}
+                  ? `判定器给 ${shownAmount(row.asked, unit).text}，${pulledIn[row.note]} ${amountText(row.amount ?? "", unit)}`
+                  : `领到 ${amountText(row.amount ?? "", unit)}`}
               </StatusChip>
             ) : (
               <span className="text-ink-3">没领到</span>
@@ -268,6 +281,7 @@ function PeopleList({
   list: LazyList;
   onOpen: (person: JudgeRecordPeopleRow["user"]) => void;
 }) {
+  const unit = useContext(UnitContext);
   return (
     <Panel className="grid gap-0.5 p-1.5">
       <ul className="grid" aria-busy={list.state === "loading" || undefined}>
@@ -290,13 +304,19 @@ function PeopleList({
                 提交 {row.judged} 次
                 {/* Protocol 5: 待结算 until settled (multi-prize §4.2). */}
                 {row.pending !== undefined ? (
-                  <span className="tabular-nums">待结算 {row.pending}</span>
+                  <span className="tabular-nums">
+                    待结算 {amountText(row.pending, unit)}
+                  </span>
                 ) : row.settled && row.amount ? (
-                  <StatusChip tone="success">已结算 {row.amount}</StatusChip>
+                  <StatusChip tone="success">
+                    已结算 {amountText(row.amount, unit)}
+                  </StatusChip>
                 ) : row.settled ? (
                   <span className="text-ink-3">已结算，没有领到</span>
                 ) : row.amount ? (
-                  <StatusChip tone="success">领到 {row.amount}</StatusChip>
+                  <StatusChip tone="success">
+                    领到 {amountText(row.amount, unit)}
+                  </StatusChip>
                 ) : (
                   <span className="text-ink-3">没领到</span>
                 )}
@@ -378,6 +398,7 @@ export function JudgeRecordsView({
   }) => ReactNode;
 }) {
   const id = activity.id;
+  const unit = unitOf(activity);
   const [tab, setTab] = useSearchChoice<Tab>("tab", "timeline", tabs);
   const [filter, setFilter] = useSearchChoice<JudgeRecordFilter>(
     "filter",
@@ -425,129 +446,136 @@ export function JudgeRecordsView({
   const rows = timeline.data?.pages.flatMap((page) => page.items) ?? [];
   const peopleRows = people.data?.pages.flatMap((page) => page.items) ?? [];
   return (
-    <PageLoad load={queryLoad(facts)}>
-      {facts.data && (
-        <Page>
-          <PageHeader
-            refreshable
-            back={{ label: activity.title, href: activityPath(activity.id) }}
-            title="判定记录"
-            description="每一次提交和判定器的判定，只有你看得到。"
-          />
-          <Panel className="p-5">
-            <Facts
-              items={[
-                { label: "提交", value: `${facts.data.judged} 次` },
-                { label: "提交的人", value: `${facts.data.people} 人` },
-                {
-                  label: "领到的人",
-                  value: `${facts.data.claimedPeople} 人`,
-                  note: `发出 ${facts.data.paid} LDC`,
-                },
-                // Protocol 5: everyone's pending together (§4.2).
-                ...(facts.data.pending !== undefined
-                  ? [{ label: "待结算", value: `${facts.data.pending} LDC` }]
-                  : []),
-                { label: "出错", value: `${facts.data.failed} 次` },
-              ]}
+    <UnitContext.Provider value={unit}>
+      <PageLoad load={queryLoad(facts)}>
+        {facts.data && (
+          <Page>
+            <PageHeader
+              refreshable
+              back={{ label: activity.title, href: activityPath(activity.id) }}
+              title="判定记录"
+              description="每一次提交和判定器的判定，只有你看得到。"
             />
-          </Panel>
-          <div className="flex flex-col gap-3">
-            <Segmented
-              label="判定记录分类"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: "timeline", label: "时间线" },
-                { value: "people", label: "按人" },
-                { value: "content", label: "按内容" },
-              ]}
-            />
-            <Reveal show={tab === "timeline"}>
-              <Segmented
-                size="sm"
-                label="结果筛选"
-                value={filter}
-                onChange={setFilter}
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "claimed", label: "领到的" },
-                  { value: "unclaimed", label: "没领到" },
-                  { value: "failed", label: "出错" },
+            <Panel className="p-5">
+              <Facts
+                items={[
+                  { label: "提交", value: `${facts.data.judged} 次` },
+                  { label: "提交的人", value: `${facts.data.people} 人` },
+                  {
+                    label: "领到的人",
+                    value: `${facts.data.claimedPeople} 人`,
+                    note: `发出 ${amountText(facts.data.paid, unit)}`,
+                  },
+                  // Protocol 5: everyone's pending together (§4.2).
+                  ...(facts.data.pending !== undefined
+                    ? [
+                        {
+                          label: "待结算",
+                          value: amountText(facts.data.pending, unit),
+                        },
+                      ]
+                    : []),
+                  { label: "出错", value: `${facts.data.failed} 次` },
                 ]}
               />
-            </Reveal>
-            <Reveal show={tab === "people"}>
+            </Panel>
+            <div className="flex flex-col gap-3">
               <Segmented
-                size="sm"
-                label="排序"
-                value={sort}
-                onChange={setSort}
+                label="判定记录分类"
+                value={tab}
+                onChange={setTab}
                 options={[
-                  { value: "recent", label: "最近" },
-                  { value: "most", label: "提交多的" },
-                  { value: "claimed", label: "领到的在前" },
+                  { value: "timeline", label: "时间线" },
+                  { value: "people", label: "按人" },
+                  { value: "content", label: "按内容" },
                 ]}
               />
-            </Reveal>
-          </div>
-          {tab === "timeline" ? (
-            <div className="grid gap-3">
-              <Reveal show={fresh > 0}>
-                <Button
-                  variant="quiet"
+              <Reveal show={tab === "timeline"}>
+                <Segmented
                   size="sm"
-                  className="w-fit"
-                  onClick={() => {
-                    void timeline.refetch();
-                  }}
-                >
-                  有 {fresh} 次新的提交
-                </Button>
+                  label="结果筛选"
+                  value={filter}
+                  onChange={setFilter}
+                  options={[
+                    { value: "all", label: "全部" },
+                    { value: "claimed", label: "领到的" },
+                    { value: "unclaimed", label: "没领到" },
+                    { value: "failed", label: "出错" },
+                  ]}
+                />
               </Reveal>
-              <ResultLoad id={`timeline-${filter}`} load={resultOf(timeline)}>
-                {rows.length === 0 ? (
-                  <EmptyNote
-                    title={
-                      filter === "all" ? "还没有人提交" : "没有符合条件的记录"
-                    }
-                  />
+              <Reveal show={tab === "people"}>
+                <Segmented
+                  size="sm"
+                  label="排序"
+                  value={sort}
+                  onChange={setSort}
+                  options={[
+                    { value: "recent", label: "最近" },
+                    { value: "most", label: "提交多的" },
+                    { value: "claimed", label: "领到的在前" },
+                  ]}
+                />
+              </Reveal>
+            </div>
+            {tab === "timeline" ? (
+              <div className="grid gap-3">
+                <Reveal show={fresh > 0}>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    className="w-fit"
+                    onClick={() => {
+                      void timeline.refetch();
+                    }}
+                  >
+                    有 {fresh} 次新的提交
+                  </Button>
+                </Reveal>
+                <ResultLoad id={`timeline-${filter}`} load={resultOf(timeline)}>
+                  {rows.length === 0 ? (
+                    <EmptyNote
+                      title={
+                        filter === "all" ? "还没有人提交" : "没有符合条件的记录"
+                      }
+                    />
+                  ) : (
+                    <RecordList
+                      rows={rows}
+                      list={timelineList}
+                      onOpen={(user) => setPerson(user)}
+                    />
+                  )}
+                </ResultLoad>
+              </div>
+            ) : tab === "people" ? (
+              <ResultLoad id={`people-${sort}`} load={resultOf(people)}>
+                {peopleRows.length === 0 ? (
+                  <EmptyNote title="还没有人提交" />
                 ) : (
-                  <RecordList
-                    rows={rows}
-                    list={timelineList}
+                  <PeopleList
+                    rows={peopleRows}
+                    list={peopleList}
                     onOpen={(user) => setPerson(user)}
                   />
                 )}
               </ResultLoad>
-            </div>
-          ) : tab === "people" ? (
-            <ResultLoad id={`people-${sort}`} load={resultOf(people)}>
-              {peopleRows.length === 0 ? (
-                <EmptyNote title="还没有人提交" />
-              ) : (
-                <PeopleList
-                  rows={peopleRows}
-                  list={peopleList}
-                  onOpen={(user) => setPerson(user)}
-                />
-              )}
-            </ResultLoad>
-          ) : (
-            <ContentList
+            ) : (
+              <ContentList
+                userId={userId}
+                activityId={id}
+                attemptList={attemptList}
+              />
+            )}
+            <PersonDialog
               userId={userId}
               activityId={id}
-              attemptList={attemptList}
+              person={person}
+              onClose={() => setPerson(null)}
             />
-          )}
-          <PersonDialog
-            userId={userId}
-            activityId={id}
-            person={person}
-            onClose={() => setPerson(null)}
-          />
-        </Page>
-      )}
-    </PageLoad>
+          </Page>
+        )}
+      </PageLoad>
+    </UnitContext.Provider>
   );
 }

@@ -1,6 +1,8 @@
 import type { PaymentState, PublicActivity } from ".";
+import { formatDisplayAmount } from "./amount";
 import { encodeActivityEmoji } from "./ecoji-v2";
 import { forumHref } from "./forum-emoji";
+import { amountToMinor } from "./payments";
 import { squirclePath } from "./squircle-path";
 
 // The forum image of a 红包 (内嵌图, docs/redesign/05 §6), served at
@@ -105,6 +107,8 @@ export type ActivityImageInput = {
         /** 你已领取 / 你中奖了 */
         label: string;
         amount: string;
+        /** "LDC", or a 三方积分's own unit ("星星"). */
+        unit: string;
         /** The small 🐟 after LDC: it is in 🐟额 (balance-design §14). */
         fish?: true;
         status: { text: string; tone: ActivityImageTone };
@@ -222,6 +226,25 @@ function soldOut(activity: PublicActivity) {
 
 const fuzzyWords = { plenty: "充足", limited: "有限", low: "少量" } as const;
 
+/**
+ * A 三方积分红包's amount in its own unit and 最小单位 ("300 星星",
+ * "1.2万"); LDC and 🐟 as the API wrote them ("12.50").
+ */
+function amountIn(activity: PublicActivity, amount: string) {
+  if (activity.funding !== "points" || !activity.points)
+    return { amount, unit: "LDC" };
+  let minor: number;
+  try {
+    minor = amountToMinor(amount.trim());
+  } catch {
+    return { amount, unit: activity.points.unit };
+  }
+  return {
+    amount: formatDisplayAmount(minor, activity.points.step).text,
+    unit: activity.points.unit,
+  };
+}
+
 /** The one public line: what is left, as the quantity setting allows. */
 function remainingLine(activity: PublicActivity) {
   const { draw, quantity } = activity;
@@ -230,8 +253,11 @@ function remainingLine(activity: PublicActivity) {
       ? `已报名 ${draw.registeredCount} 人`
       : "限时开奖";
   if (quantity.mode === "exact") return `剩余 ${quantity.remaining} 份`;
-  if (quantity.mode === "pool")
-    return `奖池还剩 ${quantity.left} ${activity.funding === "balance" ? "🐟" : "LDC"}`;
+  if (quantity.mode === "pool") {
+    if (activity.funding === "balance") return `奖池还剩 ${quantity.left} 🐟`;
+    const left = amountIn(activity, quantity.left);
+    return `奖池还剩 ${left.amount} ${left.unit}`;
+  }
   if (quantity.mode === "fuzzy")
     return quantity.level === "empty"
       ? "已领完"
@@ -321,7 +347,7 @@ export function activityImageInput(input: {
         body: {
           kind: "opened",
           label: isDraw ? "你中奖了" : "你已领取",
-          amount: viewer.amount,
+          ...amountIn(activity, viewer.amount),
           ...(viewer.fish ? { fish: true as const } : {}),
           status: viewer.fish
             ? { text: "已存入🐟额", tone: "success" }
@@ -673,7 +699,7 @@ function sealMarkup(
 function describe(input: ActivityImageInput) {
   const as = `数据截至 ${clock(input.renderedAt, input.timeZone)}`;
   if (input.body.kind === "opened")
-    return `${input.body.label} ${input.body.amount} LDC${input.body.fish ? "（在🐟额）" : ""}，${input.body.status.text}；${as}`;
+    return `${input.body.label} ${input.body.amount} ${input.body.unit}${input.body.fish ? "（在🐟额）" : ""}，${input.body.status.text}；${as}`;
   return `${input.body.text}；${as}`;
 }
 
@@ -747,11 +773,11 @@ export function renderActivityImage(input: ActivityImageInput) {
   if (input.body.kind === "line") {
     below = `<text x="210" y="448" class="line">${escapeXml(input.body.text)}</text>`;
   } else {
-    const { label, amount, status, at, fish } = input.body;
+    const { label, amount, unit, status, at, fish } = input.body;
     const tone = toneColors[status.tone];
     const pillWidth = textWidth(status.text, 13) + 24;
     below = `<text x="210" y="318" class="label rise r1 motion">${escapeXml(label)}</text>
-  <text x="210" y="380" class="amount rise r2 motion"><tspan>+${escapeXml(amount)}</tspan><tspan class="unit" dx="6">LDC</tspan>${fish ? `<tspan class="fish" dx="3">🐟</tspan>` : ""}</text>
+  <text x="210" y="380" class="amount rise r2 motion"><tspan>+${escapeXml(amount)}</tspan><tspan class="unit" dx="6">${escapeXml(unit)}</tspan>${fish ? `<tspan class="fish" dx="3">🐟</tspan>` : ""}</text>
   <g class="rise r3 motion">
     <path d="${squirclePath(210 - pillWidth / 2, 400, pillWidth, 26, 9)}" fill="${tone.fill}"/>
     <text x="210" y="417.5" class="pill" fill="${tone.text}">${escapeXml(status.text)}</text>

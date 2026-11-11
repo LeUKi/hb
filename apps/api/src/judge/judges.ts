@@ -34,6 +34,12 @@ import {
 } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
+import {
+  hongbaoForJudge,
+  type JudgeUnit,
+  readingFromJudge,
+  submissionForJudge,
+} from "../points/judge";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
 import { checkParamsInJudge, JUDGE_PROTOCOL, runJudge } from "./sandbox";
@@ -654,10 +660,14 @@ export async function checkMyParams(
   await env.DB.batch(
     tryStatements(env, userId, "check", run.row.fingerprint, now),
   );
+  const unit = triedUnit(input.hongbao);
   const outcome = await checkParamsInJudge(
     env,
     { code: await run.code(), fingerprint: run.row.fingerprint, fresh: 0 },
-    { params: run.read.values, hongbao: triedHongbao(input.hongbao) },
+    {
+      params: run.read.values,
+      hongbao: hongbaoForJudge(triedHongbao(input.hongbao), unit),
+    },
   );
   if ("failure" in outcome) return { failure: outcome.detail };
   const answer = readCheckAnswer(outcome.answer, run.declarations.params);
@@ -683,6 +693,7 @@ export async function tryMyJudge(
       "JUDGE_PARAMS_INVALID",
       run.read.problems[0]?.message ?? "参数没填好",
     );
+  const unit = triedUnit(input.hongbao);
   await holdTries(env, userId);
   const now = Date.now();
   await env.DB.batch(
@@ -709,12 +720,14 @@ export async function tryMyJudge(
     now,
     user,
   });
+  // A 三方积分's in its 最小单位, as on a real claim (judge/batch.ts).
+  const judged = submissionForJudge(submission, unit);
   const outcome = await runJudge(
     env,
     {
       code: await run.code(),
       fingerprint: run.row.fingerprint,
-      submission,
+      submission: judged,
       seeds: {
         submission: submissionSeed("try", secret, user.id, 0),
         user: userSeed("try", secret, user.id),
@@ -727,11 +740,9 @@ export async function tryMyJudge(
     return outcome.failure === "timeout"
       ? { failure: "timeout", detail: outcome.detail }
       : { failure: "error", detail: outcome.detail };
-  const reading = readVerdict(
-    outcome.verdict,
-    submission.share,
-    JUDGE_PROTOCOL,
-  );
+  const answered = readVerdict(outcome.verdict, judged.share, JUDGE_PROTOCOL);
+  const reading =
+    "add" in answered ? readingFromJudge(answered, unit) : answered;
   if ("error" in reading)
     return { failure: "error", detail: reading.error.detail };
   // Protocol 5: nobody else has played here, so others name no one.
@@ -752,7 +763,7 @@ export async function tryMyJudge(
   return reading.ok
     ? {
         ok: true,
-        amount: reading.paid,
+        amount: reading.paid * unit.step,
         ...(reading.message ? { message: reading.message } : {}),
       }
     : { ok: false, ...(reading.message ? { message: reading.message } : {}) };
@@ -768,6 +779,19 @@ function triedHongbao(hongbao: JudgeTryInput["hongbao"]) {
     total: hongbao.total,
     count: defaultCount(hongbao.total),
     minEach: 1,
+  };
+}
+
+/** The tried 红包's unit: LDC, or its 三方积分's 最小单位 (points/judge.ts). */
+function triedUnit(hongbao: JudgeTryInput["hongbao"]): JudgeUnit {
+  const points = hongbao.points;
+  if (!points) return { unit: "LDC", step: 1, points: null };
+  if (hongbao.total % points.step !== 0)
+    throw new ActivityError(400, "JUDGE_TRY_STEP", "奖池要是最小单位的整数倍");
+  return {
+    unit: points.unit,
+    step: points.step,
+    points: { name: points.name, unit: points.unit, host: points.host },
   };
 }
 

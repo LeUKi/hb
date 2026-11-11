@@ -266,7 +266,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         ctx.addIssue({
           code: "custom",
           path: ["totalAmount"],
-          message: "总金额必须能精确均分，每份至少 0.01 LDC",
+          message: "总金额必须能精确均分，每份至少 0.01",
         });
     }),
   z
@@ -303,7 +303,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         ctx.addIssue({
           code: "custom",
           path: ["totalAmount"],
-          message: "总金额不足，每份至少需要 0.01 LDC",
+          message: "总金额不足，每份至少需要 0.01",
         });
     }),
   z
@@ -332,7 +332,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         ctx.addIssue({
           code: "custom",
           path: ["totalAmount"],
-          message: "总奖池不足，每个获奖名额至少需要 0.01 LDC",
+          message: "总奖池不足，每个获奖名额至少需要 0.01",
         });
     }),
   /**

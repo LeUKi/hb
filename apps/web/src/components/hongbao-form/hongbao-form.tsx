@@ -53,7 +53,7 @@ import {
   withMode,
 } from "./form-state";
 import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
-import { useFormUnit } from "./points-funding";
+import { useFormPoints, useFormUnit } from "./points-funding";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -283,7 +283,8 @@ export function HongbaoForm({
     key: string;
     problems: JudgeParamProblem[];
   } | null>(null);
-  const tried = triedHongbao(form, declarations?.hongbao);
+  const formPoints = useFormPoints(form);
+  const tried = triedHongbao(form, declarations?.hongbao, formPoints);
   const checkKey = JSON.stringify([form.judge.params, tried]);
   const judgeIssues = judgeIssuesOf(
     form,

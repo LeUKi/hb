@@ -1,8 +1,14 @@
-import type { JudgeTry } from "@hb/contracts";
+import {
+  type AmountUnit,
+  type JudgeTry,
+  type JudgeTryInput,
+  LDC_UNIT,
+} from "@hb/contracts";
 import { ChevronRight } from "lucide-react";
 import { useId, useState } from "react";
 import { refused } from "../../lib/activities";
 import { useJudgeTry } from "../../lib/judge";
+import { amountText, shownAmount } from "../../lib/units";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
@@ -12,22 +18,21 @@ import { radius, Squircle } from "../ui/squircle";
 // params as filled, by a made-up claimant (level 2, a first submission), on
 // the 红包 as it is filled in: no money, no record. Folded until asked for.
 
-/** 30 → "0.30". */
-const ldc = (minor: number) =>
-  `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, "0")}`;
-
 /**
  * What it would do for the one trying, as the 红包 page says it (docs/
  * multi-prize-design.md §4.1): “+0.50 · 待结算 0.50 LDC”, settled or not.
  */
-function verdictLine(outcome: Exclude<JudgeTry, { failure: string }>) {
+function verdictLine(
+  outcome: Exclude<JudgeTry, { failure: string }>,
+  unit: AmountUnit,
+) {
   if (!("judged" in outcome))
-    return outcome.ok ? `会发 ${ldc(outcome.amount)} LDC` : "不发";
+    return outcome.ok ? `会发 ${amountText(outcome.amount, unit)}` : "不发";
   if (outcome.added === 0) return outcome.settled ? "结算，没有领到" : "没加钱";
-  return `+${ldc(outcome.added)} · ${outcome.settled ? "结算" : "待结算"} ${ldc(outcome.added)} LDC`;
+  return `+${shownAmount(outcome.added, unit).text} · ${outcome.settled ? "结算" : "待结算"} ${amountText(outcome.added, unit)}`;
 }
 
-function Outcome({ outcome }: { outcome: JudgeTry }) {
+function Outcome({ outcome, unit }: { outcome: JudgeTry; unit: AmountUnit }) {
   if ("failure" in outcome)
     return (
       <p className="text-sm text-danger">
@@ -38,7 +43,7 @@ function Outcome({ outcome }: { outcome: JudgeTry }) {
     );
   return (
     <div className="grid gap-0.5 text-sm">
-      <p className="font-medium text-ink">{verdictLine(outcome)}</p>
+      <p className="font-medium text-ink">{verdictLine(outcome, unit)}</p>
       {outcome.message && <p className="text-ink-2">回复：{outcome.message}</p>}
     </div>
   );
@@ -51,14 +56,17 @@ export function TryJudge({
   hongbao,
   prompt,
   disabled,
+  unit = LDC_UNIT,
 }: {
   judgeId: string;
   n: number;
   params: Record<string, unknown>;
   /** The 红包 as filled in (its judge's defaults where empty), in 分. */
-  hongbao: { title: string; total: number };
+  hongbao: JudgeTryInput["hongbao"];
   prompt: string;
   disabled: boolean;
+  /** The 红包's unit: LDC, or its 三方积分's. */
+  unit?: AmountUnit;
 }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -140,7 +148,7 @@ export function TryJudge({
             <Reveal show={Boolean(outcome)}>
               {outcome && (
                 <Swap id={String(outcome.n)}>
-                  <Outcome outcome={outcome.try} />
+                  <Outcome unit={unit} outcome={outcome.try} />
                 </Swap>
               )}
             </Reveal>

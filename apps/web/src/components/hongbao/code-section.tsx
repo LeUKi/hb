@@ -89,7 +89,8 @@ function valueText(
  * (docs/third-party-points-design.md §10).
  */
 function moneyText(value: number, unit: AmountUnit) {
-  return unit.step === 1
+  // A 三方积分 with 最小单位 0.01 counts like LDC, in its own unit.
+  return unit.unit === LDC_UNIT.unit && unit.step === LDC_UNIT.step
     ? `${ldc(value)} LDC`
     : amountText(value * unit.step, unit);
 }

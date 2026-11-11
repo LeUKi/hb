@@ -13,6 +13,7 @@ import { cn } from "../../../lib/cn";
 import { type SentRecord, sentRecordOf } from "../../../lib/records";
 import { clockLabel } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
+import { amountText } from "../../../lib/units";
 import type { AdminSearch } from "../../../router";
 import { statusOf } from "../../hongbao/hongbao-card";
 import { useOmniboxController } from "../../omnibox/use-omnibox-controller";
@@ -74,7 +75,7 @@ function takenLine({ record, ...item }: Row) {
   const { activity, view } = record;
   if (activity.mode === "timed_draw") return `报名 ${item.registeredCount} 人`;
   if (view.quantity.kind === "pool")
-    return `${item.claimedCount} 人领到 · 奖池还剩 ${view.quantity.left}${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
+    return `${item.claimedCount} 人领到 · 奖池还剩 ${amountText(view.quantity.left, activity.unit)}${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
   return `参与 ${item.claimedCount} / ${item.totalCount}`;
 }
 
@@ -322,10 +323,16 @@ function Detail({ row }: { row: Row }) {
                 label: "报名",
                 value: `${row.registeredCount} 人 · 抽 ${activity.shares} 人${limit ? ` · 上限 ${limit} 人` : ""}`,
               }
-            : {
-                label: "份数",
-                value: `已领 ${row.claimedCount} / ${row.totalCount} 份，剩 ${Math.max(0, row.totalCount - row.claimedCount)} 份`,
-              },
+            : view.quantity.kind === "pool"
+              ? // Protocol 5 has no shares: totalCount is the pool in 分.
+                {
+                  label: "奖池",
+                  value: `${row.claimedCount} 人领到，还剩 ${amountText(view.quantity.left, activity.unit)}`,
+                }
+              : {
+                  label: "份数",
+                  value: `已领 ${row.claimedCount} / ${row.totalCount} 份，剩 ${Math.max(0, row.totalCount - row.claimedCount)} 份`,
+                },
           {
             label: "状态",
             value: activity.draft

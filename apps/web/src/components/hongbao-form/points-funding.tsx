@@ -39,6 +39,21 @@ export function useFormUnit(form: FormState): AmountUnit {
   return system ? { unit: system.unit, step: system.step } : LDC_UNIT;
 }
 
+/** The form's 三方积分 as a judge sees it (试一试, check()), or none. */
+export function useFormPoints(form: FormState) {
+  const { items } = useOnlineSystems(form.funding === "points");
+  if (form.funding !== "points") return undefined;
+  const system = items.find((item) => item.id === form.pointsSystemId);
+  return system
+    ? {
+        name: system.name,
+        unit: system.unit,
+        step: system.step,
+        host: system.host,
+      }
+    : undefined;
+}
+
 /** Under 从哪发 when 三方积分 is chosen: which one, and one's key for it. */
 export function PointsPicker({
   form,

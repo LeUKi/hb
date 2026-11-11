@@ -208,6 +208,36 @@ describe("activity image", () => {
     expect(won).toMatch(/class="glyph"[^>]*>报</);
   });
 
+  it("writes a 三方积分红包's amounts in its own unit and 最小单位", () => {
+    const stars = {
+      funding: "points" as const,
+      points: {
+        id: "6f0b1c1e-6a8e-4b8f-9d1e-2c3b4a5d6e7f",
+        name: "星星",
+        unit: "星星",
+        step: 100,
+        host: "stars.example.com",
+      },
+      quantity: { mode: "pool" as const, left: "30.00" },
+    };
+    const running = image({ kind: "eligible", action: "claim" }, stars);
+    expect(running).toContain("奖池还剩 30 星星");
+    expect(running).not.toContain("LDC");
+    const claimed = image(
+      {
+        kind: "claimed",
+        amount: "12345678.00",
+        claimedAt: renderedAt,
+        paymentStatus: "confirmed",
+      },
+      stars,
+    );
+    expect(claimed).toContain("<tspan>+1,234.5万</tspan>");
+    expect(claimed).toContain('<tspan class="unit" dx="6">星星</tspan>');
+    expect(claimed).toContain("你已领取 1,234.5万 星星");
+    expect(claimed).not.toContain("LDC");
+  });
+
   it("draws waiting, the draw and the end", () => {
     const registered = image({ kind: "registered" }, { draw: draw("waiting") });
     expect(sealOf(registered)).toBe("已报名");

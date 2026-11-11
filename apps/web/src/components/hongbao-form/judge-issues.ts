@@ -87,9 +87,15 @@ export function judgeIssuesOf(
 export function triedHongbao(
   form: FormState,
   rules: JudgeHongbaoRules | null | undefined,
+  /** A 三方积分红包's: the code counts its 最小单位. */
+  points?: { name: string; unit: string; step: number; host: string },
 ) {
   return {
     title: withDefaultTitle(form).title,
-    total: cents(form.judge.total) ?? rules?.total?.default ?? 100,
+    total:
+      cents(form.judge.total) ??
+      rules?.total?.default ??
+      Math.max(100, points?.step ?? 0),
+    ...(points ? { points } : {}),
   };
 }
