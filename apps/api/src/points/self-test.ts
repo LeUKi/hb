@@ -90,7 +90,7 @@ export async function runSelfTest(
 ) {
   const row = await requireOwnSystem(env, userId, systemId);
   if (row.status === "retired")
-    pointsError(409, "POINTS_RETIRED", "这种三方积分已经下架了");
+    pointsError(409, "POINTS_RETIRED", "这个积分已经下架了");
   const { key, save } = await testKeyOf(env, row, input.testKey);
   const now = Date.now();
   const testId = crypto.randomUUID();
@@ -123,7 +123,7 @@ export async function runSelfTest(
     ),
   ]);
   if (!claimed[0]?.meta.changes)
-    pointsError(429, "POINTS_TEST_COOLDOWN", "两次自检之间至少隔 30 秒");
+    pointsError(429, "POINTS_TEST_COOLDOWN", "两次测试之间至少隔 30 秒");
 
   const steps = await runSteps(env, row, key, String(input.testRecipientId));
   const passed =
@@ -176,7 +176,7 @@ async function runSteps(
     toId,
     toUsername: "hb-self-test",
     amount,
-    title: "接入自检",
+    title: "接口测试",
   });
   const sentTransfer = (sent: Record<string, unknown>) =>
     `POST /transfer（密钥 ${masked}）${JSON.stringify(sent)}`;
@@ -187,7 +187,7 @@ async function runSteps(
   if (
     !add({
       n: 1,
-      title: "用错的密钥查额度，要回 key_invalid",
+      title: "用错的密钥查余额，要回 key_invalid",
       ok: first.kind === "key_invalid",
       sent: `POST /balance（密钥 ${maskKey(wrongKey)}）{}`,
       got: shown(first.call),
@@ -201,7 +201,7 @@ async function runSteps(
   if (
     !add({
       n: 2,
-      title: "用测试密钥查额度，要回账户和可用",
+      title: "用测试密钥查余额，要回账户和可用",
       ok: balance.kind === "ok",
       sent: `POST /balance（密钥 ${masked}）{}`,
       got: shown(balance.call),
@@ -292,8 +292,8 @@ async function runSteps(
     !add({
       n: 7,
       title: selfPay
-        ? "再查额度：转给自己，额度要不变"
-        : `再查额度：要正好少 ${formatStep(step)} ${row.unit}`,
+        ? "再查余额：转给自己，余额要不变"
+        : `再查余额：要正好少 ${formatStep(step)} ${row.unit}`,
       ok: seventh.kind === "ok" && seventh.available === expected,
       sent: `POST /balance（密钥 ${masked}）{}`,
       got: shown(seventh.call),

@@ -28,8 +28,9 @@ import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { NoteMarkdown } from "../ui/markdown";
+import { PointsCapsule } from "../ui/points-mark";
 import { StatusChip } from "../ui/status-chip";
-import { PointsTag, statusTones } from "./points-view";
+import { statusTones } from "./points-view";
 
 export function PointsDetailView({ id }: { id: string }) {
   const user = useSessionUser();
@@ -48,13 +49,13 @@ export function PointsDetailView({ id }: { id: string }) {
             eyebrow="三方积分"
             title={
               <span className="inline-flex flex-wrap items-center gap-2">
-                <PointsTag name={system.name} />
+                <PointsCapsule name={system.name} />
                 {system.issuerName}
               </span>
             }
             description={
               <>
-                由 {system.issuerName} 发行，记在{" "}
+                {system.issuerName}的积分，来自{" "}
                 <a
                   href={`https://${system.host}`}
                   target="_blank"
@@ -71,7 +72,7 @@ export function PointsDetailView({ id }: { id: string }) {
                 <Button
                   onClick={() => void navigate({ href: `/points/${id}/edit` })}
                 >
-                  去配置
+                  设置
                 </Button>
               ) : undefined
             }
@@ -79,8 +80,8 @@ export function PointsDetailView({ id }: { id: string }) {
           {system.status !== "online" && (
             <Callout tone="warning" title={statusWords[system.status]}>
               {system.status === "retired"
-                ? "这种三方积分已经下架，不能再用它发红包；还开着的红包已经结束。"
-                : "这种三方积分现在不能用来发红包，新来领的也会先被挡住。"}
+                ? `「${system.name}」已经下架，不能再用它发红包；还开着的红包已经结束。`
+                : `「${system.name}」现在不能用来发红包，领取也要等它恢复。`}
             </Callout>
           )}
           <PageSection title="三方积分是什么">
@@ -123,7 +124,7 @@ export function PointsDetailView({ id }: { id: string }) {
                     label: "最小单位",
                     value: amountText(system.step, unit),
                   },
-                  { label: "接入人", value: `@${system.ownerUsername}` },
+                  { label: "添加的人", value: `@${system.ownerUsername}` },
                   {
                     label: "上线时间",
                     value: system.onlineAt

@@ -104,7 +104,7 @@ export type PointsBalance =
 export const statusWords: Record<PointsSystemStatus, string> = {
   draft: "草稿",
   reviewing: "待审核",
-  online: "上线中",
+  online: "已上线",
   paused: "已暂停",
   retired: "已下架",
 };
@@ -427,21 +427,21 @@ export function pointsFailureWords(
 ) {
   switch (reason) {
     case "insufficient":
-      return "红包作者在发行方的额度不够了，这笔没能发出，红包也已结束。";
+      return `发红包的人在 ${system.host} 的余额不够了，这笔没发出去，红包也结束了。`;
     case "key_invalid":
     case "key_removed":
-      return "红包作者在发行方的密钥失效了，这笔没能发出，红包也已结束。";
+      return `发红包的人在 ${system.host} 的密钥失效了，这笔没发出去，红包也结束了。`;
     case "stopped":
-      return "这个红包已经因为发不出而结束，这笔没有发出。";
+      return "这个红包因为发不出去已经结束，这笔没有发出。";
     case "retired":
-      return `${system.name}已经下架，这笔没有发出。`;
+      return `「${system.name}」已经下架，这笔没有发出。`;
     case "not_allowed":
       return system.notAllowed || `${system.host} 不允许给你发这笔。`;
     case "bad_request":
     case "conflict":
       return `${system.host} 拒绝了这笔，站长会去核对。`;
     case "network":
-      return `一直连不上 ${system.host}，这笔没能发出。`;
+      return `一直连不上 ${system.host}，这笔没发出去。`;
     case "admin":
       return "站长核对后确认这笔没有发出。";
     case "unknown":

@@ -500,7 +500,7 @@ export function issuesOf(
   const offStep = (value: number | null) =>
     value !== null && step > 1 && value % step !== 0;
   if (form.funding === "points" && !form.pointsSystemId)
-    add("hb-points", "请选择一种三方积分");
+    add("hb-points", "请选择用哪个积分");
   const title = form.title.trim();
   if (!title) add("hb-title", "请填写红包标题");
   else if (Array.from(title).length > LIMITS.title)

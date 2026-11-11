@@ -1,12 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  Braces,
-  ChevronRight,
-  Coins,
-  Compass,
-  FolderCode,
-  Globe,
-} from "lucide-react";
+import { Braces, ChevronRight, Compass, FolderCode, Globe } from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -22,6 +15,7 @@ import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { CommandLink } from "../shell/command-link";
 import { useWindowInfo } from "../shell/window-info";
 import { Kbd, ShortcutKbd } from "../ui/kbd";
+import { PointsMark } from "../ui/points-mark";
 import { radius, Squircle } from "../ui/squircle";
 
 const inputs: { label: string; example: string; note: string }[] = [
@@ -250,7 +244,7 @@ export function HelpView() {
               to="/help/points"
               className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
             >
-              <Coins className="size-[18px] shrink-0 text-ink-2" />
+              <PointsMark className="size-[18px] shrink-0 text-ink-2" />
               <span className="min-w-0 flex-1 truncate text-ink">
                 三方积分 · 接入说明
               </span>

@@ -156,7 +156,7 @@ export async function readSystem(env: ApiBindings, id: string) {
 
 export async function requireSystem(env: ApiBindings, id: string) {
   const row = await readSystem(env, id);
-  if (!row) pointsError(404, "POINTS_NOT_FOUND", "没有这种三方积分");
+  if (!row) pointsError(404, "POINTS_NOT_FOUND", "没有这个积分");
   return row;
 }
 
@@ -168,7 +168,7 @@ export async function requireOwnSystem(
 ) {
   const row = await requireSystem(env, id);
   if (row.owner_id !== userId)
-    pointsError(404, "POINTS_NOT_FOUND", "没有这种三方积分");
+    pointsError(404, "POINTS_NOT_FOUND", "没有这个积分");
   return row;
 }
 
@@ -255,10 +255,10 @@ export async function createSystem(
 ) {
   const access = await transferAccess(env, userId);
   if (!access.allowed)
-    pointsError(403, "POINTS_PLUS_ONLY", "开通🐟额 PLUS 才能接入三方积分");
+    pointsError(403, "POINTS_PLUS_ONLY", "开通🐟额 PLUS 才能添加积分");
   const endpoint = checkedEndpoint(env, config.baseUrl);
   if (await nameTaken(env, config.name, null))
-    pointsError(409, "POINTS_NAME_TAKEN", "已经有同名的三方积分了");
+    pointsError(409, "POINTS_NAME_TAKEN", "已经有同名的积分了");
   const id = crypto.randomUUID();
   const now = Date.now();
   const result = await env.DB.prepare(
@@ -332,7 +332,7 @@ export async function updateSystem(
 ) {
   const row = await requireOwnSystem(env, userId, id);
   if (row.status === "retired")
-    pointsError(409, "POINTS_RETIRED", "这种三方积分已经下架了");
+    pointsError(409, "POINTS_RETIRED", "这个积分已经下架了");
   if (row.version !== version)
     pointsError(409, "POINTS_VERSION_CONFLICT", "已经有新的修改，请刷新后重试");
   const endpoint = checkedEndpoint(env, config.baseUrl);
@@ -342,7 +342,7 @@ export async function updateSystem(
     pointsError(
       409,
       "POINTS_ENDPOINT_ONLINE",
-      "上线中不能改接口地址或最小单位，先暂停",
+      "已上线时不能改接口地址或最小单位，先暂停",
     );
   // A finer unit divides the old one; a coarser one waits for no open 红包.
   if (
@@ -359,7 +359,7 @@ export async function updateSystem(
     config.name.toLowerCase() !== row.name.toLowerCase() &&
     (await nameTaken(env, config.name, id))
   )
-    pointsError(409, "POINTS_NAME_TAKEN", "已经有同名的三方积分了");
+    pointsError(409, "POINTS_NAME_TAKEN", "已经有同名的积分了");
   const now = Date.now();
   const logged = row.submitted_at !== null;
   const changes = POINTS_COPY_FIELDS.flatMap((field) => {
@@ -447,7 +447,7 @@ export async function submitSystem(
     row.passed_test_id === null ||
     row.passed_endpoint_version !== row.endpoint_version
   )
-    pointsError(409, "POINTS_TEST_NEEDED", "先跑通接入自检，再提交审核");
+    pointsError(409, "POINTS_TEST_NEEDED", "先通过接口测试，再提交审核");
   const now = Date.now();
   await env.DB.prepare(
     `UPDATE points_systems SET status='reviewing',submitted_at=?1,review_note=NULL,
@@ -506,7 +506,7 @@ export async function pauseSystem(
     ? await requireSystem(env, id)
     : await requireOwnSystem(env, actorId, id);
   if (row.status !== "online")
-    pointsError(409, "POINTS_NOT_ONLINE", "只有上线中的能暂停");
+    pointsError(409, "POINTS_NOT_ONLINE", "只有已上线的能暂停");
   const now = Date.now();
   await env.DB.prepare(
     `UPDATE points_systems SET status='paused',paused_by=?1,paused_at=?2,
@@ -527,7 +527,7 @@ export async function resumeSystem(
     ? await requireSystem(env, id)
     : await requireOwnSystem(env, actorId, id);
   if (row.status !== "paused")
-    pointsError(409, "POINTS_NOT_PAUSED", "现在不是暂停");
+    pointsError(409, "POINTS_NOT_PAUSED", "现在没有暂停");
   // The owner cannot undo the 站长's pause.
   if (!admin && row.paused_by === "admin")
     pointsError(403, "POINTS_PAUSED_BY_ADMIN", "这是站长暂停的，要等站长恢复");
@@ -536,7 +536,7 @@ export async function resumeSystem(
     row.passed_endpoint_version !== row.endpoint_version ||
     row.reviewed_at === null
   )
-    pointsError(409, "POINTS_REVIEW_NEEDED", "接口改过了，要重新自检和审核");
+    pointsError(409, "POINTS_REVIEW_NEEDED", "接口改过了，要重新测试和审核");
   const now = Date.now();
   await env.DB.prepare(
     `UPDATE points_systems SET status='online',paused_by=NULL,paused_at=NULL,
@@ -557,7 +557,7 @@ export async function reviewSystem(
 ) {
   const row = await requireSystem(env, id);
   if (row.status !== "reviewing")
-    pointsError(409, "POINTS_NOT_REVIEWING", "它现在不在待审核");
+    pointsError(409, "POINTS_NOT_REVIEWING", "现在不是待审核");
   const now = Date.now();
   await env.DB.prepare(
     decision.approve

@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Braces,
   ChevronRight,
-  Coins,
   Equal,
   KeyRound,
   ListOrdered,
@@ -39,6 +38,7 @@ import {
   TextInput,
   WrapInput,
 } from "../ui/field";
+import { PointsMark } from "../ui/points-mark";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
@@ -469,7 +469,7 @@ const fundingNote = (form: FormState, money: AmountUnit) =>
   form.funding === "balance"
     ? "领到的直接存进领取者的🐟额。"
     : form.funding === "points"
-      ? `领到的${money.unit}直接进领取者在发行方的账户，从你在那边的账户扣。`
+      ? `领到的${money.unit}直接存进领取者在那个网站的账户，从你在那边的账户扣。`
       : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。";
 
 /** How amounts are written in this unit (§2). */
@@ -578,7 +578,7 @@ export function FundingChoice({
                     points.items.length === 1
                       ? `${points.items[0]?.name}：从你在 ${points.items[0]?.host} 的账户发，领到的进领取者在那边的账户`
                       : "别的网站的积分：从你在那边的账户发，领到的进领取者在那边的账户",
-                  icon: Coins,
+                  icon: PointsMark,
                 },
               ]
             : []),

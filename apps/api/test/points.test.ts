@@ -301,7 +301,7 @@ describe("接入自检 (§4)", () => {
     expect(result.passed).toBe(false);
     expect(result.steps.at(-1)?.n).toBe(5);
     await expect(submitSystem(bindings, owner.id, systemId)).rejects.toThrow(
-      "先跑通接入自检",
+      "先通过接口测试",
     );
   });
 });
@@ -423,7 +423,7 @@ describe("三方积分红包", () => {
     });
     await expect(
       openActivity(bindings, saved.id, sender.id, saved.version),
-    ).rejects.toThrow("额度不够");
+    ).rejects.toThrow("余额不够");
   });
 
   it("ends the 红包 at once on 额度不够 and stops its other payouts", async () => {

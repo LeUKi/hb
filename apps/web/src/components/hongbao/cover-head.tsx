@@ -14,6 +14,7 @@ import { EmojiText } from "../ui/emoji-text";
 import { LinuxDoMark } from "../ui/linux-do-mark";
 import { NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
+import { PointsCapsuleParts } from "../ui/points-mark";
 import { radius, Squircle } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
 import type { CoverMotion } from "./cover-motion";
@@ -30,33 +31,36 @@ function CoverChip({
   hint,
   rich,
   link,
-  split,
+  capsule,
   code = false,
 }: {
   children: string;
   hint?: string;
   rich?: ReactNode;
   link?: { label: string; open: () => void };
-  /** 三方｜星星: two parts with a rule between (third-party-points §9). */
-  split?: [string, string];
+  /**
+   * A 三方积分's name: drawn as its capsule, the mark in the front half
+   * (third-party-points §9).
+   */
+  capsule?: string;
   code?: boolean;
 }) {
-  const className = cn(
-    chipClass,
-    (code || split) && "gap-1",
-    code && "hb-chip-code",
-  );
+  if (capsule !== undefined && hint)
+    return (
+      <TagHint
+        hint={hint}
+        rich={rich}
+        link={link}
+        className="hb-capsule hb-capsule-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-cream)]"
+      >
+        <PointsCapsuleParts name={capsule} />
+      </TagHint>
+    );
+  const className = cn(chipClass, code && "gap-1 hb-chip-code");
   const label = code ? (
     <>
       <Braces className="size-3.5" aria-hidden="true" />
       {children}
-    </>
-  ) : split ? (
-    <>
-      <span>{split[0]}</span>
-      <span aria-hidden="true" className="h-3 w-px bg-current opacity-40" />
-      <span className="sr-only">｜</span>
-      <span>{split[1]}</span>
     </>
   ) : (
     children
@@ -327,7 +331,7 @@ export function CoverHead({
                 <CoverChip
                   key={tag.text}
                   hint={tag.hint}
-                  split={["三方", tag.points.name]}
+                  capsule={tag.points.name}
                   rich={
                     <>
                       来自{" "}

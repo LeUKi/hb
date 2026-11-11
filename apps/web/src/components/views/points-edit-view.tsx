@@ -11,6 +11,7 @@ import {
   POINTS_LIMITS,
   type PointsSystemConfig,
   parseUnitAmount,
+  pointsPrivacyLine,
   pointsTagHint,
   stepDecimals,
 } from "@hb/contracts";
@@ -43,8 +44,8 @@ import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { Field, TextArea, TextInput } from "../ui/field";
 import { NoteMarkdown } from "../ui/markdown";
+import { PointsCapsule } from "../ui/points-mark";
 import { Reveal } from "../ui/reveal";
-import { Segmented } from "../ui/segmented";
 import { StatusChip } from "../ui/status-chip";
 import { PointsTag, statusTones } from "./points-view";
 
@@ -155,33 +156,37 @@ function Editor({
         onSuccess: ({ system: made }) => setCreated(made.id),
       });
   };
+  const amount = amountText(config.step * 3, unit);
   return (
     <Page>
       <LeaveGuard
         when={dirty && created === null}
-        message="三方积分的修改还没保存，确定离开吗？"
+        message="积分的修改还没保存，确定离开吗？"
       />
       <PageHeader
         back={{ label: "三方积分", href: "/points" }}
-        title={system ? `配置「${system.name}」` : "接入一种三方积分"}
-        description="每一项旁边是它在红包站上的样子。改文案立即生效；改接口地址或最小单位要先暂停，并重新自检、审核。"
+        title={system ? `设置「${system.name}」` : "添加积分"}
+        description="每一项旁边是它在红包站上的样子，只是预览，不会调用你的接口。说明文字改了马上生效；改接口地址或最小单位要先暂停，再重新测试、审核。"
         actions={
           <Link
             to="/help/points"
             className="text-sm text-accent-ink hover:underline"
           >
-            三个接口怎么写：接入说明
+            接口说明
           </Link>
         }
       />
       {system && <StatusPart system={system} />}
-      <PageSection title="基本">
-        <Panel className="grid gap-4 p-4">
-          <div className="grid gap-4 @wide/window:grid-cols-2">
+      <PageSection title="基本信息">
+        <Panel className="grid gap-5 p-4">
+          <Row
+            where="红包皮上的标签"
+            preview={<TagPreview name={config.name || "名称"} host={host} />}
+          >
             <Field
               label="名称"
               htmlFor="pt-name"
-              hint={`红包皮标签“三方｜名称”和详情页上，最多 ${POINTS_LIMITS.nameMax} 个字`}
+              hint={`最多 ${POINTS_LIMITS.nameMax} 个字`}
             >
               <TextInput
                 id="pt-name"
@@ -190,6 +195,23 @@ function Editor({
                 onChange={(event) => set("name", event.target.value)}
               />
             </Field>
+          </Row>
+          <Row
+            where="红包上的金额"
+            preview={
+              <p className="text-sm leading-6 text-ink-2">
+                每份至少 {amountText(config.step, unit)}
+                <br />
+                一份 {amount}
+                <br />
+                大的数会缩写：
+                {amountText(
+                  12_345_678_900 - (12_345_678_900 % config.step),
+                  unit,
+                )}
+              </p>
+            }
+          >
             <Field
               label="单位"
               htmlFor="pt-unit"
@@ -202,10 +224,30 @@ function Editor({
                 onChange={(event) => set("unit", event.target.value)}
               />
             </Field>
+            <StepField
+              value={config.step}
+              onChange={(step) => set("step", step)}
+              unit={config.unit || "积分"}
+            />
+          </Row>
+          <Row
+            where="积分的详情页"
+            preview={
+              <div className="grid gap-1.5">
+                <span className="flex flex-wrap items-center gap-2 font-semibold text-ink">
+                  <PointsCapsule name={config.name || "名称"} />
+                  {config.issuerName || "网站名称"}
+                </span>
+                <p className="text-sm text-ink-2">
+                  {config.issuerName || "网站名称"}的积分，来自 {host}。
+                </p>
+              </div>
+            }
+          >
             <Field
-              label="发行方名称"
+              label="网站名称"
               htmlFor="pt-issuer"
-              hint="详情页上写“由 … 发行”"
+              hint={`你网站的名字，最多 ${POINTS_LIMITS.issuerNameMax} 个字`}
             >
               <TextInput
                 id="pt-issuer"
@@ -213,10 +255,30 @@ function Editor({
                 onChange={(event) => set("issuerName", event.target.value)}
               />
             </Field>
+          </Row>
+          <Row
+            where="领取按钮下面"
+            preview={
+              <div
+                className="grid gap-1 rounded-xl px-3 py-2.5 text-center"
+                style={{
+                  background:
+                    "linear-gradient(var(--color-cover-top), var(--color-cover-bottom))",
+                }}
+              >
+                <span className="text-sm font-semibold text-[var(--color-cream)]">
+                  领取
+                </span>
+                <span className="text-xs text-[var(--color-cream-2)]">
+                  {pointsPrivacyLine(host)}
+                </span>
+              </div>
+            }
+          >
             <Field
               label="接口地址"
               htmlFor="pt-base"
-              hint="三个接口在它下面：/balance、/transfer、/query。只能是 https，域名会显示给领取的人"
+              hint="三个接口都在它下面：/balance、/transfer、/query。只能用 https"
               error={
                 config.baseUrl.length > 8 && !endpoint.ok
                   ? endpoint.message
@@ -253,96 +315,141 @@ function Editor({
                 }}
               />
             </Field>
-          </div>
-          <StepField
-            value={config.step}
-            onChange={(step) => set("step", step)}
-            unit={config.unit || "积分"}
-          />
-          <Preview label="红包皮上">
-            <TagPreview name={config.name || "名称"} host={host} />
-            <p className="text-sm text-ink-2">
-              金额：{amountText(config.step * 3, unit)} ·{" "}
-              {amountText(
-                12_345_678_900 - (12_345_678_900 % config.step),
-                unit,
-              )}{" "}
-              · 上限约{" "}
-              {formatDisplayAmount(Number.MAX_SAFE_INTEGER, config.step).text}{" "}
-              {unit.unit}
-            </p>
-          </Preview>
+          </Row>
         </Panel>
       </PageSection>
       <PageSection
-        title="文案"
-        description="都由你写，随时能改，立即生效；站长看得到每一次改动。md 里的链接可以用，图片不显示。"
+        title="说明文字"
+        description="都由你写，随时能改，马上生效；站长看得到每一次改动。不写的用红包站的默认说法。"
       >
-        <Panel className="grid gap-4 p-4">
-          <CopyField
-            id="pt-intro"
-            label="介绍"
-            where="详情页“介绍”，任何人打开详情页时看到"
-            max={POINTS_LIMITS.introMax}
-            value={config.intro}
-            markdown
-            onChange={(value) => set("intro", value)}
-          />
-          <CopyField
-            id="pt-key"
-            label="填密钥的引导"
-            where="发红包的人选了这种积分、要填密钥时，弹窗里看到"
-            max={POINTS_LIMITS.keyGuideMax}
-            value={config.keyGuide}
-            markdown
-            onChange={(value) => set("keyGuide", value)}
-          />
-          <CopyField
-            id="pt-none"
-            label="找不到收款人"
-            where="领取的人在你网站没有账户时，他的结果卡上（带 5 分钟倒计时和“重新发送”）；也是详情页的“怎么领到”"
-            max={POINTS_LIMITS.noRecipientMax}
-            value={config.noRecipient}
-            markdown
-            onChange={(value) => set("noRecipient", value)}
-          />
-          <div className="grid gap-4 @wide/window:grid-cols-2">
+        <Panel className="grid gap-5 p-4">
+          <Row
+            where="积分的详情页，任何人都能打开"
+            preview={
+              config.intro ? (
+                <NoteMarkdown className="text-sm">{config.intro}</NoteMarkdown>
+              ) : (
+                <p className="text-sm text-ink-3">
+                  不写，详情页就没有“介绍”这一节。
+                </p>
+              )
+            }
+          >
+            <CopyField
+              id="pt-intro"
+              label="介绍"
+              max={POINTS_LIMITS.introMax}
+              value={config.intro}
+              markdown
+              onChange={(value) => set("intro", value)}
+            />
+          </Row>
+          <Row
+            where="发红包的人选了它、要填密钥时"
+            preview={<KeyGuidePreview config={config} host={host} />}
+          >
+            <CopyField
+              id="pt-key"
+              label="怎么拿到密钥"
+              max={POINTS_LIMITS.keyGuideMax}
+              value={config.keyGuide}
+              markdown
+              onChange={(value) => set("keyGuide", value)}
+            />
+          </Row>
+          <Row
+            where="领取的人还没在你网站开户时，他的结果"
+            preview={
+              <NoRecipientPreview config={config} host={host} amount={amount} />
+            }
+          >
+            <CopyField
+              id="pt-none"
+              label="领取的人还没开户时"
+              max={POINTS_LIMITS.noRecipientMax}
+              value={config.noRecipient}
+              markdown
+              note="也写在详情页的“怎么领到”里。"
+              onChange={(value) => set("noRecipient", value)}
+            />
+          </Row>
+          <Row
+            where="领到以后，领取的人的结果"
+            preview={<ArrivedPreview config={config} host={host} />}
+          >
             <CopyField
               id="pt-arrival"
-              label="到账说明"
-              where="领到以后，领取的人的结果卡上"
+              label="到账后"
               max={POINTS_LIMITS.arrivalMax}
               value={config.arrival}
               onChange={(value) => set("arrival", value)}
             />
+          </Row>
+          <Row
+            where="你的接口不让发给他时（回 not_allowed），领取的人的结果"
+            preview={
+              <div className="grid justify-items-center gap-1 text-center">
+                <StatusChip tone="danger" dot>
+                  未发出
+                </StatusChip>
+                <p className="text-sm text-ink-2">
+                  {config.notAllowed || `${host} 不允许给你发这笔。`}
+                </p>
+              </div>
+            }
+          >
             <CopyField
               id="pt-denied"
-              label="不允许"
-              where="你的接口回 not_allowed 时，领取的人看到"
+              label="不能发给他时"
               max={POINTS_LIMITS.notAllowedMax}
               value={config.notAllowed}
               onChange={(value) => set("notAllowed", value)}
             />
+          </Row>
+          <Row
+            where="发红包的人的余额不够、红包提前结束时，他的红包页"
+            preview={
+              <Callout
+                tone="danger"
+                icon={WalletCards}
+                title="红包已经提前结束"
+              >
+                {config.insufficient ||
+                  `你在 ${host} 的余额不够了，没发出的不再发。`}
+              </Callout>
+            }
+          >
             <CopyField
               id="pt-short"
-              label="额度不够"
-              where="发红包的人的额度不够、红包提前结束时，他在红包页看到"
+              label="余额不够时"
               max={POINTS_LIMITS.senderNoticeMax}
               value={config.insufficient}
               onChange={(value) => set("insufficient", value)}
             />
+          </Row>
+          <Row
+            where="发红包的人的密钥失效、红包提前结束时，他的红包页"
+            preview={
+              <Callout
+                tone="danger"
+                icon={WalletCards}
+                title="红包已经提前结束"
+              >
+                {config.keyInvalid ||
+                  `${host} 说你的密钥失效了，没发出的不再发。`}
+              </Callout>
+            }
+          >
             <CopyField
               id="pt-invalid"
-              label="密钥失效"
-              where="你的接口回 key_invalid、红包提前结束时，发红包的人看到"
+              label="密钥失效时"
               max={POINTS_LIMITS.senderNoticeMax}
               value={config.keyInvalid}
               onChange={(value) => set("keyInvalid", value)}
             />
-          </div>
+          </Row>
         </Panel>
       </PageSection>
-      <Simulation config={config} host={host} />
       <div className="grid gap-2 px-1">
         <Reveal show={Boolean(saveError)}>
           <p role="alert" className="text-sm text-danger">
@@ -351,7 +458,7 @@ function Editor({
         </Reveal>
         <Reveal show={endpointMoved && system?.status === "online"}>
           <p className="text-sm text-warning">
-            上线中不能改接口地址或最小单位：先在上面暂停。
+            已上线时不能改接口地址或最小单位：先在上面暂停。
           </p>
         </Reveal>
         <div className="flex justify-end">
@@ -369,12 +476,36 @@ function Editor({
               ? "正在保存…"
               : system
                 ? "保存"
-                : "保存，下一步自检"}
+                : "保存，接着测试接口"}
           </Button>
         </div>
       </div>
       {system && <SelfTest system={system} tests={tests} blocked={dirty} />}
     </Page>
+  );
+}
+
+/**
+ * One setting (or two that go together) and, beside it on a wide window and
+ * under it on a phone, how it looks on 红包站 (§6).
+ */
+function Row({
+  where,
+  preview,
+  children,
+}: {
+  where: string;
+  preview: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid items-start gap-3 border-line border-b pb-5 last:border-b-0 last:pb-0 @wide/window:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @wide/window:gap-6">
+      <div className="grid min-w-0 gap-4">{children}</div>
+      <div className="grid min-w-0 gap-2 rounded-2xl border border-line border-dashed p-3">
+        <p className="text-xs text-ink-3">预览 · {where}</p>
+        {preview}
+      </div>
+    </div>
   );
 }
 
@@ -400,7 +531,7 @@ function StepField({
     <Field
       label="最小单位"
       htmlFor="pt-step"
-      hint={`每份至少 ${amountText(value, shown)}，所有数量都是它的整数倍，显示${decimals ? `${decimals} 位小数` : "不带小数"}；自检会真的花掉 ${amountText(value, shown)}。`}
+      hint={`所有数量都是它的整数倍，显示${decimals ? `${decimals} 位小数` : "不带小数"}；接口测试会真的花掉 ${amountText(value, shown)}。`}
       error={valid ? undefined : "要在 0.01 到 1 亿之间，最多两位小数"}
     >
       <div className="flex items-center gap-2">
@@ -440,16 +571,7 @@ function StepField({
   );
 }
 
-function Preview({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-2 rounded-2xl border border-line border-dashed p-3">
-      <p className="text-xs text-ink-3">预览 · {label}</p>
-      {children}
-    </div>
-  );
-}
-
-/** The cover's tag and its bubble, as a 红包 shows them (§9). */
+/** The cover's capsule and its bubble, as a 红包 shows them (§9). */
 function TagPreview({ name, host }: { name: string; host: string }) {
   return (
     <div className="flex flex-wrap items-start gap-3">
@@ -466,18 +588,19 @@ function TagPreview({ name, host }: { name: string; host: string }) {
 function CopyField({
   id,
   label,
-  where,
   max,
   value,
   markdown = false,
+  note = "",
   onChange,
 }: {
   id: string;
   label: string;
-  where: string;
   max: number;
   value: string;
   markdown?: boolean;
+  /** Where else it shows, said after the rest. */
+  note?: string;
   onChange: (value: string) => void;
 }) {
   const count = Array.from(value).length;
@@ -485,7 +608,7 @@ function CopyField({
     <Field
       label={label}
       htmlFor={id}
-      hint={`出现在：${where}。${value ? "" : "不写就用红包站的默认说法。"}`}
+      hint={`${markdown ? "支持 Markdown：链接能点，图片不显示。" : ""}${note}`}
       aside={`${count} / ${max}`}
       error={count > max ? `最多 ${max} 个字` : undefined}
     >
@@ -507,134 +630,96 @@ function CopyField({
   );
 }
 
-type Scene = "arrived" | "none" | "denied" | "key" | "short" | "invalid";
-
-/**
- * 仿真 (§6): each answer as its person sees it, drawn with the site's own
- * parts and the words above; nothing is sent anywhere.
- */
-function Simulation({
+/** 填密钥 as the sender sees it, with the guide written here (§8). */
+function KeyGuidePreview({
   config,
   host,
 }: {
   config: PointsSystemConfig;
   host: string;
 }) {
-  const [scene, setScene] = useState<Scene>("arrived");
   const unit = { unit: config.unit || "积分", step: config.step };
-  const amount = amountText(config.step * 3, unit);
   return (
-    <PageSection
-      title="仿真"
-      description="选一种情况，看领取的人或发红包的人会看到什么。只在这一页里演示，不调用你的接口。"
-    >
-      <Panel className="grid gap-3 p-4">
-        <Segmented
-          label="情况"
-          size="sm"
-          value={scene}
-          onChange={setScene}
-          options={[
-            { value: "arrived", label: "领到了" },
-            { value: "none", label: "找不到收款人" },
-            { value: "denied", label: "不允许" },
-            { value: "key", label: "填密钥" },
-            { value: "short", label: "额度不够" },
-            { value: "invalid", label: "密钥失效" },
-          ]}
-        />
-        <p className="text-xs text-ink-3">
-          {scene === "key" || scene === "short" || scene === "invalid"
-            ? "发红包的人看到"
-            : "领取的人看到"}
+    <div className="grid gap-2">
+      <p className="flex items-center gap-1.5 font-semibold text-ink">
+        <KeyRound className="size-4" aria-hidden="true" />
+        填你在 {host} 的密钥
+      </p>
+      {config.keyGuide ? (
+        <NoteMarkdown className="text-sm">{config.keyGuide}</NoteMarkdown>
+      ) : (
+        <p className="text-sm text-ink-2">
+          到 {host} 生成一把给红包站用的密钥，贴在下面。
         </p>
-        {scene === "arrived" && (
-          <div className="grid justify-items-center gap-1 text-center">
-            <p className="text-3xl font-semibold text-success">
-              +{shownOnly(config.step * 3, unit)}{" "}
-              <span className="text-lg font-medium">{unit.unit}</span>
-            </p>
-            <StatusChip tone="success" dot>
-              已到账
-            </StatusChip>
-            <p className="text-sm text-ink-2">已存进你在 {host} 的账户。</p>
-            {config.arrival && (
-              <p className="text-sm text-ink-2">{config.arrival}</p>
-            )}
-          </div>
-        )}
-        {scene === "none" && (
-          <Callout
-            tone="warning"
-            icon={UserRoundX}
-            title={`你在 ${host} 还没有账户`}
-          >
-            <p>
-              这笔 {amount}{" "}
-              暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
-            </p>
-            {config.noRecipient && (
-              <NoteMarkdown className="mt-2 text-sm">
-                {config.noRecipient}
-              </NoteMarkdown>
-            )}
-            <div className="mt-2.5">
-              <Button variant="primary" size="sm" tabIndex={-1}>
-                重新发送
-              </Button>
-            </div>
-            <p className="mt-2 text-xs">
-              还剩 <Ticking /> 可以重新发送，过时不再补发。
-            </p>
-          </Callout>
-        )}
-        {scene === "denied" && (
-          <div className="grid justify-items-center gap-1 text-center">
-            <StatusChip tone="danger" dot>
-              未发出
-            </StatusChip>
-            <p className="text-sm text-ink-2">
-              {config.notAllowed || `${host} 不允许给你发这笔。`}
-            </p>
-          </div>
-        )}
-        {scene === "key" && (
-          <div className="grid gap-2 rounded-2xl bg-fill-2 p-4">
-            <p className="flex items-center gap-1.5 font-semibold text-ink">
-              <KeyRound className="size-4" aria-hidden="true" />
-              填你在 {host} 的密钥
-            </p>
-            {config.keyGuide ? (
-              <NoteMarkdown className="text-sm">{config.keyGuide}</NoteMarkdown>
-            ) : (
-              <p className="text-sm text-ink-2">
-                到 {host} 生成一把给红包站用的密钥，贴在下面。
-              </p>
-            )}
-            <p className="text-sm text-ink-2">
-              保存后：可用 {amountText(config.step * 1234, unit)}，将从 @某人
-              的账户扣
-            </p>
-          </div>
-        )}
-        {(scene === "short" || scene === "invalid") && (
-          <Callout tone="danger" icon={WalletCards} title="红包已经提前结束">
-            {scene === "short"
-              ? config.insufficient ||
-                `你在 ${host} 的额度不够了，没发出的不再发。`
-              : config.keyInvalid ||
-                `${host} 说你的密钥失效了，没发出的不再发。`}
-          </Callout>
-        )}
-      </Panel>
-    </PageSection>
+      )}
+      <p className="text-sm text-ink-2">
+        保存后：可用 {amountText(config.step * 1234, unit)}，将从 @某人 的账户扣
+      </p>
+    </div>
+  );
+}
+
+/** 找不到收款人 on the claimant's result: words, resend, countdown (§5). */
+function NoRecipientPreview({
+  config,
+  host,
+  amount,
+}: {
+  config: PointsSystemConfig;
+  host: string;
+  amount: string;
+}) {
+  return (
+    <Callout tone="warning" icon={UserRoundX} title={`你在 ${host} 还没有账户`}>
+      <p>
+        这笔 {amount}{" "}
+        暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
+      </p>
+      {config.noRecipient && (
+        <NoteMarkdown className="mt-2 text-sm">
+          {config.noRecipient}
+        </NoteMarkdown>
+      )}
+      <div className="mt-2.5">
+        <Button variant="primary" size="sm" tabIndex={-1}>
+          重新发送
+        </Button>
+      </div>
+      <p className="mt-2 text-xs">
+        还剩 <Ticking /> 可以重新发送，过时不再补发。
+      </p>
+    </Callout>
+  );
+}
+
+/** 已到账 on the claimant's result, with the words written here. */
+function ArrivedPreview({
+  config,
+  host,
+}: {
+  config: PointsSystemConfig;
+  host: string;
+}) {
+  const unit = { unit: config.unit || "积分", step: config.step };
+  return (
+    <div className="grid justify-items-center gap-1 text-center">
+      <p className="text-2xl font-semibold text-success">
+        +{shownOnly(config.step * 3, unit)}{" "}
+        <span className="text-base font-medium">{unit.unit}</span>
+      </p>
+      <StatusChip tone="success" dot>
+        已到账
+      </StatusChip>
+      <p className="text-sm text-ink-2">已存进你在 {host} 的账户。</p>
+      {config.arrival && <p className="text-sm text-ink-2">{config.arrival}</p>}
+    </div>
   );
 }
 
 const shownOnly = (minor: number, unit: { step: number }) =>
   formatDisplayAmount(minor, unit.step).text;
 
-/** The resend countdown, ticking from 5:00 for the demo. */
+/** The resend countdown, ticking from 5:00 for the preview. */
 function Ticking() {
   const [left, setLeft] = useState(300);
   useEffect(() => {
@@ -675,16 +760,16 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
         <span>
           {system.status === "draft"
             ? system.passed
-              ? "自检已通过，可以提交审核。"
-              : "先跑通下面的接入自检，再提交审核。"
+              ? "接口测试已通过，可以提交审核。"
+              : "先通过下面的接口测试，再提交审核。"
             : system.status === "reviewing"
               ? "等站长审核。"
               : system.status === "online"
-                ? `上线于 ${system.onlineAt ? clockLabel(system.onlineAt) : ""}，大家发红包时能选它。`
+                ? `${system.onlineAt ? clockLabel(system.onlineAt) : ""} 上线，大家发红包时能选它。`
                 : system.status === "paused"
                   ? system.pausedBy === "admin"
-                    ? "站长暂停了它：不能新开红包，新来领的先被挡住。"
-                    : "你暂停了它：不能新开红包，新来领的先被挡住。"
+                    ? "站长暂停了它：现在不能用它发红包，领取也要等它恢复。"
+                    : "你暂停了它：现在不能用它发红包，领取也要等它恢复。"
                   : "已经下架。"}
         </span>
       </div>
@@ -695,7 +780,7 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
         system.breakerUntil !== null &&
         system.breakerUntil > Date.now() && (
           <p className="text-sm text-warning">
-            连续 5 次没拿到你接口的回复，发放暂停到{" "}
+            连续 5 次没收到你的接口的回复，暂停发放到{" "}
             {clockLabel(system.breakerUntil)}。
           </p>
         )}
@@ -820,7 +905,7 @@ function SelfTest({
   const error = run.error
     ? run.error instanceof ActivityRequestError
       ? run.error.message
-      : "自检没有完成，请稍后再试。"
+      : "测试没有完成，请稍后再试。"
     : null;
   const recipientId = Number(recipient);
   const ready =
@@ -830,8 +915,8 @@ function SelfTest({
     (system.hasTestKey || testKey.trim() !== "");
   return (
     <PageSection
-      title="接入自检"
-      description={`按顺序调用你的三个接口，一共真的花掉 ${amountText(system.step, { unit: system.unit, step: system.step })}。自检期间测试账户不要有别的进出；两次之间至少隔 30 秒。`}
+      title="接口测试"
+      description={`按顺序调用你的三个接口，一共会真的花掉 ${amountText(system.step, { unit: system.unit, step: system.step })}。测试期间测试账户不要有别的进出；两次测试至少隔 30 秒。`}
     >
       <Panel className="grid gap-4 p-4">
         <div className="grid gap-4 @wide/window:grid-cols-2">
@@ -840,8 +925,8 @@ function SelfTest({
             htmlFor="pt-test-key"
             hint={
               system.hasTestKey
-                ? "留空就用上次的（加密保存，只用于自检）"
-                : "加密保存，只用于自检"
+                ? "不填就用上次的（加密保存，只用于测试）"
+                : "加密保存，只用于测试"
             }
           >
             <TextInput
@@ -870,9 +955,9 @@ function SelfTest({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-ink-3">
             {blocked
-              ? "先保存上面的修改，再自检。"
+              ? "先保存上面的修改，再测试。"
               : system.passed
-                ? "这个接口地址和最小单位已经自检通过。"
+                ? "这个接口地址和最小单位已经通过测试。"
                 : "还没通过。"}
           </span>
           <Button
@@ -887,7 +972,7 @@ function SelfTest({
               });
             }}
           >
-            {run.isPending ? "正在自检…" : "开始自检"}
+            {run.isPending ? "正在测试…" : "开始测试"}
           </Button>
         </div>
         <Reveal show={run.isPending}>

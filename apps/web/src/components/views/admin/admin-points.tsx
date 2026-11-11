@@ -24,7 +24,7 @@ import { statusTones } from "../points-view";
 import { AdminFrame } from "./admin-frame";
 
 const reasonWords: Record<string, string> = {
-  insufficient: "额度不够",
+  insufficient: "余额不够",
   key_invalid: "密钥无效",
   key_removed: "密钥删了",
   no_recipient: "找不到收款人",
@@ -42,15 +42,15 @@ const reasonWords: Record<string, string> = {
 const fieldWords: Record<string, string> = {
   name: "名称",
   unit: "单位",
-  issuerName: "发行方名称",
+  issuerName: "网站名称",
   intro: "介绍",
-  keyGuide: "填密钥的引导",
-  noRecipient: "找不到收款人",
-  arrival: "到账说明",
-  notAllowed: "不允许",
-  insufficient: "额度不够",
-  keyInvalid: "密钥失效",
-  rate: "每秒上限",
+  keyGuide: "怎么拿到密钥",
+  noRecipient: "领取的人还没开户时",
+  arrival: "到账后",
+  notAllowed: "不能发给他时",
+  insufficient: "余额不够时",
+  keyInvalid: "密钥失效时",
+  rate: "每秒最多调用",
   baseUrl: "接口地址",
   step: "最小单位",
 };
@@ -78,7 +78,7 @@ export function AdminPoints() {
               }
             />
           </Panel>
-          <PageSection title="接入的三方积分">
+          <PageSection title="大家添加的积分">
             {data.systems.length === 0 ? (
               <Panel className="p-5 text-sm text-ink-2">还没有人接入。</Panel>
             ) : (

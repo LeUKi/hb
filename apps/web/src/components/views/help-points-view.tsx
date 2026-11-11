@@ -33,7 +33,7 @@ const queryAnswer = `{ "result": "ok", "trade_no": "你那边的单号", "amount
 /** 发放's answers (§3): each but ok guarantees no order was made. */
 const transferResults = [
   ["ok", "转好了。同一个 out_trade_no 再来，回同一笔，不能再转一次"],
-  ["insufficient", "额度不够"],
+  ["insufficient", "余额不够"],
   ["no_recipient", "找不到收款人：他在你那边没有账户"],
   ["not_allowed", "你的规则不允许（比如这个人被限制）"],
   ["key_invalid", "密钥无效或已收回"],
@@ -41,15 +41,15 @@ const transferResults = [
   ["conflict", "这个单号用过，但收款人或数量不一样"],
 ] as const;
 
-/** 接入自检 (§4), in order. */
+/** 接口测试 (§4), in order. */
 const selfTest = [
-  ["1", "用一把错的密钥查额度", "key_invalid"],
-  ["2", "用测试密钥查额度", "账户 ID、用户名、可用，格式对"],
+  ["1", "用一把错的密钥查余额", "key_invalid"],
+  ["2", "用测试密钥查余额", "账户 ID、用户名、可用，格式对"],
   ["3", "查一个从没发过的单号", "not_found"],
   ["4", "给测试收款人发 1 个最小单位", "ok，带你那边的单号"],
   ["5", "查这一笔", "ok，数量、收款人、单号都一致"],
   ["6", "同一个单号原样再发", "ok，还是同一个单号（不能转两次）"],
-  ["7", "再查额度", "正好少了 1 个最小单位"],
+  ["7", "再查余额", "正好少了 1 个最小单位"],
   ["8", "同一个单号换个数量再发", "conflict"],
   ["9", "发给一个不存在的 ID，再查这一笔", "先 no_recipient，再 not_found"],
   [
@@ -94,11 +94,11 @@ const aiPrompt = (
 7. POST /transfer，请求体 { "out_trade_no", "to": { "id", "username" }, "amount", "remark" }（out_trade_no 最多 ${POINTS_LIMITS.outTradeNoMax} 个字符，只有字母、数字、_、-；remark 最多 ${POINTS_LIMITS.remarkMax} 个字，是“红包站 · 红包标题”）：
    - 转好了回 { "result": "ok", "trade_no": 我的单号, "amount", "to": { "id" } }；
    - 同一个 out_trade_no 再来：收款人和数量一样，回同一笔 ok，绝不再转；不一样回 conflict；
-   - 其他结果：insufficient（额度不够）、no_recipient（收款人在我这边没有账户）、not_allowed（我的规则不允许）、key_invalid、bad_request、conflict。除了 ok，其他回复都必须保证没有建单、没有转。
+   - 其他结果：insufficient（余额不够）、no_recipient（收款人在我这边没有账户）、not_allowed（我的规则不允许）、key_invalid、bad_request、conflict。除了 ok，其他回复都必须保证没有建单、没有转。
    - 扣款、入账和记单号在一个事务里做，同一个单号不能被并发转两次。
 8. POST /query，请求体 { "out_trade_no" }：有这笔回 { "result": "ok", "trade_no", "amount", "to": { "id" } }，没有回 { "result": "not_found" }，密钥不对回 key_invalid。只查这把密钥的账户发出的单。
-9. 写完以后在红包站的配置页跑“接入自检”（11 步，真实花掉 1 个最小单位），全部通过才能提交审核。
-10. 还要做：让用户在我的网站上生成、查看、收回给红包站用的密钥；告诉他怎么填（这段说明我会写进红包站的配置页）。
+9. 写完以后在红包站的设置页跑“接口测试”（11 步，真实花掉 1 个最小单位），全部通过才能提交审核。
+10. 还要做：让用户在我的网站上生成、查看、收回给红包站用的密钥；告诉他怎么拿到密钥（这段说明我会写进红包站的设置页）。
 
 我的网站：（在这里写技术栈、积分怎么存、用户怎么绑定 LINUX DO）`;
 
@@ -110,7 +110,7 @@ export function HelpPointsView() {
     <Page>
       <PageHeader
         title="三方积分 · 接入说明"
-        description="把你网站的积分接进红包站：实现三个接口，跑通接入自检，站长审核通过后，大家发红包时就能选它。发红包的人从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
+        description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。发红包的人从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
       />
       <PageSection
         id="ai"
@@ -137,12 +137,14 @@ export function HelpPointsView() {
               >
                 三方积分
               </Link>
-              接入一种：填名称、单位、最小单位、接口地址和各处的文案，旁边能看到它们在红包站上的样子。
+              点“添加积分”：填名称、单位、最小单位、接口地址和各处的说明文字，每一项旁边能看到它在红包站上的样子。
             </li>
-            <li>用一把测试密钥跑接入自检（第 6 节），全部通过。</li>
+            <li>用一把测试密钥跑接口测试（第 6 节），全部通过。</li>
             <li>提交审核。站长通过后上线，大家发红包时就能选它。</li>
           </ol>
-          <p>改文案立即生效；改接口地址或最小单位要先暂停，重新自检、审核。</p>
+          <p>
+            说明文字改了马上生效；改接口地址或最小单位要先暂停，再重新测试、审核。
+          </p>
         </Panel>
       </PageSection>
       <PageSection id="rules" title="2. 共同的规则">
@@ -209,7 +211,7 @@ export function HelpPointsView() {
       </PageSection>
       <PageSection
         id="balance"
-        title="3. 额度"
+        title="3. 查余额"
         description="这把密钥的账户和可用。发红包的人填密钥、开放红包、限时开奖开奖前都会查。"
       >
         <Block
@@ -268,8 +270,8 @@ export function HelpPointsView() {
       </PageSection>
       <PageSection
         id="self-test"
-        title="6. 接入自检"
-        description="在配置页填一把测试密钥和一个测试收款人的 LINUX DO 数字 ID（可以是自己，前提是你允许自己转给自己），红包站按顺序调你的接口。一共真实花掉 1 个最小单位。"
+        title="6. 接口测试"
+        description="在设置页填一把测试密钥和一个测试收款人的 LINUX DO 数字 ID（可以是自己，前提是你允许自己转给自己），红包站按顺序调你的接口。一共真实花掉 1 个最小单位。"
       >
         <Fields
           items={selfTest.map(([n, ask, want]) => ({
@@ -290,18 +292,18 @@ export function HelpPointsView() {
         <Fields items={handling.map(([name, note]) => ({ name, note }))} />
         <Panel className={text}>
           <p>
-            连续 {POINTS_LIMITS.breakerMisses} 次没拿到回复，这种积分暂停发放{" "}
+            连续 {POINTS_LIMITS.breakerMisses} 次没拿到回复，你的积分暂停发放{" "}
             {POINTS_LIMITS.breakerPauseMs / 60_000}{" "}
-            分钟，期间新来领的先挡住。红包站每秒最多调你的接口多少次，在配置页的“每秒最多调用”里设（默认{" "}
+            分钟，期间来领的先拦下。红包站每秒最多调你的接口多少次，在设置页的“每秒最多调用”里设（默认{" "}
             {POINTS_LIMITS.rateDefault}，最多 {POINTS_LIMITS.rateMax}
             ），多出来的发放等一两秒再发。
           </p>
           <p>
-            开放红包时查一次额度：要够这个红包的总额，加上同一把密钥下其他开放中红包还没发出的部分。领取时直接从发红包的人的账户扣，没有预扣，也没有要退的。
+            开放红包时查一次余额：要够这个红包的总额，加上同一把密钥下其他开放中红包还没发出的部分。领取时直接从发红包的人的账户扣，没有预扣，也没有要退的。
           </p>
         </Panel>
       </PageSection>
-      <PageSection id="keys" title="8. 密钥和文案">
+      <PageSection id="keys" title="8. 密钥和说明文字">
         <Panel className={text}>
           <p>
             密钥是你的网站发给用户的。谁能用你的积分发红包、一次最多发多少，都由你决定：不想让谁发，就不给他密钥，或者在发放时回{" "}
@@ -310,9 +312,9 @@ export function HelpPointsView() {
             ，红包随即结束。红包站加密保存密钥，只用来调你的接口。
           </p>
           <p>
-            这些文案由你写，在配置页旁边能看到它们在红包站上的样子：介绍、填密钥的引导（支持
+            这些说明文字由你写，在设置页每一项旁边能看到它在红包站上的样子：介绍、怎么拿到密钥（支持
             Markdown
-            和链接，不显示图片）、找不到收款人的说明（告诉他怎么开户）、到账说明、不允许的说明、额度不够和密钥失效时给发红包的人的提醒。改过的文案站长能看到改动记录。
+            和链接，不显示图片）、领取的人还没开户时（告诉他怎么开户）、到账后、不能发给他时，以及余额不够、密钥失效时给发红包的人的说明。改过的说明文字站长能看到改动记录。
           </p>
         </Panel>
       </PageSection>
@@ -321,7 +323,7 @@ export function HelpPointsView() {
           <p>
             一个最小的实现：三个接口加一个开户、发密钥的演示页，账本放在
             Cloudflare Durable Object 的 SQLite
-            里。可以照着改，也可以先部署一份跑通自检，看清每一步。
+            里。可以照着改，也可以先部署一份跑通接口测试，看清每一步。
           </p>
           <p>
             <a

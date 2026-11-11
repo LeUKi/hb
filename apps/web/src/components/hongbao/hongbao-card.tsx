@@ -9,6 +9,7 @@ import { amountText } from "../../lib/units";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
 import { LinuxDoMark } from "../ui/linux-do-mark";
+import { PointsCapsule } from "../ui/points-mark";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { coverCells } from "./cover-cells";
@@ -154,9 +155,7 @@ export function HongbaoCard({
             )}
             {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
             {activity.points && (
-              <StatusChip tone="neutral">
-                三方｜{activity.points.name}
-              </StatusChip>
+              <PointsCapsule name={activity.points.name} small />
             )}
             {/* Its 口令 only on its own page: this card is the way in. */}
             {activity.pageOnly && activity.mode !== "code" && (

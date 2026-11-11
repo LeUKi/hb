@@ -142,6 +142,46 @@ test.describe("领取范围", () => {
     expect(claims).toHaveLength(1);
   });
 
+  test("三方积分：广场卡片上是药丸标签，前面是它的标识，没有分隔线", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    const points = {
+      id: "points-stars",
+      name: "星星",
+      unit: "星星",
+      step: 100,
+      host: "stars.example.com",
+    };
+    const pointsActivity = {
+      ...activity,
+      scope: undefined,
+      funding: "points",
+      reward: {
+        mode: "fixed",
+        totalAmount: "50",
+        unitAmount: "10",
+        count: 5,
+      },
+      points,
+    };
+    await page.route("**/api/discovery/activities?**", (route) =>
+      route.fulfill({
+        json: {
+          items: [{ ...pointsActivity, myClaim: null }],
+          nextCursor: null,
+          total: 1,
+        },
+      }),
+    );
+    await openApp(page, "/square");
+    const card = page.getByRole("button", { name: /老朋友的红包/ });
+    const capsule = card.locator(".hb-capsule");
+    await expect(capsule).toHaveText("三方积分星星");
+    await expect(capsule.locator(".hb-capsule-mark svg")).toHaveCount(1);
+    await expect(card).not.toContainText("｜");
+  });
+
   test("红包广场的卡片带同样的标签", async ({ page }) => {
     await mockSession(page, null);
     await page.route("**/api/discovery/activities?**", (route) =>

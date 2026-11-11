@@ -61,7 +61,7 @@ export type PointsKeyView = NonNullable<ReturnType<typeof keyView>>;
 
 function usable(system: PointsSystemRow) {
   if (system.status !== "online")
-    pointsError(409, "POINTS_NOT_ONLINE", "这种三方积分现在没有上线");
+    pointsError(409, "POINTS_NOT_ONLINE", "这个积分现在没有上线");
 }
 
 /** Paste (or replace) one's key: checked with 额度 first (§8). */

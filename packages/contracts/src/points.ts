@@ -170,16 +170,19 @@ export const pointsSystemConfigSchema = z.strictObject({
     "单位不能用本站自己的说法",
   ),
   step: pointsStepSchema,
-  issuerName: shortText(POINTS_LIMITS.issuerNameMax, "发行方名称"),
+  issuerName: shortText(POINTS_LIMITS.issuerNameMax, "网站名称"),
   /** Checked by normalizePointsBaseUrl (the API lets local dev use http). */
   baseUrl: z.string().trim().min(1, "请填写接口地址").max(400),
   intro: markdown(POINTS_LIMITS.introMax, "介绍"),
-  keyGuide: markdown(POINTS_LIMITS.keyGuideMax, "填密钥的引导"),
-  noRecipient: markdown(POINTS_LIMITS.noRecipientMax, "找不到收款人的说明"),
-  arrival: optionalLine(POINTS_LIMITS.arrivalMax, "到账说明"),
-  notAllowed: optionalLine(POINTS_LIMITS.notAllowedMax, "不允许的说明"),
-  insufficient: optionalLine(POINTS_LIMITS.senderNoticeMax, "额度不够的提醒"),
-  keyInvalid: optionalLine(POINTS_LIMITS.senderNoticeMax, "密钥失效的提醒"),
+  keyGuide: markdown(POINTS_LIMITS.keyGuideMax, "怎么拿到密钥"),
+  noRecipient: markdown(
+    POINTS_LIMITS.noRecipientMax,
+    "领取的人还没开户时的说明",
+  ),
+  arrival: optionalLine(POINTS_LIMITS.arrivalMax, "到账后的说明"),
+  notAllowed: optionalLine(POINTS_LIMITS.notAllowedMax, "不能发给他时的说明"),
+  insufficient: optionalLine(POINTS_LIMITS.senderNoticeMax, "余额不够时的说明"),
+  keyInvalid: optionalLine(POINTS_LIMITS.senderNoticeMax, "密钥失效时的说明"),
   rate: z
     .number()
     .int()

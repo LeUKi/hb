@@ -8,6 +8,7 @@ import { amountText } from "../../lib/units";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { Button } from "../ui/button";
+import { PointsCapsule } from "../ui/points-mark";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 
 export const statusTones: Record<string, ChipTone> = {
@@ -29,37 +30,37 @@ export function PointsView() {
         <Page>
           <PageHeader
             title="三方积分"
-            description="把你网站的积分接进红包站：大家发红包时就能选它，领到的直接进领取者在你网站的账户。"
+            description="让大家用你网站的积分发红包：领到的直接存进领取者在你网站的账户。"
             actions={
               <>
                 <Button onClick={() => void navigate({ href: "/help/points" })}>
-                  接入说明
+                  接口说明
                 </Button>
                 <Button
                   variant="primary"
                   disabled={!data.canAdd}
                   onClick={() => void navigate({ href: "/points/new" })}
                 >
-                  接入一种
+                  添加积分
                 </Button>
               </>
             }
           />
           {!data.plus && (
-            <Callout tone="warning" title="开通🐟额 PLUS 才能接入">
-              接入要实现三个接口（额度、发放、查单），跑通接入自检，再经站长审核。开通🐟额
+            <Callout tone="warning" title="开通🐟额 PLUS 才能添加">
+              要在你的网站上做好三个接口（查余额、发放、查单），通过接口测试，再等站长审核。开通🐟额
               PLUS 以后就能开始。
             </Callout>
           )}
           <PageSection
-            title="我接入的"
+            title="我添加的积分"
             action={
-              <span className="text-sm text-ink-3">最多同时 {data.max} 种</span>
+              <span className="text-sm text-ink-3">最多 {data.max} 个</span>
             }
           >
             {data.items.length === 0 ? (
               <Panel className="p-5 text-sm text-ink-2">
-                还没有。接入以后，这里显示每一种的状态、审核意见和自检结果。
+                还没有。添加以后，这里会显示它的状态、站长的审核意见和接口测试的结果。
               </Panel>
             ) : (
               <div className="grid gap-3">
@@ -77,7 +78,7 @@ export function PointsView() {
                             item.breakerUntil !== null &&
                             item.breakerUntil > Date.now() && (
                               <StatusChip tone="warning">
-                                连不上，发放暂停中
+                                连不上你的网站，暂停发放中
                               </StatusChip>
                             )}
                         </div>
@@ -85,7 +86,7 @@ export function PointsView() {
                           {item.host} · 最小单位 {amountText(item.step, unit)}
                         </span>
                         <span>
-                          {item.passed ? "接入自检已通过" : "还没跑通接入自检"}
+                          {item.passed ? "接口测试已通过" : "还没通过接口测试"}
                           {item.status === "paused" && item.pausedBy === "admin"
                             ? " · 站长暂停了它"
                             : ""}
@@ -101,7 +102,7 @@ export function PointsView() {
                             void navigate({ href: `/points/${item.id}/edit` })
                           }
                         >
-                          配置
+                          设置
                         </Button>
                         <Button
                           size="xs"
@@ -109,7 +110,7 @@ export function PointsView() {
                             void navigate({ href: `/points/${item.id}` })
                           }
                         >
-                          详情页
+                          查看详情
                         </Button>
                       </div>
                     </Panel>
@@ -125,23 +126,19 @@ export function PointsView() {
 }
 
 /**
- * “三方｜名称” as the cover draws it, on a scrap of the cover's red: its
- * chip is made for the red, and reads as nothing on a light page.
+ * 三方积分's capsule as the cover draws it, on a scrap of the cover's red
+ * (the 设置页's preview): the cover's version is made for the red.
  */
 export function PointsTag({ name }: { name: string }) {
   return (
     <span
-      className="inline-flex rounded-[14px] p-1"
+      className="inline-flex rounded-full p-1"
       style={{
         background:
           "linear-gradient(var(--color-cover-top), var(--color-cover-bottom))",
       }}
     >
-      <span className="hb-chip-red inline-flex h-7 items-center gap-1 rounded-[10px] px-2.5 text-xs">
-        三方
-        <span aria-hidden="true" className="h-3 w-px bg-current opacity-40" />
-        {name}
-      </span>
+      <PointsCapsule name={name} tone="cover" />
     </span>
   );
 }

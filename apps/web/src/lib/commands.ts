@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
   Coffee,
-  Coins,
   Fish,
   FolderCode,
   HardHat,
@@ -16,6 +15,7 @@ import {
   Trophy,
   UserRound,
 } from "lucide-react";
+import { PointsMark } from "../components/ui/points-mark";
 import type { SessionUser } from "./session";
 
 // "/" commands: the way into every non-activity page. Canonical names are
@@ -190,13 +190,14 @@ export const commands: Command[] = [
     path: "/points",
     name: "points",
     title: "三方积分",
-    icon: Coins,
+    icon: PointsMark,
     requires: "standard",
     visibleTo: (role) => role !== "guest",
     keys: [
       "points",
       "三方积分",
       "积分",
+      "添加积分",
       "接入积分",
       "sanfangjifen",
       "sfjf",

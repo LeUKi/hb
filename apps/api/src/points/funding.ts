@@ -38,7 +38,7 @@ export async function requirePointsFunding(
     ? await readSystem(env, input.pointsSystemId)
     : null;
   if (system?.status !== "online")
-    refuse("POINTS_NOT_ONLINE", "这种三方积分现在没有上线");
+    refuse("POINTS_NOT_ONLINE", "这个积分现在没有上线");
   if (!(await readKey(env, system.id, authorId)))
     refuse("POINTS_KEY_NEEDED", `先填好你在 ${system.host} 的密钥`);
   const issue = moneyStepIssue(input.money, unitOfSystem(system));
@@ -76,7 +76,7 @@ export async function pointsOpeningProblem(
   const system = activity.pointsSystemId
     ? await readSystem(env, activity.pointsSystemId)
     : null;
-  if (system?.status !== "online") return "这种三方积分现在没有上线";
+  if (system?.status !== "online") return "这个积分现在没有上线";
   const pool =
     options.pool ??
     ldcTotalMinor(JSON.parse(activity.config) as LdcActivityInput);
@@ -89,12 +89,12 @@ export async function pointsOpeningProblem(
   if (balance.kind === "key_invalid")
     return `${system.host} 说你的密钥无效，请换一把`;
   if (balance.kind === "unreachable")
-    return `暂时连不上 ${system.host}，查不了额度`;
+    return `暂时连不上 ${system.host}，查不到余额`;
   const needed = pool + elsewhere;
   if (balance.available < needed)
     return elsewhere > 0
-      ? `额度不够：可用 ${formatAmountWithUnit(balance.available, unit)}，这个红包要 ${formatAmountWithUnit(pool, unit)}，你其他开放中的红包还要 ${formatAmountWithUnit(elsewhere, unit)}`
-      : `额度不够：可用 ${formatAmountWithUnit(balance.available, unit)}，这个红包要 ${formatAmountWithUnit(pool, unit)}`;
+      ? `余额不够：可用 ${formatAmountWithUnit(balance.available, unit)}，这个红包要 ${formatAmountWithUnit(pool, unit)}，你其他开放中的红包还要 ${formatAmountWithUnit(elsewhere, unit)}`
+      : `余额不够：可用 ${formatAmountWithUnit(balance.available, unit)}，这个红包要 ${formatAmountWithUnit(pool, unit)}`;
   return null;
 }
 

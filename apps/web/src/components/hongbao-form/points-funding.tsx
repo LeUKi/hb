@@ -53,7 +53,7 @@ export function PointsPicker({
     <div className="grid gap-2">
       {items.length > 1 && (
         <ChoiceCards
-          label="哪种三方积分"
+          label="用哪个积分"
           value={form.pointsSystemId}
           onChange={onPick}
           options={items.map((item) => ({
@@ -81,11 +81,11 @@ function KeyLine({ system }: { system: PointsSystemView }) {
       : data?.kind === "no_key"
         ? `还没填你在 ${system.host} 的密钥`
         : data?.kind === "key_invalid"
-          ? `${system.host} 说你的密钥无效了，换一把才能开放`
+          ? `${system.host} 说你的密钥失效了，换一把才能开放`
           : data?.kind === "unreachable"
-            ? `暂时连不上 ${system.host}，查不了额度`
+            ? `暂时连不上 ${system.host}，查不到余额`
             : balance.isError
-              ? "查不了额度，稍后再试"
+              ? "查不到余额，请稍后再试"
               : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-sm">
@@ -98,7 +98,7 @@ function KeyLine({ system }: { system: PointsSystemView }) {
               : "min-w-0 text-warning"
         }
       >
-        {line ?? `正在问 ${system.host} 你的额度`}
+        {line ?? `正在查你在 ${system.host} 的余额`}
       </span>
       <Button
         variant="quiet"
@@ -195,8 +195,8 @@ export function KeyDialog({
         </Field>
         <p className="text-xs text-ink-3">
           保存时会向 {system.host}{" "}
-          查一次额度，确认密钥能用；密钥加密保存，只用来发你的
-          {system.name}红包。每份至少 {amountText(system.step, unit)}。
+          查一次余额，确认密钥能用；密钥加密保存，只用来发你的「{system.name}
+          」红包。每份至少 {amountText(system.step, unit)}。
         </p>
         <Reveal show={save.isPending}>
           <p className="loading-sheen text-sm text-ink-2">

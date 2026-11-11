@@ -565,7 +565,7 @@ export async function resendPointsPayment(
 
 /** Whether a system may take a claim now (§5): checked before a share is taken. */
 export function claimBlockedBy(system: PointsSystemRow | null) {
-  if (!system || system.status === "retired") return "这种三方积分已经下架了";
+  if (!system || system.status === "retired") return "这个积分已经下架了";
   if (!deliverable(system)) return `${system.name}暂时发不出，稍后再来`;
   return null;
 }

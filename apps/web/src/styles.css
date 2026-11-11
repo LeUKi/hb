@@ -1882,6 +1882,71 @@
   .hb-code.hb-ended .hb-chip-code.hb-chip-link:hover {
     background: rgb(255 255 255 / 0.1);
   }
+  /* 三方积分's capsule (docs/third-party-points-design.md §9): its mark on a
+     solid front half, its name on the back half, the halves meeting by
+     colour alone, as a capsule's do. Drawn for the cover's red by default. */
+  .hb-capsule {
+    display: inline-flex;
+    align-items: stretch;
+    height: 1.75rem;
+    overflow: hidden;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+  .hb-capsule-sm {
+    height: 1.5rem;
+  }
+  .hb-capsule-mark {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.3125rem 0 0.5rem;
+    background: var(--color-cream);
+    color: var(--color-cover-bottom);
+  }
+  .hb-capsule-mark svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .hb-capsule-name {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.625rem 0 0.4375rem;
+    background: rgb(255 255 255 / 0.13);
+    color: var(--color-cream);
+    transition: background-color 160ms var(--ease-snappy);
+  }
+  /* On the site's own light pages: the accent's red and its soft tint. */
+  .hb-capsule-light .hb-capsule-mark {
+    background: var(--color-accent);
+    color: #fff;
+  }
+  .hb-capsule-light .hb-capsule-name {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-ink);
+  }
+  .hb-code .hb-capsule-mark {
+    background: #f3d38b;
+    color: #2c2724;
+  }
+  .hb-code .hb-capsule-name {
+    background: rgb(255 228 180 / 0.1);
+    color: #f5e3bd;
+  }
+  .hb-capsule-link:hover .hb-capsule-name {
+    background: rgb(255 255 255 / 0.22);
+  }
+  .hb-code.hb-ended .hb-capsule-mark {
+    background: #fff3e2;
+    color: #4c5056;
+  }
+  .hb-code.hb-ended .hb-capsule-name {
+    background: rgb(255 255 255 / 0.12);
+    color: #fff3e2;
+  }
+  .hb-code .hb-capsule-link:hover .hb-capsule-name {
+    background: rgb(255 228 180 / 0.18);
+  }
   .hb-meta-link {
     color: var(--color-cream-2);
     transition: color 160ms var(--ease-snappy);

@@ -70,12 +70,12 @@ function PointsStopNotice({ points }: { points: ActivityPoints }) {
   const words =
     points.stop === "insufficient"
       ? copy?.insufficient ||
-        `你在 ${points.host} 的额度不够了，没发出的不再发。`
+        `你在 ${points.host} 的余额不够了，没发出的不再发。`
       : points.stop === "key_invalid"
         ? copy?.keyInvalid ||
           `${points.host} 说你的密钥失效了，没发出的不再发。`
         : points.stop === "key_removed"
-          ? "你删掉了这种积分的密钥，没发出的不再发。"
+          ? "你删掉了这个积分的密钥，没发出的不再发。"
           : `${points.name}已经下架，没发出的不再发。`;
   return (
     <Callout tone="danger" icon={AlertTriangle} title="红包已经提前结束">
