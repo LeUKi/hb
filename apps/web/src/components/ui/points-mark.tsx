@@ -2,19 +2,17 @@ import { createLucideIcon } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 /**
- * 三方积分's own mark (docs/third-party-points-design.md §9): a coin with a
- * four-pointed star, as points are drawn. On lucide's 24×24 grid with its
- * 2px stroke, so it sits with the rest (commands, buttons, the cover).
+ * 三方积分's own mark (docs/third-party-points-design.md §9; the user chose
+ * it, 2026-11-11): a four-pointed sparkle, as points are drawn. On lucide's
+ * 24×24 grid with its 2px stroke, so it sits with the rest (commands,
+ * buttons, the cover's capsule).
  */
 export const PointsMark = createLucideIcon("points", [
-  ["circle", { cx: "12", cy: "12", r: "9", key: "coin" }],
   [
     "path",
     {
-      d: "M12 7.2l1.35 3.45 3.45 1.35-3.45 1.35L12 16.8l-1.35-3.45L7.2 12l3.45-1.35z",
-      fill: "currentColor",
-      strokeWidth: "1",
-      key: "star",
+      d: "M12 3c.7 4.6 3.4 7.3 8.5 9-5.1 1.7-7.8 4.4-8.5 9-.7-4.6-3.4-7.3-8.5-9 5.1-1.7 7.8-4.4 8.5-9z",
+      key: "sparkle",
     },
   ],
 ]);

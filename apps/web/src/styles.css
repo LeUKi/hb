@@ -1882,9 +1882,10 @@
   .hb-code.hb-ended .hb-chip-code.hb-chip-link:hover {
     background: rgb(255 255 255 / 0.1);
   }
-  /* 三方积分's capsule (docs/third-party-points-design.md §9): its mark on a
-     solid front half, its name on the back half, the halves meeting by
-     colour alone, as a capsule's do. Drawn for the cover's red by default. */
+  /* 三方积分's capsule (docs/third-party-points-design.md §9; the user chose
+     it, 2026-11-11): all gold, as the 红包's own gold; the mark on the deeper
+     front half, the name on the pale back half, the halves meeting by colour
+     alone, as a capsule's do. Drawn for the cover's red by default. */
   .hb-capsule {
     display: inline-flex;
     align-items: stretch;
@@ -1901,8 +1902,8 @@
     display: inline-flex;
     align-items: center;
     padding: 0 0.3125rem 0 0.5rem;
-    background: var(--color-cream);
-    color: var(--color-cover-bottom);
+    background: #f3c76a;
+    color: #7a2a14;
   }
   .hb-capsule-mark svg {
     width: 0.875rem;
@@ -1912,40 +1913,36 @@
     display: inline-flex;
     align-items: center;
     padding: 0 0.625rem 0 0.4375rem;
-    background: rgb(255 255 255 / 0.13);
-    color: var(--color-cream);
+    background: #ffe9bd;
+    color: #7a2a14;
     transition: background-color 160ms var(--ease-snappy);
   }
-  /* On the site's own light pages: the accent's red and its soft tint. */
+  /* On the site's own light pages: a deeper gold, the mark in white. */
   .hb-capsule-light .hb-capsule-mark {
-    background: var(--color-accent);
+    background: #e0a93f;
     color: #fff;
   }
   .hb-capsule-light .hb-capsule-name {
-    background: var(--color-accent-soft);
-    color: var(--color-accent-ink);
+    background: #fdf0d2;
+    color: #7a4a08;
   }
   .hb-code .hb-capsule-mark {
-    background: #f3d38b;
     color: #2c2724;
   }
   .hb-code .hb-capsule-name {
-    background: rgb(255 228 180 / 0.1);
-    color: #f5e3bd;
+    color: #5a3a10;
   }
   .hb-capsule-link:hover .hb-capsule-name {
-    background: rgb(255 255 255 / 0.22);
+    background: #fff4dc;
   }
+  /* An ended 代码判定红包's cover goes grey: its gold quietens with it. */
   .hb-code.hb-ended .hb-capsule-mark {
-    background: #fff3e2;
+    background: #e6d6b0;
     color: #4c5056;
   }
   .hb-code.hb-ended .hb-capsule-name {
-    background: rgb(255 255 255 / 0.12);
-    color: #fff3e2;
-  }
-  .hb-code .hb-capsule-link:hover .hb-capsule-name {
-    background: rgb(255 228 180 / 0.18);
+    background: #f5ecd8;
+    color: #4c5056;
   }
   .hb-meta-link {
     color: var(--color-cream-2);
