@@ -20,8 +20,11 @@ export const POINTS_PAYOUT_FILTERS = {
 } as const;
 export type PointsPayoutFilter = keyof typeof POINTS_PAYOUT_FILTERS;
 
-const PAGE = 50;
+/** As the site's other lists: 20 at a time (redesign 07 §1). */
+const PAGE = 20;
 const HONGBAO_PAGE = 20;
+/** 找一笔: at most this many. */
+const SEARCH_MAX = 50;
 /** 要处理的: at most this many, newest first. */
 const ATTENTION_MAX = 100;
 
@@ -208,6 +211,18 @@ export async function listHongbaoRecords(
     )
     .all<HongbaoRow>();
   const page = rows.results.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    items: await withSums(env, page),
+    next:
+      rows.results.length > limit && last
+        ? `${last.opened_at}~${last.id}`
+        : null,
+  };
+}
+
+/** 红包 rows with their payouts summed by state (points_payments_activity_idx). */
+async function withSums(env: ApiBindings, page: HongbaoRow[]) {
   const sums = page.length
     ? await env.DB.prepare(
         `SELECT activity_id,status,COUNT(*) AS count,SUM(amount_minor) AS amount
@@ -231,25 +246,18 @@ export async function listHongbaoRecords(
       amountMinor: picked.reduce((total, row) => total + (row.amount ?? 0), 0),
     };
   };
-  const last = page.at(-1);
-  return {
-    items: page.map((row) => ({
-      id: row.id,
-      title: row.title,
-      authorUsername: row.author_username,
-      openedAt: row.opened_at,
-      endedAt: row.ended_at,
-      deleted: row.deleted_at !== null,
-      claimedCount: row.claimed_count,
-      confirmed: sum(row.id, POINTS_PAYOUT_FILTERS.confirmed),
-      waiting: sum(row.id, POINTS_PAYOUT_FILTERS.waiting),
-      failed: sum(row.id, POINTS_PAYOUT_FILTERS.failed),
-    })),
-    next:
-      rows.results.length > limit && last
-        ? `${last.opened_at}~${last.id}`
-        : null,
-  };
+  return page.map((row) => ({
+    id: row.id,
+    title: row.title,
+    authorUsername: row.author_username,
+    openedAt: row.opened_at,
+    endedAt: row.ended_at,
+    deleted: row.deleted_at !== null,
+    claimedCount: row.claimed_count,
+    confirmed: sum(row.id, POINTS_PAYOUT_FILTERS.confirmed),
+    waiting: sum(row.id, POINTS_PAYOUT_FILTERS.waiting),
+    failed: sum(row.id, POINTS_PAYOUT_FILTERS.failed),
+  }));
 }
 
 /** One 红包's payouts, if it is this system's (else 404, as for any). */
@@ -262,13 +270,21 @@ export async function listHongbaoPayouts(
   limit = PAGE,
 ) {
   const owned = await env.DB.prepare(
-    "SELECT id FROM activities WHERE id=? AND points_system_id=?",
+    `SELECT a.id,a.title,u.username AS author_username,a.opened_at,a.ended_at,
+        a.deleted_at,a.claimed_count
+      FROM activities a JOIN users u ON u.id=a.author_id
+      WHERE a.id=? AND a.points_system_id=? AND a.opened_at IS NOT NULL`,
   )
     .bind(activityId, systemId)
-    .first<{ id: string }>();
+    .first<HongbaoRow>();
   if (!owned)
     throw new ActivityError(404, "POINTS_HONGBAO_NOT_FOUND", "没有这个红包");
-  return listPayoutRecords(env, { activityId }, filter, before, limit);
+  const [page, hongbao] = await Promise.all([
+    listPayoutRecords(env, { activityId }, filter, before, limit),
+    // The first page names the 红包 (a link may open it straight away).
+    before ? null : withSums(env, [owned]).then((rows) => rows[0] ?? null),
+  ]);
+  return { ...page, hongbao };
 }
 
 /**
@@ -289,14 +305,14 @@ export async function searchPayouts(
     ).bind(q, systemId),
     env.DB.prepare(
       `${PAYOUT_SELECT} WHERE p.trade_no=?1 AND p.system_id=?2 LIMIT ?3`,
-    ).bind(q, systemId, PAGE),
+    ).bind(q, systemId, SEARCH_MAX),
   ];
   if (/^\d{1,20}$/.test(q))
     reads.push(
       env.DB.prepare(
         `${PAYOUT_SELECT} WHERE p.system_id=?1 AND p.recipient_external_id=?2
           ORDER BY p.updated_at DESC LIMIT ?3`,
-      ).bind(systemId, q, PAGE),
+      ).bind(systemId, q, SEARCH_MAX),
     );
   if (q.length <= 64)
     reads.push(
@@ -304,10 +320,10 @@ export async function searchPayouts(
         `${PAYOUT_SELECT} WHERE p.system_id=?1 AND p.recipient_external_id IN
             (SELECT external_id FROM users WHERE lower(username)=lower(?2))
           ORDER BY p.updated_at DESC LIMIT ?3`,
-      ).bind(systemId, q, PAGE),
+      ).bind(systemId, q, SEARCH_MAX),
     );
   const batches = await env.DB.batch<PayoutRecordRow>(reads);
-  return merged(batches).slice(0, PAGE).map(payoutOf);
+  return merged(batches).slice(0, SEARCH_MAX).map(payoutOf);
 }
 
 /** Today's and the last 7 days' payouts by state: how many, how much. */

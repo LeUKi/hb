@@ -286,6 +286,8 @@ export type AdminSearch = {
   level?: string;
   fish?: string;
   login?: string;
+  /** /admin/points: the 三方积分 chosen in the list. */
+  id?: string;
 };
 const text = (value: unknown) =>
   typeof value === "string" && value ? value : undefined;
@@ -307,6 +309,7 @@ const adminRoute2 = <Path extends string>(path: Path, title: string) =>
       level: text(search.level),
       fish: text(search.fish),
       login: text(search.login),
+      id: text(search.id),
     }),
   });
 const adminActivitiesRoute = adminRoute2("/admin/activities", "红包");
@@ -318,6 +321,23 @@ const adminRoadmapRoute = adminRoute2("/admin/roadmap", "施工");
 const adminSettingsRoute = adminRoute2("/admin/settings", "网站设置");
 const adminAuditRoute = adminRoute2("/admin/audit", "操作记录");
 const adminPointsRoute = adminRoute2("/admin/points", "三方积分");
+// One 三方积分's pages behind its detail (07 §10): each has its way back.
+const adminPointsConfigRoute = adminRoute2(
+  "/admin/points/$id/config",
+  "三方积分配置",
+);
+const adminPointsRecordsRoute = adminRoute2(
+  "/admin/points/$id/records",
+  "发放记录",
+);
+const adminPointsChangesRoute = adminRoute2(
+  "/admin/points/$id/changes",
+  "文案改动",
+);
+const adminPointsTestsRoute = adminRoute2(
+  "/admin/points/$id/tests",
+  "接口测试记录",
+);
 const helpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/help",
@@ -413,6 +433,10 @@ const routeTree = rootRoute.addChildren([
   adminSettingsRoute,
   adminAuditRoute,
   adminPointsRoute,
+  adminPointsConfigRoute,
+  adminPointsRecordsRoute,
+  adminPointsChangesRoute,
+  adminPointsTestsRoute,
   helpRoute,
   helpApiRoute,
   helpStartRoute,

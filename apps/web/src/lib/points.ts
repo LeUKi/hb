@@ -526,7 +526,7 @@ export function useHongbaoRecords(scope: RecordsScope, id: string) {
   });
 }
 
-/** One 红包's payouts, 50 at a time. */
+/** One 红包's payouts, 20 at a time. */
 export function useHongbaoPayouts(
   scope: RecordsScope,
   id: string,
@@ -537,7 +537,12 @@ export function useHongbaoPayouts(
     queryKey: [...pointsKeys.records(scope, id), "payouts", hongbaoId, filter],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
-      get<{ items: PayoutRecord[]; next: string | null }>(
+      get<{
+        items: PayoutRecord[];
+        next: string | null;
+        /** On the first page: the 红包 itself, with its sums. */
+        hongbao: HongbaoRecord | null;
+      }>(
         recordsPath(
           scope,
           id,
@@ -564,7 +569,7 @@ export function useSearchPayouts(scope: RecordsScope, id: string, q: string) {
   });
 }
 
-/** 调用记录, 50 at a time: only the failures (7 days), or every one. */
+/** 调用记录, 20 at a time: only the failures (7 days), or every one. */
 export function useCallRecords(
   scope: RecordsScope,
   id: string,

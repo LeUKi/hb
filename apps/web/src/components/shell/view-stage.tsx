@@ -18,6 +18,11 @@ import { AdminJudge } from "../views/admin/admin-judge";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
 import { AdminPoints } from "../views/admin/admin-points";
+import {
+  AdminPointsChanges,
+  AdminPointsConfig,
+  AdminPointsTests,
+} from "../views/admin/admin-points-pages";
 import { AdminRoadmap } from "../views/admin/admin-roadmap";
 import { AdminSettings } from "../views/admin/admin-settings";
 import { AdminUsers } from "../views/admin/admin-users";
@@ -97,7 +102,7 @@ const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
   "/admin/roadmap": () => <AdminRoadmap />,
   "/admin/settings": () => <AdminSettings />,
   "/admin/audit": () => <AdminAudit />,
-  "/admin/points": () => <AdminPoints />,
+  "/admin/points": (search) => <AdminPoints search={search} />,
 };
 
 function useLeaf() {
@@ -151,11 +156,39 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
           page={<PointsEditView id={params.id ?? ""} />}
         />
       );
+    case "/admin/points/$id/config":
+      return (
+        <CommandPageView
+          id="admin"
+          page={<AdminPointsConfig id={params.id ?? ""} />}
+        />
+      );
+    case "/admin/points/$id/records":
+      return (
+        <CommandPageView
+          id="admin"
+          page={<PointsRecordsView scope="admin" id={params.id ?? ""} />}
+        />
+      );
+    case "/admin/points/$id/changes":
+      return (
+        <CommandPageView
+          id="admin"
+          page={<AdminPointsChanges id={params.id ?? ""} />}
+        />
+      );
+    case "/admin/points/$id/tests":
+      return (
+        <CommandPageView
+          id="admin"
+          page={<AdminPointsTests id={params.id ?? ""} />}
+        />
+      );
     case "/points/$id/records":
       return (
         <CommandPageView
           id="points"
-          page={<PointsRecordsView id={params.id ?? ""} />}
+          page={<PointsRecordsView scope="own" id={params.id ?? ""} />}
         />
       );
     case "/points/$id":

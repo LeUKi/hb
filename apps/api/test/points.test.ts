@@ -633,6 +633,32 @@ describe("三方积分红包", () => {
     expect(new Set(seen).size).toBe(5);
     expect(seen.length).toBe(5);
     expect(seen[0]).toBe(held.claim.payment?.id);
+    // The first page names the 红包 (a link may open it straight away).
+    const firstPage = await listHongbaoPayouts(
+      bindings,
+      systemId,
+      hongbao.id,
+      "all",
+      undefined,
+      2,
+    );
+    expect(firstPage.hongbao).toMatchObject({
+      id: hongbao.id,
+      confirmed: { count: 4, amountMinor: 4000 },
+      waiting: { count: 1, amountMinor: 1000 },
+    });
+    expect(
+      (
+        await listHongbaoPayouts(
+          bindings,
+          systemId,
+          hongbao.id,
+          "all",
+          firstPage.next ?? undefined,
+          2,
+        )
+      ).hongbao,
+    ).toBeNull();
     const confirmed = await listHongbaoPayouts(
       bindings,
       systemId,

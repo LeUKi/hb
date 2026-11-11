@@ -1,14 +1,14 @@
-// 三方积分's 发放记录 and 调用记录 (docs/third-party-points-design.md §7).
-// A 红包 can have hundreds of payouts, so they are not one long list: the
-// sums, what needs someone (要处理的), then the system's 红包 newest first,
-// each with its own sums; one opened shows its payouts, 50 at a time, by
-// state. A search finds one payout by recipient or order number. The calls
-// show failures first. The same on the 站长's panel and on the issuer's own
-// page (/points/:id/records); only the 站长 may settle a payout with no
-// known result. Read on open and on 加载更多; nothing refreshes by itself.
+// 三方积分's 发放记录 (docs/third-party-points-design.md §7), the same page
+// for the 站长 (/admin/points/:id/records) and the issuer (/points/:id/
+// records), laid out as the site's other lists (redesign 07 §1): the sums
+// on top, a search that runs once typing pauses, then 要处理的 / 按红包 /
+// 调用记录. The tab is in the address (?tab=), and so is a 红包 opened from
+// 按红包 (?hongbao=, a step of its own: Back returns to the list), with its
+// state filter (?filter=). Lists load 20 at a time as their end comes near.
+// Only the 站长 may settle a payout with no known result.
 import type { AmountUnit } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { activityPath } from "../../lib/activity-route";
@@ -22,6 +22,7 @@ import {
   payoutReasonWords,
   type RecordsScope,
   useAdminPointsActions,
+  useAdminPointsDetail,
   useCallRecords,
   useHongbaoPayouts,
   useHongbaoRecords,
@@ -32,13 +33,27 @@ import {
 import { clockLabel } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
 import { amountText } from "../../lib/units";
-import { Page, PageHeader, Panel } from "../page/page";
-import { PageLoad, queryLoad } from "../page/page-state";
+import {
+  type LazyList,
+  LazyListEnd,
+  useQueryLazyList,
+} from "../page/lazy-list";
+import { EmptyNote, Page, PageHeader, Panel } from "../page/page";
+import {
+  Bone,
+  ListSkeleton,
+  PageLoad,
+  queryLoad,
+  ResultError,
+} from "../page/page-state";
+import { useSearchChoice, useSearchStep } from "../shell/use-search-choice";
 import { Button } from "../ui/button";
-import { TextInput } from "../ui/field";
 import { PointsCapsule } from "../ui/points-mark";
+import { Swap } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
+import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { SearchBox, useSettled } from "./admin/admin-frame";
 
 const payoutStatus: Record<
   PayoutRecord["status"],
@@ -74,28 +89,49 @@ const callResults: Record<string, string> = {
   "missed:invalid": "回复看不懂",
 };
 
-/** The issuer's own page: their system's records. */
-export function PointsRecordsView({ id }: { id: string }) {
+type Tab = "attention" | "hongbao" | "calls";
+type Props = { scope: RecordsScope; systemId: string; unit: AmountUnit };
+
+/** The page: the system read for its name and unit, then the records. */
+export function PointsRecordsView({
+  scope,
+  id,
+}: {
+  scope: RecordsScope;
+  id: string;
+}) {
   const user = useSessionUser();
-  const query = useOwnPoints(user?.id ?? "", id);
+  const own = useOwnPoints(scope === "own" ? (user?.id ?? "") : "", id);
+  const admin = useAdminPointsDetail(scope === "admin" ? id : "");
+  const query = scope === "admin" ? admin : own;
   const system = query.data?.system;
   return (
     <PageLoad load={queryLoad(query)}>
       {system && (
-        <Page width="wide">
+        <Page>
           <PageHeader
-            eyebrow="三方积分"
-            back={{ label: "我添加的积分", href: "/points" }}
+            back={
+              scope === "admin"
+                ? {
+                    label: "三方积分",
+                    href: `/admin/points?id=${encodeURIComponent(id)}`,
+                  }
+                : { label: "我添加的积分", href: "/points" }
+            }
             title={
               <span className="inline-flex flex-wrap items-center gap-2">
                 <PointsCapsule name={system.name} />
                 发放记录
               </span>
             }
-            description="红包站每一次给领取的人发积分、每一次调用你的接口，都在这里。"
+            description={
+              scope === "admin"
+                ? system.issuerName
+                : "红包站每一次给领取的人发你的积分、每一次调用你的接口，都在这里。"
+            }
           />
-          <PointsRecords
-            scope="own"
+          <Records
+            scope={scope}
             systemId={system.id}
             unit={{ unit: system.unit, step: system.step }}
           />
@@ -105,92 +141,75 @@ export function PointsRecordsView({ id }: { id: string }) {
   );
 }
 
-/** 发放记录 and 调用记录 of one system. */
-export function PointsRecords({
-  scope,
-  systemId,
+function Records(props: Props) {
+  const overview = useRecordsOverview(props.scope, props.systemId);
+  const [tab, setTab] = useSearchChoice<Tab>("tab", "attention", [
+    "attention",
+    "hongbao",
+    "calls",
+  ]);
+  const [typed, setTyped] = useState("");
+  const q = useSettled(typed.trim());
+  const attention = overview.data?.attention;
+  return (
+    <div className="grid gap-4">
+      <Totals totals={overview.data?.totals} unit={props.unit} />
+      <SearchBox
+        label="找一笔发放"
+        value={typed}
+        onChange={setTyped}
+        maxLength={128}
+        placeholder="找一笔：用户名、LINUX DO ID 或单号"
+      />
+      <Swap id={q ? `search:${q}` : "tabs"}>
+        {q ? (
+          <SearchResults {...props} q={q} />
+        ) : (
+          <div className="grid gap-3">
+            <Segmented
+              label="看哪一部分"
+              value={tab}
+              onChange={setTab}
+              options={[
+                {
+                  value: "attention",
+                  label: "要处理的",
+                  count: attention?.length,
+                },
+                { value: "hongbao", label: "按红包" },
+                { value: "calls", label: "调用记录" },
+              ]}
+            />
+            <Swap id={tab}>
+              {tab === "attention" ? (
+                <Attention {...props} />
+              ) : tab === "hongbao" ? (
+                <ByHongbao {...props} />
+              ) : (
+                <Calls scope={props.scope} systemId={props.systemId} />
+              )}
+            </Swap>
+          </div>
+        )}
+      </Swap>
+    </div>
+  );
+}
+
+function Totals({
+  totals,
   unit,
 }: {
-  scope: RecordsScope;
-  systemId: string;
+  totals: PayoutTotals | undefined;
   unit: AmountUnit;
 }) {
-  const [kind, setKind] = useState<"payouts" | "calls">("payouts");
-  return (
-    <div className="grid gap-4">
-      <Segmented
-        label="看哪一种记录"
-        value={kind}
-        onChange={setKind}
-        options={[
-          { value: "payouts", label: "发放记录" },
-          { value: "calls", label: "调用记录" },
-        ]}
-      />
-      {kind === "payouts" ? (
-        <Payouts scope={scope} systemId={systemId} unit={unit} />
-      ) : (
-        <Calls scope={scope} systemId={systemId} />
-      )}
-    </div>
-  );
-}
-
-type Props = { scope: RecordsScope; systemId: string; unit: AmountUnit };
-
-function Payouts(props: Props) {
-  const [hongbao, setHongbao] = useState<HongbaoRecord | null>(null);
-  const [searched, setSearched] = useState("");
-  if (hongbao)
-    return (
-      <HongbaoPayouts
-        {...props}
-        hongbao={hongbao}
-        onBack={() => setHongbao(null)}
-      />
-    );
-  return (
-    <div className="grid gap-4">
-      <Overview {...props} />
-      <SearchBox value={searched} onSearch={setSearched} />
-      {searched ? (
-        <SearchResults {...props} q={searched} />
-      ) : (
-        <>
-          <Attention {...props} />
-          <HongbaoList {...props} onOpen={setHongbao} />
-        </>
-      )}
-    </div>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="grid gap-2">
-      <h3 className="text-sm font-semibold text-ink">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Overview({ scope, systemId, unit }: Props) {
-  const query = useRecordsOverview(scope, systemId);
-  const totals = query.data?.totals;
   if (!totals)
     return (
-      <Panel className="loading-sheen p-4 text-sm text-ink-3">正在算合计</Panel>
+      <Panel className="grid gap-2.5 p-4" aria-hidden="true">
+        <Bone className="h-3.5 w-3/4" />
+        <Bone className="h-3.5 w-2/3" />
+      </Panel>
     );
-  return <Totals totals={totals} unit={unit} />;
-}
-
-function Totals({ totals, unit }: { totals: PayoutTotals; unit: AmountUnit }) {
   // Each part kept whole when the line wraps (a phone).
   const line = (span: PayoutTotals["today"]) => (
     <>
@@ -223,51 +242,32 @@ function Totals({ totals, unit }: { totals: PayoutTotals; unit: AmountUnit }) {
   );
 }
 
-/** Enter (or 搜索) searches; the X goes back to the lists. */
-function SearchBox({
-  value,
-  onSearch,
+/** A read list's place: bars, 重试, a note when empty, or the rows. */
+function ListArea({
+  pending,
+  failed,
+  onRetry,
+  empty,
+  children,
+  list,
+  done,
 }: {
-  value: string;
-  onSearch: (q: string) => void;
+  pending: boolean;
+  failed: boolean;
+  onRetry: () => void;
+  empty: ReactNode;
+  children: ReactNode[];
+  list?: LazyList;
+  done?: string;
 }) {
-  const [text, setText] = useState(value);
+  if (pending) return <ListSkeleton rows={3} />;
+  if (failed && children.length === 0) return <ResultError onRetry={onRetry} />;
+  if (children.length === 0) return <>{empty}</>;
   return (
-    <form
-      className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSearch(text.trim());
-      }}
-    >
-      <TextInput
-        className="flex-1"
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          if (!event.target.value) onSearch("");
-        }}
-        placeholder="找一笔：用户名、ID 或单号"
-        aria-label="找一笔发放"
-        prefix={<Search className="size-4" aria-hidden="true" />}
-        suffix={
-          text ? (
-            <button
-              type="button"
-              aria-label="清除"
-              className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-fill-2"
-              onClick={() => {
-                setText("");
-                onSearch("");
-              }}
-            >
-              <X className="size-4" />
-            </button>
-          ) : undefined
-        }
-      />
-      <Button type="submit">搜索</Button>
-    </form>
+    <Panel className="grid px-1.5 py-1.5">
+      <ul className="grid">{children}</ul>
+      {list && <LazyListEnd list={list} done={done ?? "已全部加载"} />}
+    </Panel>
   );
 }
 
@@ -275,24 +275,27 @@ function SearchResults({ scope, systemId, unit, q }: Props & { q: string }) {
   const query = useSearchPayouts(scope, systemId, q);
   const items = query.data?.items ?? [];
   return (
-    <Section title={`“${q}” 的发放`}>
-      <List
-        loading={query.isPending}
-        failed={query.isError}
-        onRetry={() => void query.refetch()}
-        empty="没找到。用户名要写全；单号要写全。"
-      >
-        {items.map((payout) => (
-          <PayoutRow
-            key={payout.id}
-            payout={payout}
-            unit={unit}
-            admin={scope === "admin"}
-            withHongbao
-          />
-        ))}
-      </List>
-    </Section>
+    <ListArea
+      pending={query.isPending}
+      failed={query.isError}
+      onRetry={() => void query.refetch()}
+      empty={
+        <EmptyNote
+          title="没找到"
+          text="用户名、ID 和单号都要写全；用户名按他现在的名字找。"
+        />
+      }
+    >
+      {items.map((payout) => (
+        <PayoutRow
+          key={payout.id}
+          payout={payout}
+          unit={unit}
+          admin={scope === "admin"}
+          withHongbao
+        />
+      ))}
+    </ListArea>
   );
 }
 
@@ -300,35 +303,41 @@ function Attention({ scope, systemId, unit }: Props) {
   const query = useRecordsOverview(scope, systemId);
   const items = query.data?.attention ?? [];
   return (
-    <Section
-      title={
-        <span className="flex items-center gap-2">
-          要处理的
-          {items.length > 0 && (
-            <StatusChip tone="danger" dot>
-              {items.length} 笔
-            </StatusChip>
-          )}
-        </span>
+    <ListArea
+      pending={query.isPending}
+      failed={query.isError}
+      onRetry={() => void query.refetch()}
+      empty={
+        <EmptyNote
+          title="没有要处理的发放"
+          text="结果不明的、在等领取的人开户的、近 7 天没发出的会列在这里。"
+        />
       }
     >
-      <List
-        loading={query.isPending}
-        failed={query.isError}
-        onRetry={() => void query.refetch()}
-        empty="没有。结果不明、等开户和近 7 天没发出的会列在这里。"
-      >
-        {items.map((payout) => (
-          <PayoutRow
-            key={payout.id}
-            payout={payout}
-            unit={unit}
-            admin={scope === "admin"}
-            withHongbao
-          />
-        ))}
-      </List>
-    </Section>
+      {items.map((payout) => (
+        <PayoutRow
+          key={payout.id}
+          payout={payout}
+          unit={unit}
+          admin={scope === "admin"}
+          withHongbao
+        />
+      ))}
+    </ListArea>
+  );
+}
+
+/** 按红包: the list, or the 红包 opened from it (a step in the address). */
+function ByHongbao(props: Props) {
+  const step = useSearchStep("hongbao");
+  return (
+    <Swap id={step.value ?? "list"}>
+      {step.value ? (
+        <HongbaoPayouts {...props} hongbaoId={step.value} onBack={step.close} />
+      ) : (
+        <HongbaoList {...props} onOpen={step.open} />
+      )}
+    </Swap>
   );
 }
 
@@ -337,46 +346,48 @@ function HongbaoList({
   systemId,
   unit,
   onOpen,
-}: Props & { onOpen: (hongbao: HongbaoRecord) => void }) {
+}: Props & { onOpen: (id: string) => void }) {
   const query = useHongbaoRecords(scope, systemId);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
   const items = (query.data?.pages ?? []).flatMap((page) => page.items);
   return (
-    <Section title="按红包">
-      <List
-        loading={query.isPending}
-        failed={query.isError}
-        onRetry={() => void query.refetch()}
-        empty="还没有用它发的红包。"
-        more={query.hasNextPage}
-        loadingMore={query.isFetchingNextPage}
-        onMore={() => void query.fetchNextPage()}
-      >
-        {items.map((hongbao) => (
-          <button
-            key={hongbao.id}
-            type="button"
-            onClick={() => onOpen(hongbao)}
-            className="flex items-center gap-3 rounded-xl bg-fill-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-[rgb(42_21_25/0.12)]"
-          >
-            <span className="grid min-w-0 flex-1 gap-0.5">
-              <span className="flex min-w-0 items-center gap-2">
-                <b className="truncate font-medium text-ink">{hongbao.title}</b>
-                <HongbaoState hongbao={hongbao} />
-              </span>
-              <span className="text-ink-3">
-                @{hongbao.authorUsername} 发的 · {clockLabel(hongbao.openedAt)}{" "}
-                开放 · 领了 {hongbao.claimedCount} 份
-              </span>
-              <SumsLine hongbao={hongbao} unit={unit} />
-            </span>
-            <ChevronRight
-              className="size-4 shrink-0 text-ink-3"
-              aria-hidden="true"
-            />
-          </button>
-        ))}
-      </List>
-    </Section>
+    <ListArea
+      pending={query.isPending}
+      failed={query.isError}
+      onRetry={() => void query.refetch()}
+      empty={
+        <EmptyNote
+          title="还没有用它发的红包"
+          text="有人用这种积分开放红包以后，会按开放时间列在这里。"
+        />
+      }
+      list={list}
+      done={`共 ${items.length} 个`}
+    >
+      {items.map((hongbao) => (
+        <li key={hongbao.id}>
+          <Squircle radius={radius.row}>
+            <button
+              type="button"
+              onClick={() => onOpen(hongbao.id)}
+              className="flex w-full items-center gap-3 p-3 text-left text-sm transition-colors hover:bg-fill-2"
+            >
+              <HongbaoSummary hongbao={hongbao} unit={unit} />
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </button>
+          </Squircle>
+        </li>
+      ))}
+    </ListArea>
   );
 }
 
@@ -390,37 +401,70 @@ function HongbaoState({ hongbao }: { hongbao: HongbaoRecord }) {
   );
 }
 
-function SumsLine({
+function HongbaoSummary({
   hongbao,
   unit,
+  title,
 }: {
   hongbao: HongbaoRecord;
   unit: AmountUnit;
+  /** The title as a link (the opened 红包's header), else plain. */
+  title?: ReactNode;
 }) {
   return (
-    <span className="text-ink-2">
-      已到账 {hongbao.confirmed.count} 笔，共{" "}
-      {amountText(hongbao.confirmed.amountMinor, unit)}
-      {hongbao.waiting.count > 0 && ` · 处理中 ${hongbao.waiting.count} 笔`}
-      {hongbao.failed.count > 0 && (
-        <span className="text-danger"> · 没发出 {hongbao.failed.count} 笔</span>
-      )}
+    <span className="grid min-w-0 flex-1 gap-0.5">
+      <span className="flex min-w-0 items-center gap-2">
+        {title ?? (
+          <b className="truncate font-medium text-ink">{hongbao.title}</b>
+        )}
+        <HongbaoState hongbao={hongbao} />
+      </span>
+      <span className="text-ink-3">
+        @{hongbao.authorUsername} 发的 · {clockLabel(hongbao.openedAt)} 开放 ·
+        领了 {hongbao.claimedCount} 份
+      </span>
+      <span className="text-ink-2">
+        已到账 {hongbao.confirmed.count} 笔，共{" "}
+        {amountText(hongbao.confirmed.amountMinor, unit)}
+        {hongbao.waiting.count > 0 && ` · 处理中 ${hongbao.waiting.count} 笔`}
+        {hongbao.failed.count > 0 && (
+          <span className="text-danger">
+            {" "}
+            · 没发出 {hongbao.failed.count} 笔
+          </span>
+        )}
+      </span>
     </span>
   );
 }
 
-/** One 红包's payouts, by state, 50 at a time. */
+/** One 红包's payouts, by state, 20 at a time. */
 function HongbaoPayouts({
   scope,
   systemId,
   unit,
-  hongbao,
+  hongbaoId,
   onBack,
-}: Props & { hongbao: HongbaoRecord; onBack: () => void }) {
+}: Props & { hongbaoId: string; onBack: () => void }) {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<PayoutFilter>("all");
-  const query = useHongbaoPayouts(scope, systemId, hongbao.id, filter);
-  const items = (query.data?.pages ?? []).flatMap((page) => page.items);
+  const [filter, setFilter] = useSearchChoice<PayoutFilter>("filter", "all", [
+    "all",
+    "confirmed",
+    "waiting",
+    "failed",
+  ]);
+  const query = useHongbaoPayouts(scope, systemId, hongbaoId, filter);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const pages = query.data?.pages ?? [];
+  const hongbao = pages[0]?.hongbao ?? null;
+  const items = pages.flatMap((page) => page.items);
+  const href = activityPath(hongbaoId);
   return (
     <div className="grid gap-3">
       <div>
@@ -429,27 +473,32 @@ function HongbaoPayouts({
           所有红包
         </Button>
       </div>
-      <Panel className="grid gap-1 p-4 text-sm">
-        <span className="flex min-w-0 items-center gap-2">
-          <a
-            href={activityPath(hongbao.id)}
-            onClick={(event) => {
-              if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-              event.preventDefault();
-              void navigate({ href: activityPath(hongbao.id) });
-            }}
-            className="truncate text-base font-semibold text-ink underline-offset-2 hover:underline"
-          >
-            {hongbao.title}
-          </a>
-          <HongbaoState hongbao={hongbao} />
-        </span>
-        <span className="text-ink-3">
-          @{hongbao.authorUsername} 发的 · {clockLabel(hongbao.openedAt)} 开放 ·
-          领了 {hongbao.claimedCount} 份
-        </span>
-        <SumsLine hongbao={hongbao} unit={unit} />
-      </Panel>
+      {hongbao ? (
+        <Panel className="flex p-4 text-sm">
+          <HongbaoSummary
+            hongbao={hongbao}
+            unit={unit}
+            title={
+              <a
+                href={href}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  void navigate({ href });
+                }}
+                className="truncate text-base font-semibold text-ink underline-offset-2 hover:underline"
+              >
+                {hongbao.title}
+              </a>
+            }
+          />
+        </Panel>
+      ) : (
+        <Panel className="grid gap-2.5 p-4" aria-hidden="true">
+          <Bone className="h-4 w-1/2" />
+          <Bone className="h-3.5 w-2/3" />
+        </Panel>
+      )}
       <Segmented
         label="按状态看"
         size="sm"
@@ -462,14 +511,13 @@ function HongbaoPayouts({
           { value: "failed", label: "没发出" },
         ]}
       />
-      <List
-        loading={query.isPending}
+      <ListArea
+        pending={query.isPending}
         failed={query.isError}
         onRetry={() => void query.refetch()}
-        empty="没有这样的发放。"
-        more={query.hasNextPage}
-        loadingMore={query.isFetchingNextPage}
-        onMore={() => void query.fetchNextPage()}
+        empty={<EmptyNote title="没有这样的发放" text="换个状态看看。" />}
+        list={list}
+        done={`共 ${items.length} 笔`}
       >
         {items.map((payout) => (
           <PayoutRow
@@ -479,7 +527,7 @@ function HongbaoPayouts({
             admin={scope === "admin"}
           />
         ))}
-      </List>
+      </ListArea>
     </div>
   );
 }
@@ -504,8 +552,9 @@ function PayoutRow({
     payout.status === "unknown"
       ? (payoutReasonWords[payout.reason ?? ""] ?? payout.reason)
       : null;
+  const href = activityPath(payout.activityId);
   return (
-    <div className="grid gap-0.5 rounded-xl bg-fill-2 px-3 py-2 text-sm">
+    <li className="grid gap-0.5 border-line border-b px-3 py-2.5 text-sm last:border-b-0">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ink">
         <b className="tabular-nums">{amountText(payout.amountMinor, unit)}</b>
         <span className="min-w-0">
@@ -522,11 +571,11 @@ function PayoutRow({
       {withHongbao && (
         <span className="text-ink-2">
           <a
-            href={activityPath(payout.activityId)}
+            href={href}
             onClick={(event) => {
               if (event.metaKey || event.ctrlKey || event.shiftKey) return;
               event.preventDefault();
-              void navigate({ href: activityPath(payout.activityId) });
+              void navigate({ href });
             }}
             className="font-medium text-ink underline-offset-2 hover:underline"
           >
@@ -541,7 +590,7 @@ function PayoutRow({
         {payout.attempts > 1 ? ` · 调用了 ${payout.attempts} 次` : ""}
       </span>
       {admin && payout.status === "unknown" && <SettleButtons id={payout.id} />}
-    </div>
+    </li>
   );
 }
 
@@ -549,18 +598,25 @@ function PayoutRow({
 function SettleButtons({ id }: { id: string }) {
   const actions = useAdminPointsActions();
   const error = actions.payout.error;
+  const busy = actions.payout.isPending;
   return (
     <span className="flex flex-wrap items-center gap-2 pt-1">
       <Button
         size="xs"
-        onClick={() => actions.payout.mutate({ id, action: "requery" })}
+        aria-disabled={busy || undefined}
+        onClick={() => {
+          if (!busy) actions.payout.mutate({ id, action: "requery" });
+        }}
       >
         再查一次
       </Button>
       <Button
         size="xs"
         variant="quiet"
-        onClick={() => actions.payout.mutate({ id, action: "fail" })}
+        aria-disabled={busy || undefined}
+        onClick={() => {
+          if (!busy) actions.payout.mutate({ id, action: "fail" });
+        }}
       >
         标为未发出
       </Button>
@@ -576,34 +632,50 @@ function SettleButtons({ id }: { id: string }) {
 }
 
 function Calls({ scope, systemId }: { scope: RecordsScope; systemId: string }) {
-  const [problems, setProblems] = useState(true);
-  const query = useCallRecords(scope, systemId, problems);
+  const [which, setWhich] = useSearchChoice<"problems" | "all">(
+    "calls",
+    "problems",
+    ["problems", "all"],
+  );
+  const query = useCallRecords(scope, systemId, which === "problems");
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
   const items = (query.data?.pages ?? []).flatMap((page) => page.items);
   return (
     <div className="grid gap-3">
       <Segmented
         label="看哪些调用"
         size="sm"
-        value={problems ? "problems" : "all"}
-        onChange={(value) => setProblems(value === "problems")}
+        value={which}
+        onChange={setWhich}
         options={[
           { value: "problems", label: "只看出错的" },
           { value: "all", label: "全部" },
         ]}
       />
-      <List
-        loading={query.isPending}
+      <ListArea
+        pending={query.isPending}
         failed={query.isError}
         onRetry={() => void query.refetch()}
-        empty={problems ? "近 7 天的调用都成功了。" : "还没有调用过。"}
-        more={query.hasNextPage}
-        loadingMore={query.isFetchingNextPage}
-        onMore={() => void query.fetchNextPage()}
+        empty={
+          <EmptyNote
+            title={
+              which === "problems" ? "近 7 天的调用都成功了" : "还没有调用过"
+            }
+          />
+        }
+        list={list}
+        done={`共 ${items.length} 次`}
       >
         {items.map((call) => (
-          <div
+          <li
             key={call.id}
-            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl bg-fill-2 px-3 py-2 text-sm"
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-line border-b px-3 py-2.5 text-sm last:border-b-0"
           >
             <span className="text-ink">
               {callKinds[call.kind] ?? call.kind}
@@ -631,60 +703,9 @@ function Calls({ scope, systemId }: { scope: RecordsScope; systemId: string }) {
                 本站单号 {call.outTradeNo}
               </span>
             )}
-          </div>
+          </li>
         ))}
-      </List>
-    </div>
-  );
-}
-
-function List({
-  loading,
-  failed,
-  onRetry,
-  empty,
-  more = false,
-  loadingMore = false,
-  onMore,
-  children,
-}: {
-  loading: boolean;
-  failed: boolean;
-  onRetry: () => void;
-  empty: string;
-  more?: boolean;
-  loadingMore?: boolean;
-  onMore?: () => void;
-  children: ReactNode[];
-}) {
-  if (loading)
-    return <p className="loading-sheen text-sm text-ink-3">正在读记录</p>;
-  if (failed && children.length === 0)
-    return (
-      <p className="flex items-center gap-2 text-sm text-danger">
-        没有读到记录。
-        <Button size="xs" variant="quiet" onClick={onRetry}>
-          再试一次
-        </Button>
-      </p>
-    );
-  if (children.length === 0)
-    return <p className="text-sm text-ink-3">{empty}</p>;
-  return (
-    <div className="grid gap-2">
-      {children}
-      {more && onMore && (
-        <Button
-          size="sm"
-          className={loadingMore ? "loading-sheen" : undefined}
-          aria-disabled={loadingMore || undefined}
-          onClick={() => {
-            if (!loadingMore) onMore();
-          }}
-        >
-          加载更多
-        </Button>
-      )}
+      </ListArea>
     </div>
   );
 }
