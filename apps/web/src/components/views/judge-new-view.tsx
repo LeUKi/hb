@@ -22,13 +22,14 @@ import { noVersions } from "../hongbao-form/judge-versions";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
 import { JudgeHelpLinks } from "../judges/judge-bits";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
-import { Page, PageHeader, Panel } from "../page/page";
+import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
 import { Button } from "../ui/button";
-import { Segmented, Switch } from "../ui/field";
+import { ChoiceCards, Switch } from "../ui/field";
 import { Reveal } from "../ui/reveal";
+import { codePublicOptions } from "./judge-view";
 import { MessageView } from "./message-view";
 
 // 写一个判定器 /judges/new (docs/judge-square-design.md §15.4, §15.5,
@@ -70,29 +71,27 @@ function NewSettings({
   const [asking, setAsking] = useState<"public" | "join" | null>(null);
   const [featurable, setFeaturable] = useState(true);
   const close = () => setAsking(null);
+  const shown = value.listed ? "always" : value.codePublic;
   return (
-    <section aria-labelledby={titleId} className="grid gap-3">
-      <h2 id={titleId} className="px-1 text-base font-semibold text-ink">
-        设置
-      </h2>
+    <PageSection id={titleId} title="设置">
       <Panel className="grid gap-4 p-4">
         <div className="grid gap-1.5">
           <span className="text-sm font-medium text-ink">代码公开</span>
-          <div>
-            <Segmented
-              label="代码公开"
-              value={value.listed ? "always" : value.codePublic}
-              disabled={value.listed}
-              options={[
-                { value: "ended", label: "结束后公开" },
-                { value: "always", label: "一直公开" },
-              ]}
-              onChange={(next) => {
-                if (next === "always") setAsking("public");
-                else onChange({ ...value, codePublic: "ended" });
-              }}
-            />
-          </div>
+          {/* A meaningful choice, not to be undone once deployed: cards
+              (10 C, 07 §1). In the 广场 it is 一直公开 for good. */}
+          <ChoiceCards
+            label="代码公开"
+            value={shown}
+            disabled={value.listed}
+            options={codePublicOptions(
+              "所有人随时都能看代码，部署以后就改不回来。",
+            )}
+            onChange={(next) => {
+              if (next === shown) return;
+              if (next === "always") setAsking("public");
+              else onChange({ ...value, codePublic: "ended" });
+            }}
+          />
         </div>
         <div className="flex min-w-0 flex-col gap-4 border-line border-t pt-4">
           <Switch
@@ -169,7 +168,7 @@ function NewSettings({
           onChange={setFeaturable}
         />
       </ConfirmDialog>
-    </section>
+    </PageSection>
   );
 }
 

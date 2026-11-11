@@ -4,8 +4,8 @@ import type {
   JudgePageVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Check, ChevronRight, Copy } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { AlertTriangle, Check, ChevronRight, Copy, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { optionLines, paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -28,6 +28,7 @@ import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone } from "../page/page-state";
+import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
@@ -122,86 +123,192 @@ export function RulesList({
   );
 }
 
-/** A version that opened a 红包, its code on demand (§8 版本). */
-function VersionRow({
-  judgeId,
+/** "10月28日 20:00", a version's deploy. */
+export function deployedLabel(at: number) {
+  const date = new Date(at);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${dayLabel(at)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * One version opened (§8 点开看代码; 10 B, 2026-11-11): over the page, its
+ * title 第 N 版 with × at the top right, when it was deployed, its 代码指纹
+ * and its code, read-only. One's own adds what it goes online to (`extra`);
+ * another's fingerprint comes with its code (`fingerprint` undefined).
+ */
+export function VersionDialog({
+  open,
+  onClose,
   version,
+  fingerprint,
+  extra,
+  code,
 }: {
-  judgeId: string;
-  version: JudgePageVersion;
+  open: boolean;
+  onClose: () => void;
+  /** The one shown (kept by the caller while it closes). */
+  version: { n: number; deployedAt: string } | null;
+  fingerprint: string | undefined;
+  extra?: ReactNode;
+  code: {
+    data?: { code: string };
+    isError: boolean;
+    isFetching: boolean;
+    refetch: () => unknown;
+  };
 }) {
-  const [open, setOpen] = useState(false);
-  const panel = useId();
-  const head = useId();
-  const code = useJudgePageCode(judgeId, open ? version.n : null);
-  const at = new Date(version.deployedAt);
-  const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  const titleId = useId();
+  const retrying = code.isError && code.isFetching;
   return (
-    <li className="flex flex-col">
-      <Squircle radius={radius.row}>
-        <button
-          id={head}
-          type="button"
-          aria-expanded={open}
-          aria-controls={panel}
-          onClick={() => setOpen(!open)}
-          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
-        >
-          <span className="min-w-0 flex-1 text-base text-ink">
-            第 {version.n} 版 · {dayLabel(at.getTime())} {clock} 部署 · 开放过{" "}
-            {version.opened} 个红包
-          </span>
-          <ChevronRight
-            className={cn(
-              "size-4 shrink-0 text-ink-3 transition-transform",
-              open && "rotate-90",
-            )}
-            aria-hidden="true"
-          />
-        </button>
-      </Squircle>
-      <Reveal show={open}>
-        <div id={panel} className="grid gap-3 px-3 pt-1 pb-3">
+    <WindowDialog
+      open={open && version !== null}
+      onClose={onClose}
+      labelledBy={titleId}
+      width="44rem"
+    >
+      <div className="flex max-h-[min(44rem,85dvh)] flex-col">
+        <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-2">
+          <div className="grid min-w-0 gap-0.5">
+            <h2 id={titleId} className="text-lg font-semibold text-ink">
+              第 {version?.n} 版
+            </h2>
+            <p className="text-sm text-ink-3">
+              {version && deployedLabel(Date.parse(version.deployedAt))} 部署
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="关闭"
+            className="-mr-2 shrink-0"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </header>
+        <div className="view-scroll grid min-h-0 flex-1 gap-3 overflow-y-auto px-5 pb-5">
+          <Reveal show={fingerprint !== undefined}>
+            <div className="grid gap-1">
+              <span className="text-xs text-ink-3">代码指纹</span>
+              <span className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 font-mono text-sm break-all text-ink">
+                  {fingerprint}
+                </span>
+                <CopyButton value={fingerprint ?? ""} label="代码指纹" />
+              </span>
+            </div>
+          </Reveal>
+          {extra}
           <Swap id={code.data ? "code" : code.isError ? "failed" : "loading"}>
             {code.data ? (
-              <div className="grid gap-3">
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 font-mono text-sm break-all text-ink-2">
-                    代码指纹 {code.data.fingerprint}
-                  </span>
-                  <CopyButton value={code.data.fingerprint} label="代码指纹" />
-                </span>
-                <CodeEditor
-                  value={code.data.code}
-                  language="js"
-                  readOnly
-                  labelledBy={head}
-                  rows={4}
-                  maxRows={22}
-                />
-              </div>
+              <CodeEditor
+                value={code.data.code}
+                language="js"
+                readOnly
+                labelledBy={titleId}
+                rows={4}
+                maxRows={22}
+              />
             ) : code.isError ? (
               <p className="flex items-center gap-3 text-sm text-danger">
                 读取失败
-                <Button size="xs" onClick={() => void code.refetch()}>
-                  重试
+                <Button
+                  size="xs"
+                  aria-disabled={retrying || undefined}
+                  onClick={() => {
+                    if (!retrying) void code.refetch();
+                  }}
+                >
+                  {retrying ? "正在读取…" : "重试"}
                 </Button>
               </p>
             ) : (
-              open && (
-                <div className="grid gap-2">
-                  <p role="status" className="sr-only">
-                    正在读取…
-                  </p>
-                  <Bone className="h-3 w-full" />
-                  <Bone className="h-3 w-2/3" />
-                </div>
-              )
+              <div className="grid gap-2">
+                <p role="status" className="sr-only">
+                  正在读取…
+                </p>
+                <Bone className="h-3 w-full" />
+                <Bone className="h-3 w-5/6" />
+                <Bone className="h-3 w-2/3" />
+              </div>
             )}
           </Swap>
         </div>
-      </Reveal>
+      </div>
+    </WindowDialog>
+  );
+}
+
+/**
+ * A version's row (§8 版本): the words given, and a chevron; pressing it
+ * opens that version's dialog. `after` sits at its end (撤回).
+ */
+export function VersionRowButton({
+  children,
+  onOpen,
+  after,
+}: {
+  children: ReactNode;
+  onOpen: () => void;
+  after?: ReactNode;
+}) {
+  return (
+    <li className="flex flex-col">
+      <Squircle radius={radius.row}>
+        <div className="flex items-center">
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={onOpen}
+            className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+          >
+            {children}
+            <ChevronRight
+              className="size-4 shrink-0 text-ink-3"
+              aria-hidden="true"
+            />
+          </button>
+          {after}
+        </div>
+      </Squircle>
     </li>
+  );
+}
+
+/** The versions that opened a 红包, each opened in its dialog (§8 版本). */
+function Versions({
+  judgeId,
+  versions,
+}: {
+  judgeId: string;
+  versions: JudgePageVersion[];
+}) {
+  const [opened, setOpened] = useState<JudgePageVersion | null>(null);
+  // Kept while the dialog closes.
+  const [shown, setShown] = useState<JudgePageVersion | null>(null);
+  if (opened && opened !== shown) setShown(opened);
+  const code = useJudgePageCode(judgeId, shown?.n ?? null);
+  return (
+    <>
+      <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
+        {versions.map((version) => (
+          <VersionRowButton key={version.n} onOpen={() => setOpened(version)}>
+            <span className="min-w-0 flex-1 text-base text-ink">
+              第 {version.n} 版 ·{" "}
+              {deployedLabel(Date.parse(version.deployedAt))} 部署 · 开放过{" "}
+              {version.opened} 个红包
+            </span>
+          </VersionRowButton>
+        ))}
+      </Panel>
+      <VersionDialog
+        open={opened !== null}
+        onClose={() => setOpened(null)}
+        version={shown}
+        fingerprint={code.data?.fingerprint}
+        code={code}
+      />
+    </>
   );
 }
 
@@ -268,7 +375,7 @@ function UsedBy({
             );
           })}
         </ul>
-        <LazyListEnd list={list} done="已全部加载" />
+        <LazyListEnd list={list} done={`共 ${items.length} 个`} />
       </PageSection>
     </Reveal>
   );
@@ -548,11 +655,7 @@ export function PublicJudgePage({
       )}
       {judge.versions.length > 0 && (
         <PageSection title="版本">
-          <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
-            {judge.versions.map((item) => (
-              <VersionRow key={item.n} judgeId={judge.id} version={item} />
-            ))}
-          </Panel>
+          <Versions judgeId={judge.id} versions={judge.versions} />
         </PageSection>
       )}
       <UsedBy judgeId={judge.id} viewerId={viewerId} />

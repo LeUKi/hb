@@ -388,8 +388,16 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     const version = page.getByRole("button", { name: /^第 2 版 ·/ });
     await expect(version).toContainText("部署 · 开放过 3 个红包");
+    // 点开看代码 (§8): a version opens in its own dialog (2026-11-11).
     await version.click();
-    await expect(page.getByText(`代码指纹 ${sha256(guessCode)}`)).toBeVisible();
+    const opened = page.getByRole("dialog", { name: "第 2 版" });
+    await expect(opened.getByText(sha256(guessCode))).toBeVisible();
+    await expect(
+      opened.getByRole("textbox", { name: "第 2 版" }),
+    ).toContainText("export const params");
+    await opened.getByRole("button", { name: "关闭" }).click();
+    await expect(opened).toBeHidden();
+    await expect(version).toBeFocused();
     await expect(page.getByRole("heading", { name: "用它的红包" })).toHaveCount(
       0,
     );
@@ -423,12 +431,15 @@ test.describe("判定器广场", () => {
     await asking.getByRole("button", { name: "加入" }).click();
     await expect(asking).toBeHidden();
     await expect(join).toHaveAttribute("aria-checked", "true");
-    // In the 广场 is public for good: 一直公开, not to be changed here.
-    const always = page
-      .getByRole("group", { name: "代码公开" })
-      .getByRole("button", { name: "一直公开" });
-    await expect(always).toHaveAttribute("aria-pressed", "true");
-    await expect(always).toBeDisabled();
+    // In the 广场 is public for good: 一直公开, not to be changed here
+    // (option cards since 2026-11-11: the other one can't be picked).
+    const shownPublic = page.getByRole("group", { name: "代码公开" });
+    await expect(
+      shownPublic.getByRole("button", { name: /^一直公开/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      shownPublic.getByRole("button", { name: /^结束后公开/ }),
+    ).toBeDisabled();
     await expect(
       page.getByText("第一次部署时一起保存，以后在判定器页改。"),
     ).toBeVisible();

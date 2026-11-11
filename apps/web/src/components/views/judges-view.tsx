@@ -109,12 +109,13 @@ function Square({ userId }: { userId: string | null }) {
   const mine = useMyJudges(userId, tab === "mine");
   const square = tab === "all" ? all : featured;
   const cards = square.data?.pages.flatMap((page) => page.items) ?? [];
+  // The shown tab's own batches load as its end comes near (10 A2).
   const list = useQueryLazyList({
-    hasNextPage: all.hasNextPage,
-    isFetchingNextPage: all.isFetchingNextPage,
-    isFetchNextPageError: all.isFetchNextPageError,
-    fetchNextPage: all.fetchNextPage,
-    pageCount: all.data?.pages.length ?? 0,
+    hasNextPage: square.hasNextPage,
+    isFetchingNextPage: square.isFetchingNextPage,
+    isFetchNextPageError: square.isFetchNextPageError,
+    fetchNextPage: square.fetchNextPage,
+    pageCount: square.data?.pages.length ?? 0,
   });
   const shown = tab === "mine" ? mine : square;
   const own = mine.data ?? [];
@@ -221,7 +222,7 @@ function Square({ userId }: { userId: string | null }) {
                     </li>
                   ))}
                 </ul>
-                {tab === "all" && <LazyListEnd list={list} done="已全部加载" />}
+                <LazyListEnd list={list} done={`共 ${cards.length} 个`} />
               </>
             )}
           </ResultLoad>

@@ -9,11 +9,10 @@ import {
   type MyJudgeVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, ChevronRight } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { AlertTriangle } from "lucide-react";
+import { useEffect, useState } from "react";
 import { keyParams, paramValues } from "../../../../../kit/runtime/params.mjs";
 import { ActivityRequestError, refused } from "../../lib/activities";
-import { cn } from "../../lib/cn";
 import {
   useJudgePage,
   useMyJudge,
@@ -34,24 +33,23 @@ import {
 import { ParamsFields, paramsFor } from "../hongbao-form/params-fields";
 import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
-import {
-  dayLabel,
-  JudgeHelpLinks,
-  networkWords,
-  statsLine,
-} from "../judges/judge-bits";
+import { JudgeHelpLinks, networkWords, statsLine } from "../judges/judge-bits";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
-import { CodeEditor } from "../ui/code-editor";
-import { CopyButton } from "../ui/copy-button";
-import { Field, Segmented, Switch, TextInput } from "../ui/field";
+import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
-import { radius, Squircle } from "../ui/squircle";
-import { PublicJudgePage, RulesList, ruleLines } from "./judge-public-view";
+import {
+  deployedLabel,
+  PublicJudgePage,
+  RulesList,
+  ruleLines,
+  VersionDialog,
+  VersionRowButton,
+} from "./judge-public-view";
 import { MessageView } from "./message-view";
 
 // 判定器页 /judges/<编号> (docs/judge-square-design.md §8, §14.4, §15.4):
@@ -59,11 +57,19 @@ import { MessageView } from "./message-view";
 // 部署新版本 with the 发红包 form's own card; 用它发红包 at the top — or,
 // for anyone else it is open to, what the 广场 shows of it.
 
-/** "10月28日 20:00", a version's deploy. */
-function deployedLabel(at: number) {
-  const date = new Date(at);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${dayLabel(at)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+/**
+ * 代码公开's two cards (§2), a line each; `always` says what 一直公开 means
+ * where it is chosen (on the 判定器页, or before the first deploy).
+ */
+export function codePublicOptions(always: string) {
+  return [
+    {
+      value: "ended" as const,
+      title: "结束后公开",
+      description: "开放时只公布代码指纹，红包结束后再公开代码。",
+    },
+    { value: "always" as const, title: "一直公开", description: always },
+  ];
 }
 
 /** A failed write, said as the form says its own. */
@@ -186,23 +192,19 @@ function Settings({
       </Reveal>
       <div className="grid gap-1.5 border-line border-t pt-4">
         <span className="text-sm font-medium text-ink">代码公开</span>
-        <div>
-          <Segmented
-            label="代码公开"
-            value={judge.codePublic}
-            disabled={always}
-            options={[
-              { value: "ended", label: "结束后公开" },
-              { value: "always", label: "一直公开" },
-            ]}
-            onChange={(value) => {
-              if (value === "always") {
-                setPublicError(null);
-                setConfirm(true);
-              }
-            }}
-          />
-        </div>
+        {/* A meaningful choice, not to be undone: cards (10 C, 07 §1). */}
+        <ChoiceCards
+          label="代码公开"
+          value={judge.codePublic}
+          disabled={always}
+          options={codePublicOptions("所有人随时都能看代码，改了就改不回来。")}
+          onChange={(value) => {
+            if (value === "always" && !always) {
+              setPublicError(null);
+              setConfirm(true);
+            }
+          }}
+        />
       </div>
       <ConfirmDialog
         open={confirm}
@@ -537,140 +539,126 @@ function Trying({
 
 /**
  * A version's row: when, whether its tests passed, 红包 it opened, where
- * it stands (§17); its code; 撤回 on the one that can be.
+ * it stands (§17); pressed, its dialog with the code; 撤回 on the one that
+ * can be.
  */
 function VersionRow({
-  judgeId,
-  userId,
   version,
   standing,
+  onOpen,
+  onWithdraw,
+}: {
+  version: MyJudgeVersion;
+  standing: string | null;
+  onOpen: () => void;
+  onWithdraw?: () => void;
+}) {
+  return (
+    <VersionRowButton
+      onOpen={onOpen}
+      after={
+        onWithdraw && (
+          <Button
+            variant="quiet"
+            size="xs"
+            className="mr-2 shrink-0"
+            onClick={onWithdraw}
+          >
+            撤回
+          </Button>
+        )
+      }
+    >
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="text-base font-medium text-ink">
+          第 {version.n} 版 · {deployedLabel(Date.parse(version.deployedAt))}{" "}
+          部署
+        </span>
+        <span className="text-sm">
+          <span className={version.passed ? "text-success" : "text-danger"}>
+            {version.passed ? "测试全过" : "测试没过"}
+          </span>
+          {/* A 旧判定器 (multi-prize §3.6): passed on the old rules. */}
+          {version.passed && version.protocol < JUDGE_OLDEST_PROTOCOL && (
+            <span className="text-ink-3">
+              {" "}
+              · 旧判定器，要按新规则重新跑测试
+            </span>
+          )}
+          {version.opened > 0 && (
+            <span className="text-ink-3">
+              {" "}
+              · 开放过 {version.opened} 个红包
+            </span>
+          )}
+          {standing && <span className="text-ink-3"> · {standing}</span>}
+        </span>
+      </span>
+    </VersionRowButton>
+  );
+}
+
+/**
+ * Every version, each opened in its own dialog (§8; 10 B, 2026-11-11):
+ * its 代码指纹, what it goes online to, and its code.
+ */
+function Versions({
+  judgeId,
+  userId,
+  versions,
+  standing,
+  withdrawable,
   onWithdraw,
 }: {
   judgeId: string;
   userId: string;
-  version: MyJudgeVersion;
-  standing: string | null;
-  onWithdraw?: () => void;
+  versions: MyJudgeVersion[];
+  standing: (version: MyJudgeVersion) => string | null;
+  withdrawable: number | null;
+  onWithdraw: (n: number) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const panel = useId();
-  const head = useId();
-  const detail = useMyJudgeVersion(userId, judgeId, open ? version.n : null);
+  const [opened, setOpened] = useState<MyJudgeVersion | null>(null);
+  // Kept while the dialog closes.
+  const [shown, setShown] = useState<MyJudgeVersion | null>(null);
+  if (opened && opened !== shown) setShown(opened);
+  const detail = useMyJudgeVersion(userId, judgeId, shown?.n ?? null);
   return (
-    <li className="flex flex-col">
-      <Squircle radius={radius.row}>
-        <div className="flex items-center">
-          <button
-            id={head}
-            type="button"
-            aria-expanded={open}
-            aria-controls={panel}
-            onClick={() => setOpen(!open)}
-            className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
-          >
-            <span className="grid min-w-0 flex-1 gap-0.5">
-              <span className="text-base font-medium text-ink">
-                第 {version.n} 版 ·{" "}
-                {deployedLabel(Date.parse(version.deployedAt))} 部署
-              </span>
-              <span className="text-sm">
-                <span
-                  className={version.passed ? "text-success" : "text-danger"}
-                >
-                  {version.passed ? "测试全过" : "测试没过"}
-                </span>
-                {/* A 旧判定器 (multi-prize §3.6): passed on the old rules. */}
-                {version.passed && version.protocol < JUDGE_OLDEST_PROTOCOL && (
-                  <span className="text-ink-3">
-                    {" "}
-                    · 旧判定器，要按新规则重新跑测试
-                  </span>
-                )}
-                {version.opened > 0 && (
-                  <span className="text-ink-3">
-                    {" "}
-                    · 开放过 {version.opened} 个红包
-                  </span>
-                )}
-                {standing && <span className="text-ink-3"> · {standing}</span>}
-              </span>
-            </span>
-            <ChevronRight
-              className={cn(
-                "size-4 shrink-0 text-ink-3 transition-transform",
-                open && "rotate-90",
-              )}
-              aria-hidden="true"
-            />
-          </button>
-          {onWithdraw && (
-            <Button
-              variant="quiet"
-              size="xs"
-              className="mr-2 shrink-0"
-              onClick={onWithdraw}
-            >
-              撤回
-            </Button>
-          )}
-        </div>
-      </Squircle>
-      <Reveal show={open}>
-        <div id={panel} className="grid gap-3 px-3 pt-1 pb-3">
-          <div className="grid gap-1">
-            <span className="text-xs text-ink-3">代码指纹</span>
-            <span className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 font-mono text-sm break-all text-ink">
-                {version.fingerprint}
-              </span>
-              <CopyButton value={version.fingerprint} label="代码指纹" />
-            </span>
-          </div>
-          {version.network && (
+    <>
+      <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
+        {versions.map((version) => (
+          <VersionRow
+            key={version.n}
+            version={version}
+            standing={standing(version)}
+            onOpen={() => setOpened(version)}
+            onWithdraw={
+              version.n === withdrawable
+                ? () => onWithdraw(version.n)
+                : undefined
+            }
+          />
+        ))}
+      </Panel>
+      <VersionDialog
+        open={opened !== null}
+        onClose={() => setOpened(null)}
+        version={shown}
+        fingerprint={shown?.fingerprint}
+        code={detail}
+        extra={
+          shown?.network && (
             <p className="text-sm break-all text-ink">
               联网：
-              {version.network
+              {shown.network
                 .map((entry) =>
-                  networkWords(entry, version.declarations?.params ?? []),
+                  networkWords(entry, shown.declarations?.params ?? []),
                 )
                 .join("、")}
             </p>
-          )}
-          <Swap
-            id={detail.data ? "code" : detail.isError ? "failed" : "loading"}
-          >
-            {detail.data ? (
-              <CodeEditor
-                value={detail.data.code}
-                language="js"
-                readOnly
-                labelledBy={head}
-                rows={4}
-                maxRows={22}
-              />
-            ) : detail.isError ? (
-              <p className="flex items-center gap-3 text-sm text-danger">
-                读取失败
-                <Button size="xs" onClick={() => void detail.refetch()}>
-                  重试
-                </Button>
-              </p>
-            ) : (
-              open && (
-                <div className="grid gap-2">
-                  <p role="status" className="sr-only">
-                    正在读取…
-                  </p>
-                  <Bone className="h-3 w-full" />
-                  <Bone className="h-3 w-5/6" />
-                  <Bone className="h-3 w-2/3" />
-                </div>
-              )
-            )}
-          </Swap>
-        </div>
-      </Reveal>
-    </li>
+          )
+        }
+      />
+    </>
   );
 }
 
@@ -940,25 +928,17 @@ function JudgePage({
       </PageSection>
       <TryVersion judge={judge} />
       <PageSection title="版本">
-        <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
-          {judge.versions.map((version) => (
-            <VersionRow
-              key={version.n}
-              judgeId={judge.id}
-              userId={user.id}
-              version={version}
-              standing={rowStanding(version)}
-              onWithdraw={
-                version.n === judge.withdrawable
-                  ? () => {
-                      setWithdrawError(null);
-                      setWithdrawing(version.n);
-                    }
-                  : undefined
-              }
-            />
-          ))}
-        </Panel>
+        <Versions
+          judgeId={judge.id}
+          userId={user.id}
+          versions={judge.versions}
+          standing={rowStanding}
+          withdrawable={judge.withdrawable}
+          onWithdraw={(n) => {
+            setWithdrawError(null);
+            setWithdrawing(n);
+          }}
+        />
       </PageSection>
       <ConfirmDialog
         open={withdrawing !== null}

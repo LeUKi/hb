@@ -3839,8 +3839,15 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.getByText("先给判定器起个名字")).toBeVisible();
     expect(asked.updates).toHaveLength(1);
     await name.fill("猜大小");
+    // 代码公开 is two option cards, each with its line (2026-11-11).
     const shown = page.getByRole("group", { name: "代码公开" });
-    await shown.getByText("一直公开").click();
+    const always = shown.getByRole("button", { name: /^一直公开/ });
+    const ended = shown.getByRole("button", { name: /^结束后公开/ });
+    await expect(ended).toContainText(
+      "开放时只公布代码指纹，红包结束后再公开代码。",
+    );
+    await expect(ended).toHaveAttribute("aria-pressed", "true");
+    await always.click();
     const dialog = page.getByRole("dialog", { name: "改成一直公开？" });
     await expect(dialog).toContainText(
       "所有人都能看到这个判定器的代码。改了就改不回来。",
@@ -3848,7 +3855,7 @@ test.describe("发红包 · 代码判定", () => {
     await dialog.getByRole("button", { name: "返回" }).click();
     await expect(dialog).toBeHidden();
     expect(asked.updates).toHaveLength(1);
-    await shown.getByText("一直公开").click();
+    await always.click();
     await page
       .getByRole("dialog", { name: "改成一直公开？" })
       .getByRole("button", { name: "一直公开" })
@@ -3859,10 +3866,14 @@ test.describe("发红包 · 代码判定", () => {
       description: "猜中的领",
       codePublic: "always",
     });
-    await expect(shown).toHaveAttribute("disabled", "");
+    await expect(always).toHaveAttribute("aria-pressed", "true");
+    await expect(ended).toBeDisabled();
+    // Pressing the chosen one again asks nothing.
+    await always.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("判定器页：版本一行写第几版、部署时间、测试和开放过几个，展开看指纹和代码；部署新版本从最新一版的代码改起", async ({
+  test("判定器页：版本一行写第几版、部署时间、测试和开放过几个，点开是这一版的弹窗，看指纹和代码；部署新版本从最新一版的代码改起", async ({
     page,
     context,
   }) => {
@@ -3897,11 +3908,17 @@ test.describe("发红包 · 代码判定", () => {
     );
     await expect(version).toContainText("测试全过 · 开放过 2 个红包");
     await version.click();
-    await expect(version).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByText(sha256(firstCode))).toBeVisible();
-    await expect(page.getByRole("textbox", { name: /^第 3 版/ })).toContainText(
-      "猜对 42 的人领一份",
+    const opened = page.getByRole("dialog", { name: "第 3 版" });
+    await expect(opened).toContainText(
+      `${at.getMonth() + 1}月${at.getDate()}日 ${clock} 部署`,
     );
+    await expect(opened.getByText(sha256(firstCode))).toBeVisible();
+    await expect(
+      opened.getByRole("textbox", { name: "第 3 版" }),
+    ).toContainText("猜对 42 的人领一份");
+    await page.keyboard.press("Escape");
+    await expect(opened).toBeHidden();
+    await expect(version).toBeFocused();
     // 部署新版本: the form's own card, on 第 3 版's code and tests.
     await expect(card(page)).toBeVisible();
     await expect(cardName(page)).toHaveText("判定器 第 3 版");

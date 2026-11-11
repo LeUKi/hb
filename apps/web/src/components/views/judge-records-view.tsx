@@ -48,6 +48,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { Reveal } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
 // 判定记录 (docs/judge-records-design.md): a 代码判定红包's 尝试统计 is its
@@ -203,7 +204,7 @@ function RecordList({
           />
         ))}
       </ul>
-      <LazyListEnd list={list} done="已全部加载" />
+      <LazyListEnd list={list} done={`共 ${rows.length} 条`} />
     </Panel>
   );
 }
@@ -287,45 +288,47 @@ function PeopleList({
       <ul className="grid" aria-busy={list.state === "loading" || undefined}>
         {rows.map((row) => (
           <li key={row.user.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(row.user)}
-              className="grid w-full gap-1 rounded-[12px] px-3 py-3 text-left transition-colors hover:bg-fill-2"
-            >
-              <Who
-                user={row.user}
-                side={
-                  <span title={fullTime(Date.parse(row.lastAt))}>
-                    {agoLabel(Date.parse(row.lastAt))}
-                  </span>
-                }
-              />
-              <span className="flex items-center gap-2 text-sm text-ink-2">
-                提交 {row.judged} 次
-                {/* Protocol 5: 待结算 until settled (multi-prize §4.2). */}
-                {row.pending !== undefined ? (
-                  <span className="tabular-nums">
-                    待结算 {amountText(row.pending, unit)}
-                  </span>
-                ) : row.settled && row.amount ? (
-                  <StatusChip tone="success">
-                    已结算 {amountText(row.amount, unit)}
-                  </StatusChip>
-                ) : row.settled ? (
-                  <span className="text-ink-3">已结算，没有领到</span>
-                ) : row.amount ? (
-                  <StatusChip tone="success">
-                    领到 {amountText(row.amount, unit)}
-                  </StatusChip>
-                ) : (
-                  <span className="text-ink-3">没领到</span>
-                )}
-              </span>
-            </button>
+            <Squircle radius={radius.row}>
+              <button
+                type="button"
+                onClick={() => onOpen(row.user)}
+                className="grid w-full gap-1 px-3 py-3 text-left transition-colors hover:bg-fill-2"
+              >
+                <Who
+                  user={row.user}
+                  side={
+                    <span title={fullTime(Date.parse(row.lastAt))}>
+                      {agoLabel(Date.parse(row.lastAt))}
+                    </span>
+                  }
+                />
+                <span className="flex items-center gap-2 text-sm text-ink-2">
+                  提交 {row.judged} 次
+                  {/* Protocol 5: 待结算 until settled (multi-prize §4.2). */}
+                  {row.pending !== undefined ? (
+                    <span className="tabular-nums">
+                      待结算 {amountText(row.pending, unit)}
+                    </span>
+                  ) : row.settled && row.amount ? (
+                    <StatusChip tone="success">
+                      已结算 {amountText(row.amount, unit)}
+                    </StatusChip>
+                  ) : row.settled ? (
+                    <span className="text-ink-3">已结算，没有领到</span>
+                  ) : row.amount ? (
+                    <StatusChip tone="success">
+                      领到 {amountText(row.amount, unit)}
+                    </StatusChip>
+                  ) : (
+                    <span className="text-ink-3">没领到</span>
+                  )}
+                </span>
+              </button>
+            </Squircle>
           </li>
         ))}
       </ul>
-      <LazyListEnd list={list} done="已全部加载" />
+      <LazyListEnd list={list} done={`共 ${rows.length} 人`} />
     </Panel>
   );
 }
@@ -534,11 +537,14 @@ export function JudgeRecordsView({
                 </Reveal>
                 <ResultLoad id={`timeline-${filter}`} load={resultOf(timeline)}>
                   {rows.length === 0 ? (
-                    <EmptyNote
-                      title={
-                        filter === "all" ? "还没有人提交" : "没有符合条件的记录"
-                      }
-                    />
+                    filter === "all" ? (
+                      <EmptyNote title="还没有人提交" />
+                    ) : (
+                      <EmptyNote
+                        title="没有符合条件的记录"
+                        text="换个筛选看看。"
+                      />
+                    )
                   ) : (
                     <RecordList
                       rows={rows}

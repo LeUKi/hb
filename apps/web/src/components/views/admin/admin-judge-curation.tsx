@@ -15,7 +15,7 @@ import {
 import { fetchJudgePage, fetchMyJudge } from "../../../lib/judge";
 import { fullTime } from "../../../lib/roster-time";
 import { RestoreDialog } from "../../judges/curation-dialogs";
-import { PageSection, Panel } from "../../page/page";
+import { EmptyNote, PageSection, Panel } from "../../page/page";
 import { Button } from "../../ui/button";
 import { Segmented, TextInput } from "../../ui/field";
 import { ListItem, Reveal, Swap } from "../../ui/reveal";
@@ -108,7 +108,7 @@ function AddFeature() {
     }
   };
   return (
-    <div className="flex flex-col gap-3 border-line border-t pt-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 basis-60">
           <TextInput
@@ -218,8 +218,6 @@ function Features({
     );
   };
   const last = data.features.length - 1;
-  if (data.features.length === 0)
-    return <p className="py-4 text-sm text-ink-3">还没有精选的判定器。</p>;
   return (
     <ol className="flex flex-col">
       <AnimatePresence initial={false}>
@@ -298,30 +296,46 @@ export function JudgeCuration() {
         title="精选"
         description="发红包第 2 步显示前 6 个。"
       >
-        <Panel className="flex flex-col px-4 pb-4">
-          {/* Its frame from the start: bars while it reads, then the list. */}
-          <Swap id={data ? "list" : query.isError ? "failed" : "loading"}>
-            {data ? (
+        {/* Its frame from the start: bars while it reads, then the list,
+            or a note when there is none (07 §1 空状态). */}
+        <Swap
+          id={
+            !data
+              ? query.isError
+                ? "failed"
+                : "loading"
+              : data.features.length === 0
+                ? "empty"
+                : "list"
+          }
+        >
+          {!data ? (
+            <Panel className="px-4 py-4">
+              <DetailPart query={query} lines={3} what="精选">
+                {() => null}
+              </DetailPart>
+            </Panel>
+          ) : data.features.length === 0 ? (
+            <EmptyNote
+              title="还没有精选的判定器"
+              text="在下面填判定器的编号或地址，查找后选入。"
+            />
+          ) : (
+            <Panel className="flex flex-col px-4">
               <Features data={data} setError={setError} />
-            ) : (
-              <div className="pt-4">
-                <DetailPart query={query} lines={3} what="精选">
-                  {() => null}
-                </DetailPart>
-              </div>
-            )}
-          </Swap>
-          <Reveal show={Boolean(error)}>
-            <p role="alert" className="pt-3 text-sm text-danger">
-              {error}
-            </p>
-          </Reveal>
-          {data && (
-            <div className="pt-4">
-              <AddFeature />
-            </div>
+            </Panel>
           )}
-        </Panel>
+        </Swap>
+        <Reveal show={Boolean(error)}>
+          <p role="alert" className="px-1 text-sm text-danger">
+            {error}
+          </p>
+        </Reveal>
+        {data && (
+          <Panel className="p-4">
+            <AddFeature />
+          </Panel>
+        )}
       </PageSection>
       <Reveal show={takenDown.length > 0}>
         <PageSection id="judge-taken-down" title="已撤下">
