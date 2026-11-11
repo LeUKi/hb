@@ -6,6 +6,7 @@ import {
   pointsRemark,
   pointsSystemConfigSchema,
   reservedPointsWord,
+  unitWidth,
 } from "../src";
 
 const config = {
@@ -61,13 +62,36 @@ describe("三方积分 contracts (third-party-points-design)", () => {
       pointsSystemConfigSchema.safeParse({ ...config, step: 0 }).success,
     ).toBe(false);
     expect(
-      pointsSystemConfigSchema.safeParse({ ...config, name: "一二三四五六七" })
-        .success,
+      pointsSystemConfigSchema.safeParse({
+        ...config,
+        name: "一二三四五六七八",
+      }).success,
+    ).toBe(true);
+    expect(
+      pointsSystemConfigSchema.safeParse({
+        ...config,
+        name: "一二三四五六七八九",
+      }).success,
     ).toBe(false);
     expect(
       pointsSystemConfigSchema.safeParse({ ...config, arrival: "a\nb" })
         .success,
     ).toBe(false);
+  });
+  it("measures a 单位 by width: 4 汉字 or 8 letters (§6)", () => {
+    expect(unitWidth("星星")).toBe(4);
+    expect(unitWidth("Diamonds")).toBe(8);
+    expect(unitWidth("⭐️")).toBe(2);
+    expect(unitWidth("金币 x2")).toBe(7);
+    const unit = (value: string) =>
+      pointsSystemConfigSchema.safeParse({ ...config, unit: value });
+    expect(unit("积分点数").success).toBe(true);
+    expect(unit("Diamonds").success).toBe(true);
+    expect(unit("金Coins").success).toBe(true);
+    const wide = unit("贡献积分点");
+    expect(wide.success).toBe(false);
+    expect(wide.error?.issues[0]?.message).toBe("单位最多 4 个汉字或 8 个字母");
+    expect(unit("Diamonds!").success).toBe(false);
   });
   it("takes printable keys and cuts the remark", () => {
     expect(pointsKeySchema.safeParse("sk_live_abc-123").success).toBe(true);

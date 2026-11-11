@@ -215,12 +215,12 @@ function Editor({
             <Field
               label="单位"
               htmlFor="pt-unit"
-              hint={`写在数量后面，最多 ${POINTS_LIMITS.unitMax} 个字`}
+              hint={`写在数量后面，最多 ${POINTS_LIMITS.unitWidthMax / 2} 个汉字或 ${POINTS_LIMITS.unitWidthMax} 个字母`}
             >
               <TextInput
                 id="pt-unit"
                 value={config.unit}
-                maxLength={POINTS_LIMITS.unitMax * 2}
+                maxLength={POINTS_LIMITS.unitWidthMax * 2}
                 onChange={(event) => set("unit", event.target.value)}
               />
             </Field>

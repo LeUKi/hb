@@ -148,13 +148,13 @@
           "additionalProperties": false,
           "properties": {
             "name": {
-              "description": "积分的名称，1–6 个字",
+              "description": "积分的名称，1–8 个字",
               "type": "string",
               "minLength": 1,
               "maxLength": 6
             },
             "unit": {
-              "description": "积分的单位，1–4 个字",
+              "description": "积分的单位，最多 4 个汉字或 8 个字母（汉字算 2，字母和数字算 1）",
               "type": "string",
               "minLength": 1,
               "maxLength": 4

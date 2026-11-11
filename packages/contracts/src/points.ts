@@ -10,8 +10,9 @@ import { amountToMinor } from "./payments";
 export const POINTS_LIMITS = {
   /** Systems one PLUS user may register (§1). */
   systemsPerOwner: 3,
-  nameMax: 6,
-  unitMax: 4,
+  nameMax: 8,
+  /** 单位 by width (§6, unitWidth): 4 汉字 or 8 letters. */
+  unitWidthMax: 8,
   issuerNameMax: 20,
   introMax: 2000,
   keyGuideMax: 2000,
@@ -65,6 +66,24 @@ export const pointsSystemStatusSchema = z.enum([
 export type PointsSystemStatus = z.infer<typeof pointsSystemStatusSchema>;
 
 const count = (value: string) => Array.from(value).length;
+
+const WIDE =
+  /[\p{Extended_Pictographic}\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+const ZERO_WIDTH = /[\p{M}\p{Cf}]/u;
+
+/**
+ * How wide a 单位 reads after an amount (§6): a 汉字, any full-width
+ * character or an emoji counts 2, a letter or digit 1, joiners and marks 0.
+ * On a phone the cover's “平均 9,999.99 单位” line holds 8.
+ */
+export function unitWidth(value: string) {
+  let width = 0;
+  for (const char of value) {
+    if (ZERO_WIDTH.test(char)) continue;
+    width += WIDE.test(char) ? 2 : 1;
+  }
+  return width;
+}
 
 const RESERVED = [
   "ldc",
@@ -165,10 +184,12 @@ export const pointsSystemConfigSchema = z.strictObject({
     (value) => !reservedPointsWord(value),
     "名称不能用本站自己的说法",
   ),
-  unit: shortText(POINTS_LIMITS.unitMax, "单位").refine(
-    (value) => !reservedPointsWord(value),
-    "单位不能用本站自己的说法",
-  ),
+  unit: shortText(POINTS_LIMITS.unitWidthMax, "单位")
+    .refine(
+      (value) => unitWidth(value) <= POINTS_LIMITS.unitWidthMax,
+      `单位最多 ${POINTS_LIMITS.unitWidthMax / 2} 个汉字或 ${POINTS_LIMITS.unitWidthMax} 个字母`,
+    )
+    .refine((value) => !reservedPointsWord(value), "单位不能用本站自己的说法"),
   step: pointsStepSchema,
   issuerName: shortText(POINTS_LIMITS.issuerNameMax, "网站名称"),
   /** Checked by normalizePointsBaseUrl (the API lets local dev use http). */

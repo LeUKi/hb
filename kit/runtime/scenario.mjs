@@ -38,6 +38,18 @@ export function unitFieldsOf(points) {
 
 const STEP = /^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
 
+// A 单位's width, as the site counts it: a 汉字, full-width character or
+// emoji 2, a letter or digit 1, joiners and marks 0.
+const WIDE =
+  /[\p{Extended_Pictographic}\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+const ZERO_WIDTH = /[\p{M}\p{Cf}]/u;
+const unitWidth = (value) =>
+  [...value].reduce(
+    (width, char) =>
+      ZERO_WIDTH.test(char) ? width : width + (WIDE.test(char) ? 2 : 1),
+    0,
+  );
+
 /**
  * A test's or simulate.json's hongbao.points, `{ name, unit, step, host? }`:
  * why it is not one, or null.
@@ -55,8 +67,9 @@ export function pointsProblem(points) {
     typeof value === "string" &&
     value.trim() !== "" &&
     [...value].length <= max;
-  if (!text(points.name, 6)) return "hongbao.points.name 要是 1–6 个字";
-  if (!text(points.unit, 4)) return "hongbao.points.unit 要是 1–4 个字";
+  if (!text(points.name, 8)) return "hongbao.points.name 要是 1–8 个字";
+  if (!text(points.unit, 8) || unitWidth(points.unit.trim()) > 8)
+    return "hongbao.points.unit 最多 4 个汉字或 8 个字母";
   if (
     typeof points.step !== "string" ||
     !STEP.test(points.step) ||
