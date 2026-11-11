@@ -10,11 +10,11 @@ import {
   Lock,
   Plus,
   Shuffle,
-  Sparkles,
   Store,
   Timer,
   Trash2,
   Wallet,
+  Wand,
 } from "lucide-react";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useBalanceFunding } from "../../lib/balance";
@@ -899,7 +899,7 @@ export function PasswordList({
                       document.getElementById(field)?.focus();
                     }}
                   >
-                    <Sparkles />
+                    <Wand />
                     优化
                   </Button>
                 </RevealInline>

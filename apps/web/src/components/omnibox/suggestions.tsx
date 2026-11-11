@@ -6,7 +6,7 @@ import {
   KeyRound,
   MessagesSquare,
   Search,
-  WandSparkles,
+  Wand,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -242,7 +242,7 @@ export function SuggestionContent({
     return (
       <Row
         active={active}
-        icon={<WandSparkles className="size-4 text-accent" />}
+        icon={<Wand className="size-4 text-accent" />}
         meta={<Kbd className="shrink-0">Tab</Kbd>}
       >
         {/* The whole 口令 it becomes, to check: after the words in a wide
