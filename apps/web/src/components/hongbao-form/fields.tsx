@@ -38,7 +38,6 @@ import {
   TextInput,
   WrapInput,
 } from "../ui/field";
-import { PointsMark } from "../ui/points-mark";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
@@ -53,7 +52,7 @@ import {
   type TimeUnit,
   unitLabels,
 } from "./form-state";
-import { PointsPicker, useFormUnit, useOnlineSystems } from "./points-funding";
+import { PointsChoice, useFormUnit, useOnlineSystems } from "./points-funding";
 
 /**
  * Credit's smallest daily limit, 800 LDC in cents (its lowest pay level): a
@@ -535,17 +534,8 @@ export function FundingChoice({
         label="从哪发"
         value={form.funding}
         onChange={(value) =>
-          update((current) => ({
-            ...current,
-            funding: value,
-            // The only one online: chosen with 三方积分 itself.
-            pointsSystemId:
-              value === "points" && !current.pointsSystemId
-                ? (points.items[0]?.id ?? "")
-                : current.pointsSystemId,
-          }))
+          update((current) => ({ ...current, funding: value }))
         }
-        columns={pointsOffered ? 1 : 2}
         options={[
           {
             value: "merchant",
@@ -569,29 +559,22 @@ export function FundingChoice({
             icon: Wallet,
             disabled: !fishReady,
           },
-          ...(pointsOffered || form.funding === "points"
-            ? [
-                {
-                  value: "points" as const,
-                  title: "三方积分",
-                  description:
-                    points.items.length === 1
-                      ? `${points.items[0]?.name}：从你在 ${points.items[0]?.host} 的账户发，领到的进领取者在那边的账户`
-                      : "别的网站的积分：从你在那边的账户发，领到的进领取者在那边的账户",
-                  icon: PointsMark,
-                },
-              ]
-            : []),
         ]}
-      />
-      {form.funding === "points" && (
-        <PointsPicker
-          form={form}
-          onPick={(id) =>
-            update((current) => ({ ...current, pointsSystemId: id }))
-          }
-        />
-      )}
+      >
+        {/* 三方积分 (third-party-points §8): picked in a dialog. */}
+        {(pointsOffered || form.funding === "points") && (
+          <PointsChoice
+            form={form}
+            onPick={(id) =>
+              update((current) => ({
+                ...current,
+                funding: "points",
+                pointsSystemId: id,
+              }))
+            }
+          />
+        )}
+      </ChoiceCards>
       {(merchantLink || !fishReady) && (
         <div className="flex flex-wrap gap-x-3 px-1">
           {merchantLink}

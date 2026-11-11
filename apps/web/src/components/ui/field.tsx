@@ -326,6 +326,7 @@ export function ChoiceCards<T extends string>({
   label,
   columns = 2,
   disabled,
+  children,
 }: {
   value: T;
   options: {
@@ -341,6 +342,8 @@ export function ChoiceCards<T extends string>({
   /** 1: one under another, in a narrow column (分享's 发什么). */
   columns?: 1 | 2 | 4;
   disabled?: boolean;
+  /** A card of its own after these (从哪发's 三方积分, which opens a dialog). */
+  children?: ReactNode;
 }) {
   return (
     <fieldset
@@ -380,6 +383,7 @@ export function ChoiceCards<T extends string>({
           </Squircle>
         );
       })}
+      {children}
     </fieldset>
   );
 }

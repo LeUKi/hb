@@ -3,9 +3,10 @@
 // issuer's own guide and checked with 额度 at once: “可用 1,234 星星，将从
 // @alice 的账户扣”.
 import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
-import { KeyRound, X } from "lucide-react";
+import { Check, ChevronRight, KeyRound, X } from "lucide-react";
 import { useId, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { haptic } from "../../lib/haptics";
 import {
   type PointsSystemView,
   useOnlinePoints,
@@ -16,9 +17,11 @@ import { useSessionUser } from "../../lib/session";
 import { amountText } from "../../lib/units";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
-import { ChoiceCards, Field, TextInput } from "../ui/field";
+import { Field, TextInput } from "../ui/field";
 import { NoteMarkdown } from "../ui/markdown";
+import { PointsCapsule, PointsMark } from "../ui/points-mark";
 import { Reveal } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import type { FormState } from "./form-state";
 
 /** The systems a sender may pick now, and whether 三方积分红包 are on. */
@@ -54,8 +57,13 @@ export function useFormPoints(form: FormState) {
     : undefined;
 }
 
-/** Under 从哪发 when 三方积分 is chosen: which one, and one's key for it. */
-export function PointsPicker({
+/**
+ * 从哪发's 三方积分 card (the user, 2026-11-11): across the row under LDC
+ * 商户 and 🐟额. It opens a dialog to pick which 三方积分, so it says so —
+ * 选择 › until one is picked, then the pick with 更换 on its right. The key
+ * line (余额, 填密钥) follows under it.
+ */
+export function PointsChoice({
   form,
   onPick,
 }: {
@@ -63,23 +71,139 @@ export function PointsPicker({
   onPick: (id: string) => void;
 }) {
   const { items } = useOnlineSystems();
-  const system = items.find((item) => item.id === form.pointsSystemId);
+  const [open, setOpen] = useState(false);
+  const chosen = form.funding === "points";
+  const system = chosen
+    ? items.find((item) => item.id === form.pointsSystemId)
+    : undefined;
   return (
-    <div className="grid gap-2">
-      {items.length > 1 && (
-        <ChoiceCards
-          label="用哪个积分"
-          value={form.pointsSystemId}
-          onChange={onPick}
-          options={items.map((item) => ({
-            value: item.id,
-            title: item.name,
-            description: `${item.host} · 最小单位 ${amountText(item.step, { unit: item.unit, step: item.step })}`,
-          }))}
-        />
-      )}
+    <div className="grid gap-2 @wide/window:col-span-2">
+      <Squircle radius={radius.choice}>
+        <button
+          type="button"
+          aria-pressed={chosen}
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+          className="choice flex w-full items-center gap-3 px-3.5 py-3 text-left"
+        >
+          <span className="grid min-w-0 flex-1 content-start gap-1">
+            <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+              <PointsMark className="size-4 shrink-0" aria-hidden="true" />
+              三方积分
+              {system && <PointsCapsule name={system.name} small />}
+            </span>
+            <span className="text-xs text-ink-3">
+              {system
+                ? `从你在 ${system.host} 的账户发，领到的进领取者在那边的账户`
+                : chosen
+                  ? "选的积分现在不能用了，换一个"
+                  : "用别的网站的积分发：点这里选是哪一种"}
+            </span>
+          </span>
+          {chosen ? (
+            <span className="shrink-0 rounded-full bg-fill-2 px-3 py-1 text-xs font-medium text-ink">
+              更换
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-accent-ink">
+              选择
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </span>
+          )}
+        </button>
+      </Squircle>
       {system && <KeyLine system={system} />}
+      <PickDialog
+        open={open}
+        items={items}
+        current={chosen ? form.pointsSystemId : ""}
+        onClose={() => setOpen(false)}
+        onPick={(id) => {
+          if (!chosen || id !== form.pointsSystemId) haptic("selection");
+          onPick(id);
+          setOpen(false);
+        }}
+      />
     </div>
+  );
+}
+
+/** 选一个三方积分: each online, as its tag, its site and 最小单位. */
+function PickDialog({
+  open,
+  items,
+  current,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  items: PointsSystemView[];
+  current: string;
+  onClose: () => void;
+  onPick: (id: string) => void;
+}) {
+  const titleId = useId();
+  return (
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      width="30rem"
+    >
+      <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 id={titleId} className="text-lg font-semibold text-ink">
+          用哪一种三方积分
+        </h2>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="关闭"
+          className="-mr-2 shrink-0"
+          onClick={onClose}
+        >
+          <X />
+        </Button>
+      </header>
+      <div className="grid gap-2 px-5 pb-5">
+        {items.length === 0 ? (
+          <p className="text-sm text-ink-2">现在没有能用的三方积分。</p>
+        ) : (
+          items.map((item) => (
+            <Squircle key={item.id} radius={radius.choice}>
+              <button
+                type="button"
+                aria-pressed={item.id === current}
+                onClick={() => onPick(item.id)}
+                className="choice flex w-full items-center gap-3 px-3.5 py-3 text-left"
+              >
+                <span className="grid min-w-0 flex-1 gap-1">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+                    <PointsCapsule name={item.name} small />
+                    {item.issuerName}
+                  </span>
+                  <span className="text-xs text-ink-3">
+                    {item.host} · 最小单位{" "}
+                    {amountText(item.step, {
+                      unit: item.unit,
+                      step: item.step,
+                    })}
+                  </span>
+                </span>
+                {item.id === current && (
+                  <Check
+                    className="size-4 shrink-0 text-accent-ink"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            </Squircle>
+          ))
+        )}
+        <p className="px-1 text-xs text-ink-3">
+          领到的积分进领取的人在那个网站的账户；发出的从你在那边的账户扣，要先填你在那边的密钥。
+        </p>
+      </div>
+    </WindowDialog>
   );
 }
 
