@@ -1,14 +1,17 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { clockSeconds, fullTime } from "../../lib/roster-time";
 import { useTipActions, useTipCard, useTipReceipt } from "../../lib/tips";
-import { Page, PageHeader, Panel } from "../page/page";
+import { InfoList, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { ldc, TipCardView } from "../tips/tip-card";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
 import { StatusChip } from "../ui/status-chip";
 import { MessageView } from "./message-view";
+import { tipMethodName } from "./tips-view";
 
 // A 打赏卡's own page (/☕/<卡号>, docs/tip-design.md §2): the card as it is
 // embedded, for anyone. Signed in, it tips as in the 社区; a guest pays at
@@ -61,7 +64,7 @@ export function TipCardPageView({ code }: { code: string }) {
 
 const statusText = {
   pending: "等你在 Credit 站付款",
-  done: "已打赏，谢谢！",
+  done: "已打赏，谢谢。",
   unpaid: "没有查到这笔付款",
   sending: "正在发放",
   not_sent: "没有发出去",
@@ -92,6 +95,10 @@ export function TipReceiptView({ code, id }: { code: string; id: string }) {
       <MessageView title="没有找到这笔打赏" text="链接不对，或者已经不在了。" />
     );
   const receipt = query.data?.receipt;
+  // 🐟额 tips are in 🐟; Credit 站 ones in LDC.
+  const amount = receipt
+    ? `${ldc(receipt.amountMinor)} ${receipt.method === "balance" ? "🐟" : "LDC"}`
+    : "";
   return (
     <PageLoad load={queryLoad(query)}>
       {receipt && (
@@ -101,14 +108,12 @@ export function TipReceiptView({ code, id }: { code: string; id: string }) {
               label: `打赏 ${receipt.card.owner.displayName}`,
               href: `/☕/${code}`,
             }}
-            title={`打赏 ${ldc(receipt.amountMinor)} LDC`}
+            title={`打赏 ${amount}`}
             description={`给 @${receipt.card.owner.username}`}
           />
           <Panel className="grid gap-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-2xl font-semibold tabular-nums">
-                {ldc(receipt.amountMinor)} LDC
-              </p>
+              <p className="text-2xl font-semibold tabular-nums">{amount}</p>
               <StatusChip tone={tone[receipt.status]} dot>
                 {statusText[receipt.status]}
               </StatusChip>
@@ -145,6 +150,40 @@ export function TipReceiptView({ code, id }: { code: string; id: string }) {
               </div>
             )}
           </Panel>
+          <PageSection title="这笔打赏">
+            <InfoList
+              items={[
+                { label: "付法", value: tipMethodName[receipt.method] },
+                {
+                  label: "打赏时间",
+                  value: (
+                    <span title={fullTime(receipt.createdAt)}>
+                      {clockSeconds(receipt.createdAt)}
+                    </span>
+                  ),
+                },
+                ...(receipt.status === "done" && receipt.doneAt
+                  ? [
+                      {
+                        label: "到账时间",
+                        value: (
+                          <span title={fullTime(receipt.doneAt)}>
+                            {clockSeconds(receipt.doneAt)}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+                {
+                  label: "编号",
+                  value: (
+                    <span className="font-mono text-sm">{receipt.id}</span>
+                  ),
+                  action: <CopyButton value={receipt.id} label="编号" />,
+                },
+              ]}
+            />
+          </PageSection>
         </Page>
       )}
     </PageLoad>

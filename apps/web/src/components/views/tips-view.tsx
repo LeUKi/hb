@@ -6,9 +6,11 @@ import type {
   TipPaletteOption,
   TipRange,
 } from "@hb/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useNavigate, useRouter } from "@tanstack/react-router";
+import { Check, ChevronDown, X } from "lucide-react";
+import { useId, useState } from "react";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import {
   previewOf,
@@ -18,13 +20,30 @@ import {
   useTipList,
 } from "../../lib/tips";
 import { PlusTag } from "../balance/plus";
-import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
-import { PageLoad, queryLoad } from "../page/page-state";
+import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
+import {
+  Callout,
+  EmptyNote,
+  Page,
+  PageHeader,
+  PageSection,
+  Panel,
+} from "../page/page";
+import {
+  PageLoad,
+  queriesLoad,
+  queryLoad,
+  ResultLoad,
+  resultOf,
+} from "../page/page-state";
+import { useSearchChoice } from "../shell/use-search-choice";
+import { WindowDialog } from "../shell/window-dialog";
 import { tipCardHeight } from "../tips/embed";
 import { ldc, TipCardView } from "../tips/tip-card";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
+import { RevealInline } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -32,7 +51,7 @@ import { StatusChip } from "../ui/status-chip";
 // 我的打赏 (/tips, docs/tip-design.md §7): one's 打赏卡, then one table of
 // tips, received or given, filtered by card, method and time.
 
-const methodName: Record<TipMethod, string> = {
+export const tipMethodName: Record<TipMethod, string> = {
   checkout: "Credit 站",
   merchant: "我的商户",
   balance: "🐟额",
@@ -133,20 +152,56 @@ function linkText(card: TipCard) {
   return "没有关联";
 }
 
+type Side = "in" | "out";
+type MethodFilter = TipMethod | "all";
+
 function MyTips({ user }: { user: SessionUser }) {
   const navigate = useNavigate();
   const query = useMyTips(user.id);
   const actions = useTipCardActions(user.id);
-  const [side, setSide] = useState<"in" | "out">("in");
-  const [range, setRange] = useState<TipRange>("week");
-  const [cardCode, setCardCode] = useState("");
-  const [method, setMethod] = useState<TipMethod | "">("");
+  // In the address (07 §1): Back and a reload find the table as it was.
+  const [side, setSide] = useSearchChoice<Side>("tab", "in", ["in", "out"]);
+  const [range, setRange] = useSearchChoice<TipRange>("range", "week", [
+    "today",
+    "week",
+    "all",
+  ]);
+  const [method, setMethod] = useSearchChoice<MethodFilter>("method", "all", [
+    "all",
+    "checkout",
+    "balance",
+  ]);
+  // The 打赏卡 in the address is taken before the cards are in, so the
+  // table loads with them; one that is not (or no longer) one's own, or
+  // the only one, means all of them once they are.
+  const router = useRouter();
+  const [codes] = useState(() => {
+    const raw = (router.state.location.search as Record<string, unknown>).card;
+    return typeof raw === "string" && /^[2-9a-zA-Z]{6}$/.test(raw) ? [raw] : [];
+  });
+  const [cardCode, setCardCode] = useSearchChoice<string>("card", "", codes);
+  const data = query.data;
+  const card =
+    side === "in" &&
+    cardCode &&
+    (!data ||
+      (data.cards.length > 1 &&
+        data.cards.some((item) => item.code === cardCode)))
+      ? cardCode
+      : "";
   const list = useTipList(user.id, side, {
     range,
-    ...(cardCode ? { card: cardCode } : {}),
-    ...(method ? { method } : {}),
+    ...(card ? { card } : {}),
+    ...(method !== "all" ? { method } : {}),
   });
-  const data = query.data;
+  const lazy = useQueryLazyList({
+    hasNextPage: list.hasNextPage,
+    isFetchingNextPage: list.isFetchingNextPage,
+    isFetchNextPageError: list.isFetchNextPageError,
+    fetchNextPage: list.fetchNextPage,
+    pageCount: list.data?.pages.length ?? 0,
+    isPlaceholderData: list.isPlaceholderData,
+  });
   const owner = {
     username: user.username,
     displayName: user.displayName,
@@ -155,8 +210,35 @@ function MyTips({ user }: { user: SessionUser }) {
   const pages = list.data?.pages ?? [];
   const tips = pages.flatMap((page) => page.tips);
   const stats = pages[0]?.stats ?? null;
+  const stopping = actions.stop.isPending ? actions.stop.variables : null;
+  const starting = actions.start.isPending ? actions.start.variables : null;
+  // Narrowed by 付法 or 打赏卡; the time is always one of three.
+  const narrowed = method !== "all" || card !== "";
+  const empty = {
+    title: narrowed
+      ? "没有符合条件的打赏"
+      : side === "in"
+        ? {
+            today: "今天还没有收到打赏",
+            week: "近 7 天没有收到打赏",
+            all: "还没有收到过打赏",
+          }[range]
+        : {
+            today: "今天还没有打赏过",
+            week: "近 7 天没有打赏过",
+            all: "还没有打赏过",
+          }[range],
+    text:
+      narrowed || range !== "all"
+        ? "换个筛选看看。"
+        : side === "in"
+          ? "把打赏卡贴到社区的帖子末尾或个人页的“关于我”里，看到的人点一下就能打赏你。"
+          : "在社区的帖子里看到打赏卡，点一下就能打赏。",
+  };
   return (
-    <PageLoad load={queryLoad(query)}>
+    // The cards, the tabs and the filters stay once shown; the table loads
+    // in place.
+    <PageLoad load={queriesLoad(query, list)} frame={queryLoad(query)}>
       {data && (
         <Page>
           <PageHeader
@@ -173,8 +255,13 @@ function MyTips({ user }: { user: SessionUser }) {
             actions={
               <Button
                 variant="primary"
-                disabled={!data.enabled || data.used >= data.limit}
-                onClick={() => void navigate({ to: "/tips/new" })}
+                aria-disabled={
+                  !data.enabled || data.used >= data.limit || undefined
+                }
+                onClick={() => {
+                  if (data.enabled && data.used < data.limit)
+                    void navigate({ to: "/tips/new" });
+                }}
               >
                 新建打赏卡
               </Button>
@@ -195,46 +282,45 @@ function MyTips({ user }: { user: SessionUser }) {
             }
           >
             {data.cards.length === 0 ? (
-              <Panel className="grid gap-1 p-5 text-sm text-ink-2">
-                <p>
-                  还没有打赏卡。建一张，贴到社区的帖子末尾或个人页的“关于我”里，别人点一下就能打赏你。
-                </p>
-              </Panel>
+              <EmptyNote
+                title="还没有打赏卡"
+                text="建一张，贴到社区的帖子末尾或个人页的“关于我”里，看到的人点一下就能打赏你。"
+              />
             ) : (
               // Two columns only where each has room for a card at its
               // narrowest (288 + the panel's 32): no sideways scroll.
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3">
-                {data.cards.map((card) => (
+                {data.cards.map((item) => (
                   <Panel
-                    key={card.code}
+                    key={item.code}
                     className="grid content-start gap-3 p-4"
                   >
                     <div className="grid gap-0.5 text-sm text-ink-2">
                       <div className="flex items-center gap-2">
-                        <b className="text-base text-ink">{card.name}</b>
-                        {!card.active && (
+                        <b className="text-base text-ink">{item.name}</b>
+                        {!item.active && (
                           <StatusChip tone="neutral">
-                            {card.stoppedByAdmin ? "站长停用" : "已停用"}
+                            {item.stoppedByAdmin ? "站长停用" : "已停用"}
                           </StatusChip>
                         )}
                       </div>
-                      <span>{cardSummary(card, data.palettes)}</span>
-                      <span>{linkText(card)}</span>
+                      <span>{cardSummary(item, data.palettes)}</span>
+                      <span>{linkText(item)}</span>
                       <span>
-                        近 7 天 {card.week.count} 次 ·{" "}
-                        {ldc(card.week.amountMinor)} LDC
+                        近 7 天 {item.week.count} 次 ·{" "}
+                        {ldc(item.week.amountMinor)} LDC
                       </span>
-                      {card.stopReason && (
-                        <span>站长说：{card.stopReason}</span>
+                      {item.stopReason && (
+                        <span>站长说：{item.stopReason}</span>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <CopyTextButton
                         label="复制嵌入代码"
                         text={tipEmbedCode(
-                          card.code,
+                          item.code,
                           user.displayName,
-                          tipCardHeight(previewOf(card, owner)),
+                          tipCardHeight(previewOf(item, owner)),
                           "forum",
                         )}
                       />
@@ -243,35 +329,45 @@ function MyTips({ user }: { user: SessionUser }) {
                         onClick={() =>
                           void navigate({
                             to: "/tips/$code",
-                            params: { code: card.code },
+                            params: { code: item.code },
                           })
                         }
                       >
                         编辑
                       </Button>
-                      {card.active ? (
+                      {item.active ? (
                         <Button
                           size="xs"
-                          disabled={actions.stop.isPending}
-                          onClick={() => actions.stop.mutate(card.code)}
+                          aria-disabled={actions.stop.isPending || undefined}
+                          onClick={() => {
+                            if (actions.stop.isPending) return;
+                            actions.stop.mutate(item.code);
+                          }}
                         >
-                          停用
+                          {stopping === item.code ? "正在停用…" : "停用"}
                         </Button>
-                      ) : !card.stoppedByAdmin ? (
+                      ) : !item.stoppedByAdmin ? (
                         <Button
                           size="xs"
-                          disabled={
-                            actions.start.isPending || data.used >= data.limit
+                          aria-disabled={
+                            actions.start.isPending ||
+                            data.used >= data.limit ||
+                            undefined
                           }
-                          onClick={() => actions.start.mutate(card.code)}
+                          data-disabled={data.used >= data.limit || undefined}
+                          onClick={() => {
+                            if (actions.start.isPending) return;
+                            if (data.used >= data.limit) return;
+                            actions.start.mutate(item.code);
+                          }}
                         >
-                          启用
+                          {starting === item.code ? "正在启用…" : "启用"}
                         </Button>
                       ) : null}
                     </div>
                     <div className="overflow-x-auto">
                       <TipCardView
-                        card={previewOf(card, owner, false)}
+                        card={previewOf(item, owner, false)}
                         viewer={null}
                       />
                     </div>
@@ -280,126 +376,223 @@ function MyTips({ user }: { user: SessionUser }) {
               </div>
             )}
           </PageSection>
-          <PageSection
-            title={side === "in" ? "收到的打赏" : "我打赏的"}
-            action={
+          <PageSection title="打赏记录">
+            <div className="flex flex-col gap-3">
               <Segmented
-                label="收到的或我打赏的"
-                size="sm"
+                label="打赏记录分类"
                 value={side}
+                onChange={setSide}
                 options={[
                   { value: "in", label: "收到的" },
                   { value: "out", label: "我打赏的" },
                 ]}
-                onChange={setSide}
               />
-            }
-          >
-            {side === "in" && (
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  ["次数", stats ? `${stats.count} 次` : "—"],
-                  ["打赏的人", stats ? `${stats.people} 人` : "—"],
-                  ["合计", stats ? `${ldc(stats.amountMinor)} LDC` : "—"],
-                ].map(([label, value]) => (
-                  <Panel key={label} className="grid gap-0.5 px-4 py-3">
-                    <span className="text-xs text-ink-3">{label}</span>
-                    <b className="text-xl tabular-nums">{value}</b>
-                  </Panel>
-                ))}
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Segmented
-                label="时间"
-                size="sm"
-                value={range}
-                options={[
-                  { value: "today", label: "今天" },
-                  { value: "week", label: "近 7 天" },
-                  { value: "all", label: "全部" },
-                ]}
-                onChange={setRange}
-              />
-              {side === "in" && (
-                <Squircle radius={radius.input}>
-                  <select
-                    aria-label="打赏卡"
-                    value={cardCode}
-                    onChange={(event) => setCardCode(event.target.value)}
-                    className="h-9 bg-white px-3 text-sm text-ink"
-                  >
-                    <option value="">全部打赏卡</option>
-                    {data.cards.map((card) => (
-                      <option key={card.code} value={card.code}>
-                        {card.name}
-                      </option>
-                    ))}
-                  </select>
-                </Squircle>
-              )}
-              <Squircle radius={radius.input}>
-                <select
-                  aria-label="付法"
+              <div className="flex flex-wrap items-center gap-2">
+                <Segmented
+                  label="时间"
+                  size="sm"
+                  value={range}
+                  onChange={setRange}
+                  options={[
+                    { value: "today", label: "今天" },
+                    { value: "week", label: "近 7 天" },
+                    { value: "all", label: "全部" },
+                  ]}
+                />
+                <Segmented
+                  label="付法"
+                  size="sm"
                   value={method}
-                  onChange={(event) =>
-                    setMethod(event.target.value as TipMethod | "")
-                  }
-                  className="h-9 bg-white px-3 text-sm text-ink"
-                >
-                  <option value="">全部付法</option>
-                  <option value="checkout">Credit 站</option>
-                  <option value="balance">🐟额</option>
-                </select>
-              </Squircle>
+                  onChange={setMethod}
+                  options={[
+                    { value: "all", label: "全部付法" },
+                    { value: "checkout", label: "Credit 站" },
+                    { value: "balance", label: "🐟额" },
+                  ]}
+                />
+                {/* Only 收到的 is by card, and only with two or more. */}
+                <RevealInline show={side === "in" && data.cards.length > 1}>
+                  <CardFilter
+                    cards={data.cards}
+                    value={card}
+                    onChange={setCardCode}
+                  />
+                </RevealInline>
+              </div>
             </div>
-            <Panel
-              as="ul"
-              className={cn(
-                "divide-y divide-line",
-                list.isPlaceholderData && "opacity-60",
-              )}
+            <ResultLoad
+              id={`${side}:${range}:${method}:${card}:${tips.length > 0 ? "rows" : "empty"}`}
+              load={resultOf(list)}
             >
               {tips.length === 0 ? (
-                <li className="p-5 text-sm text-ink-3">
-                  {list.isPending
-                    ? "正在读…"
-                    : side === "in"
-                      ? "这段时间还没有人打赏。"
-                      : "这段时间你还没有打赏过。"}
-                </li>
+                <EmptyNote title={empty.title} text={empty.text} />
               ) : (
-                tips.map((tip) => (
-                  <TipRow
-                    key={tip.id}
-                    tip={tip}
-                    onHide={
-                      side === "in" && tip.message
-                        ? () =>
-                            actions.hideMessage.mutate({
-                              id: tip.id,
-                              hidden: !tip.messageHidden,
-                            })
-                        : undefined
-                    }
-                  />
-                ))
+                <div className="grid gap-3">
+                  {side === "in" && stats && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        ["次数", `${stats.count} 次`],
+                        ["打赏的人", `${stats.people} 人`],
+                        ["合计", `${ldc(stats.amountMinor)} LDC`],
+                      ].map(([label, value]) => (
+                        <Panel key={label} className="grid gap-0.5 px-4 py-3">
+                          <span className="text-xs text-ink-3">{label}</span>
+                          <b className="text-xl tabular-nums">{value}</b>
+                        </Panel>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid gap-2">
+                    <Panel as="ul" className="divide-y divide-line">
+                      {tips.map((tip) => (
+                        <TipRow
+                          key={tip.id}
+                          tip={tip}
+                          onHide={
+                            side === "in" && tip.message
+                              ? () =>
+                                  actions.hideMessage.mutate({
+                                    id: tip.id,
+                                    hidden: !tip.messageHidden,
+                                  })
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </Panel>
+                    <LazyListEnd list={lazy} done={`共 ${tips.length} 条`} />
+                  </div>
+                </div>
               )}
-            </Panel>
-            {list.hasNextPage && (
-              <Button
-                size="sm"
-                className="justify-self-center"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {list.isFetchingNextPage ? "正在读…" : "再读 20 条"}
-              </Button>
-            )}
+            </ResultLoad>
           </PageSection>
         </Page>
       )}
     </PageLoad>
+  );
+}
+
+/**
+ * 收到的 by 打赏卡: a button saying which, opening the cards to choose
+ * from. A bar of them would not fit (up to 30 with PLUS, names up to 20
+ * characters), so they are a list in a dialog, as 三方积分's picker.
+ */
+function CardFilter({
+  cards,
+  value,
+  onChange,
+}: {
+  cards: TipCard[];
+  value: string;
+  onChange: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const titleId = useId();
+  const chosen = cards.find((item) => item.code === value);
+  const pick = (code: string) => {
+    if (code !== value) haptic("selection");
+    onChange(code);
+    setOpen(false);
+  };
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="quiet"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
+        {chosen ? `打赏卡 · ${chosen.name}` : "全部打赏卡"}
+        <ChevronDown aria-hidden="true" />
+      </Button>
+      <WindowDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy={titleId}
+        width="30rem"
+      >
+        <div className="flex max-h-[min(40rem,85cqh)] min-h-0 flex-col">
+          <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+            <h2 id={titleId} className="text-lg font-semibold text-ink">
+              看哪张打赏卡收到的
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="关闭"
+              className="-mr-2 shrink-0"
+              onClick={() => setOpen(false)}
+            >
+              <X />
+            </Button>
+          </header>
+          <div className="view-scroll grid min-h-0 flex-1 content-start gap-2 overflow-y-auto overscroll-contain px-5 pb-5">
+            <CardOption
+              title="全部打赏卡"
+              note="每张卡收到的都算"
+              chosen={!chosen}
+              onPick={() => pick("")}
+            />
+            {cards.map((item) => (
+              <CardOption
+                key={item.code}
+                title={item.name}
+                tag={
+                  item.active
+                    ? undefined
+                    : item.stoppedByAdmin
+                      ? "站长停用"
+                      : "已停用"
+                }
+                note={`${linkText(item)} · 近 7 天 ${item.week.count} 次`}
+                chosen={item.code === chosen?.code}
+                onPick={() => pick(item.code)}
+              />
+            ))}
+          </div>
+        </div>
+      </WindowDialog>
+    </>
+  );
+}
+
+function CardOption({
+  title,
+  tag,
+  note,
+  chosen,
+  onPick,
+}: {
+  title: string;
+  tag?: string;
+  note: string;
+  chosen: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <Squircle radius={radius.choice}>
+      <button
+        type="button"
+        aria-pressed={chosen}
+        onClick={onPick}
+        className="choice flex w-full items-center gap-3 px-3.5 py-3 text-left"
+      >
+        <span className="grid min-w-0 flex-1 gap-1">
+          <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+            {title}
+            {tag && <StatusChip tone="neutral">{tag}</StatusChip>}
+          </span>
+          <span className="text-xs text-ink-3">{note}</span>
+        </span>
+        {chosen && (
+          <Check
+            className="size-4 shrink-0 text-accent-ink"
+            aria-hidden="true"
+          />
+        )}
+      </button>
+    </Squircle>
   );
 }
 
@@ -435,7 +628,7 @@ function TipRow({ tip, onHide }: { tip: Tip; onHide?: () => void }) {
         {ldc(tip.amountMinor)} {tip.method === "balance" ? "🐟" : "LDC"}
       </span>
       <span className="col-span-2 min-w-0 truncate text-ink-2 @wide/window:col-span-1">
-        {methodName[tip.method]}
+        {tipMethodName[tip.method]}
         {statusText[tip.status] && <> · {statusText[tip.status]}</>}
         {tip.card.name && <> · {tip.card.name}</>}
         {tip.message && (

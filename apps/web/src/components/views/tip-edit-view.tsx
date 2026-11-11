@@ -9,7 +9,8 @@ import {
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
-import { useId, useState } from "react";
+import { useIsPresent } from "motion/react";
+import { useEffect, useId, useState } from "react";
 import { cn } from "../../lib/cn";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import {
@@ -19,8 +20,9 @@ import {
   useMyTips,
   useTipCardActions,
 } from "../../lib/tips";
-import { Callout, Page, PageHeader, Panel } from "../page/page";
+import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
+import { LeaveGuard } from "../shell/leave-guard";
 import { tipCardHeight } from "../tips/embed";
 import { ldc, TipCardView } from "../tips/tip-card";
 import { Button } from "../ui/button";
@@ -31,8 +33,8 @@ import { MessageView } from "./message-view";
 import { CopyTextButton, ReceivingNotice } from "./tips-view";
 
 // 新建打赏卡 / 编辑打赏卡 (/tips/new, /tips/<卡号>; docs/tip-design.md §2):
-// the form on the left, the card as it will look on the right, where it
-// goes and its embed codes, their heights worked out.
+// the form, then the card as it will look where it goes, and its embed
+// codes, their heights worked out. One column, 44rem, as every form (07 §1).
 
 type Form = {
   name: string;
@@ -207,11 +209,19 @@ function EditorForm({
 }) {
   const navigate = useNavigate();
   const actions = useTipCardActions(user.id);
-  const [form, setForm] = useState<Form>(() =>
+  const [start] = useState<Form>(() =>
     card
       ? formOf(card, palettes)
       : { ...blank, palette: firstPalette(palettes).id },
   );
+  const [form, setForm] = useState<Form>(start);
+  // Saved: the guard is off, then the page goes back to 我的打赏 (if it is
+  // still here: one left while saving stays where it went, 07 §1).
+  const [saved, setSaved] = useState(false);
+  const present = useIsPresent();
+  useEffect(() => {
+    if (saved && present) void navigate({ to: "/tips" });
+  }, [saved, present, navigate]);
   const [place, setPlace] = useState<"bio" | "post" | "phone">("bio");
   const [error, setError] = useState<string | null>(null);
   const ids = { name: useId(), prompt: useId(), goal: useId(), topic: useId() };
@@ -268,16 +278,26 @@ function EditorForm({
           input: { ...input, expectedVersion: card.version },
         });
       else await actions.create.mutateAsync(input);
-      void navigate({ to: "/tips" });
+      setSaved(true);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "保存没有完成。");
     }
   };
   const busy = actions.create.isPending || actions.update.isPending;
+  const changed = JSON.stringify(form) !== JSON.stringify(start);
+  const closed = !card && !enabled;
   const changedHeight =
     card && tipCardHeight(previewOf(card, owner)) !== height;
   return (
-    <Page width="wide">
+    <Page>
+      <LeaveGuard
+        when={changed && !busy && !saved}
+        message={
+          card
+            ? "这张打赏卡改过的内容还没保存，离开后会丢失。"
+            : "这张打赏卡还没保存，离开后填的内容会丢失。"
+        }
+      />
       <PageHeader
         back={{ label: "我的打赏", href: "/tips" }}
         title={card ? `编辑：${card.name}` : "新建打赏卡"}
@@ -288,315 +308,327 @@ function EditorForm({
         </Callout>
       )}
       <ReceivingNotice receiving={receiving} />
-      <div className="grid items-start gap-6 @wide/window:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-        <Panel className="grid gap-5 p-5">
-          <Field label="名称" hint="只有你看得到" htmlFor={ids.name}>
-            <TextInput
-              id={ids.name}
-              value={form.name}
-              maxLength={TIP_LIMITS.nameMax}
-              onChange={(event) => edit({ name: event.target.value })}
-              placeholder="比如：个人页、某个帖子"
-            />
-          </Field>
-          <ChoiceCards
-            label="样式"
-            value={form.style}
-            columns={2}
-            onChange={(style) => edit({ style })}
-            options={[
-              {
-                value: "simple",
-                title: "简洁",
-                description: "一行，个人页这种窄地方用",
-              },
-              {
-                value: "standard",
-                title: "标准",
-                description: "数额摆出来，能开目标和名单",
-              },
-            ]}
+      <Panel className="grid gap-5 p-5">
+        <Field label="名称" hint="只有你看得到" htmlFor={ids.name}>
+          <TextInput
+            id={ids.name}
+            value={form.name}
+            maxLength={TIP_LIMITS.nameMax}
+            onChange={(event) => edit({ name: event.target.value })}
+            placeholder="比如：个人页、某个帖子"
           />
-          <div className="grid gap-2">
-            <span className="text-sm font-medium text-ink-2">配色</span>
-            <div className="flex gap-2">
-              {palettes.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  title={item.name}
-                  aria-label={item.name}
-                  aria-pressed={form.palette === item.id}
-                  onClick={() => edit({ palette: item.id })}
-                  className={cn(
-                    "size-8 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--color-line-strong)]",
-                    form.palette === item.id &&
-                      "shadow-[0_0_0_2px_var(--color-ink)]",
-                  )}
-                  style={{ background: item.colors.light.accent }}
-                />
-              ))}
-            </div>
-          </div>
-          <Field
-            label="一句话"
-            hint={`卡片上显示，最多 ${TIP_LIMITS.promptMax} 个字；空着就写“打赏 ${user.displayName}”`}
-            htmlFor={ids.prompt}
-            optional
-          >
-            <TextInput
-              id={ids.prompt}
-              value={form.prompt}
-              onChange={(event) => edit({ prompt: event.target.value })}
-              placeholder={`打赏 ${user.displayName}`}
-            />
-          </Field>
-          <div className="grid gap-2">
-            <span className="text-sm font-medium text-ink-2">
-              数额（LDC，最多 4 个；说明选填，最多 4 个字）
-            </span>
-            {form.amounts.map((item, index) => (
-              <div
+        </Field>
+        <ChoiceCards
+          label="样式"
+          value={form.style}
+          columns={2}
+          onChange={(style) => edit({ style })}
+          options={[
+            {
+              value: "simple",
+              title: "简洁",
+              description: "一行，个人页这种窄地方用",
+            },
+            {
+              value: "standard",
+              title: "标准",
+              description: "数额摆出来，能开目标和名单",
+            },
+          ]}
+        />
+        <div className="grid gap-2">
+          <span className="text-sm font-medium text-ink-2">配色</span>
+          <div className="flex gap-2">
+            {palettes.map((item) => (
+              <button
                 key={item.id}
-                className="grid grid-cols-[6rem_minmax(0,1fr)_auto_auto] items-center gap-2"
-              >
-                <TextInput
-                  aria-label={`第 ${index + 1} 个数额`}
-                  inputMode="decimal"
-                  value={item.amount}
-                  onChange={(event) =>
-                    edit({
-                      amounts: form.amounts.map((row, at) =>
-                        at === index
-                          ? { ...row, amount: event.target.value }
-                          : row,
-                      ),
-                    })
-                  }
-                />
-                <TextInput
-                  aria-label={`第 ${index + 1} 个说明`}
-                  value={item.label}
-                  placeholder="说明（选填）"
-                  onChange={(event) =>
-                    edit({
-                      amounts: form.amounts.map((row, at) =>
-                        at === index
-                          ? { ...row, label: event.target.value }
-                          : row,
-                      ),
-                    })
-                  }
-                />
-                <Button
-                  size="xs"
-                  variant={form.defaultIndex === index ? "primary" : "ghost"}
-                  onClick={() => edit({ defaultIndex: index })}
-                >
-                  {form.defaultIndex === index ? "默认" : "设为默认"}
-                </Button>
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label="去掉这个数额"
-                  disabled={form.amounts.length <= 1}
-                  onClick={() =>
-                    edit({
-                      amounts: form.amounts.filter((_, at) => at !== index),
-                      defaultIndex: Math.max(
-                        0,
-                        form.defaultIndex - (index < form.defaultIndex ? 1 : 0),
-                      ),
-                    })
-                  }
-                >
-                  <X />
-                </Button>
-              </div>
+                type="button"
+                title={item.name}
+                aria-label={item.name}
+                aria-pressed={form.palette === item.id}
+                onClick={() => edit({ palette: item.id })}
+                className={cn(
+                  "size-8 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--color-line-strong)]",
+                  form.palette === item.id &&
+                    "shadow-[0_0_0_2px_var(--color-ink)]",
+                )}
+                style={{ background: item.colors.light.accent }}
+              />
             ))}
-            {form.amounts.length < TIP_LIMITS.amountsMax && (
+          </div>
+        </div>
+        <Field
+          label="一句话"
+          hint={`卡片上显示，最多 ${TIP_LIMITS.promptMax} 个字；空着就写“打赏 ${user.displayName}”`}
+          htmlFor={ids.prompt}
+          optional
+        >
+          <TextInput
+            id={ids.prompt}
+            value={form.prompt}
+            onChange={(event) => edit({ prompt: event.target.value })}
+            placeholder={`打赏 ${user.displayName}`}
+          />
+        </Field>
+        <div className="grid gap-2">
+          <span className="text-sm font-medium text-ink-2">
+            数额（LDC，最多 4 个；说明选填，最多 4 个字）
+          </span>
+          {form.amounts.map((item, index) => (
+            <div
+              key={item.id}
+              className="grid grid-cols-[6rem_minmax(0,1fr)_auto_auto] items-center gap-2"
+            >
+              <TextInput
+                aria-label={`第 ${index + 1} 个数额`}
+                inputMode="decimal"
+                value={item.amount}
+                onChange={(event) =>
+                  edit({
+                    amounts: form.amounts.map((row, at) =>
+                      at === index
+                        ? { ...row, amount: event.target.value }
+                        : row,
+                    ),
+                  })
+                }
+              />
+              <TextInput
+                aria-label={`第 ${index + 1} 个说明`}
+                value={item.label}
+                placeholder="说明（选填）"
+                onChange={(event) =>
+                  edit({
+                    amounts: form.amounts.map((row, at) =>
+                      at === index
+                        ? { ...row, label: event.target.value }
+                        : row,
+                    ),
+                  })
+                }
+              />
               <Button
                 size="xs"
-                className="justify-self-start"
+                variant={form.defaultIndex === index ? "primary" : "ghost"}
+                onClick={() => edit({ defaultIndex: index })}
+              >
+                {form.defaultIndex === index ? "默认" : "设为默认"}
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="去掉这个数额"
+                aria-disabled={form.amounts.length <= 1 || undefined}
                 onClick={() =>
+                  form.amounts.length > 1 &&
                   edit({
-                    amounts: [
-                      ...form.amounts,
-                      { id: crypto.randomUUID(), amount: "", label: "" },
-                    ],
+                    amounts: form.amounts.filter((_, at) => at !== index),
+                    defaultIndex: Math.max(
+                      0,
+                      form.defaultIndex - (index < form.defaultIndex ? 1 : 0),
+                    ),
                   })
                 }
               >
-                <Plus />
-                加一个数额
+                <X />
               </Button>
-            )}
-          </div>
+            </div>
+          ))}
+          {form.amounts.length < TIP_LIMITS.amountsMax && (
+            <Button
+              size="xs"
+              className="justify-self-start"
+              onClick={() =>
+                edit({
+                  amounts: [
+                    ...form.amounts,
+                    { id: crypto.randomUUID(), amount: "", label: "" },
+                  ],
+                })
+              }
+            >
+              <Plus />
+              加一个数额
+            </Button>
+          )}
+        </div>
+        <Switch
+          label="允许看客填其他数额"
+          description="1 到 2000 LDC"
+          checked={form.allowOther}
+          onChange={(allowOther) => edit({ allowOther })}
+        />
+        <div className="grid gap-3">
+          <span className="text-sm font-medium text-ink-2">
+            标准样式上显示{standard ? "" : "（简洁样式没有这几项）"}
+          </span>
           <Switch
-            label="允许看客填其他数额"
-            description="1 到 2000 LDC"
-            checked={form.allowOther}
-            onChange={(allowOther) => edit({ allowOther })}
+            label="目标"
+            description="写一个目标数额，卡片上显示已到多少，从开的时候算起"
+            checked={standard && form.goalOn}
+            disabled={!standard}
+            onChange={(goalOn) => edit({ goalOn })}
           />
-          <div className="grid gap-3">
-            <span className="text-sm font-medium text-ink-2">
-              标准样式上显示{standard ? "" : "（简洁样式没有这几项）"}
-            </span>
-            <Switch
-              label="目标"
-              description="写一个目标数额，卡片上显示已到多少，从开的时候算起"
-              checked={standard && form.goalOn}
-              disabled={!standard}
-              onChange={(goalOn) => edit({ goalOn })}
-            />
-            {standard && form.goalOn && (
-              <Field label="目标数额" htmlFor={ids.goal}>
-                <TextInput
-                  id={ids.goal}
-                  inputMode="decimal"
-                  suffix="LDC"
-                  value={form.goal}
-                  onChange={(event) => edit({ goal: event.target.value })}
-                />
-              </Field>
-            )}
-            <Switch
-              label="最近打赏"
-              description="开了以后留言大家看得到，不开只有你看得到"
-              checked={standard && form.showRecent}
-              disabled={!standard}
-              onChange={(showRecent) => edit({ showRecent })}
-            />
-            <Switch
-              label="总榜"
-              description="这张卡上每个人的合计，从多到少"
-              checked={standard && form.showTop}
-              disabled={!standard}
-              onChange={(showTop) => edit({ showTop })}
-            />
-          </div>
-          <ChoiceCards
-            label="关联（选填，方便你看打赏从哪来）"
-            value={form.link}
-            columns={2}
-            onChange={(link) => edit({ link })}
-            options={[
-              { value: "none", title: "不关联", description: "只看合计" },
-              {
-                value: "profile",
-                title: "我的个人页",
-                description: "贴在“关于我”里",
-              },
-              { value: "topic", title: "社区帖子", description: "贴帖子链接" },
-            ]}
-          />
-          {form.link === "topic" && (
-            <Field label="帖子链接" htmlFor={ids.topic}>
+          {standard && form.goalOn && (
+            <Field label="目标数额" htmlFor={ids.goal}>
               <TextInput
-                id={ids.topic}
-                value={form.topicUrl}
-                placeholder="https://linux.do/t/…"
-                onChange={(event) => edit({ topicUrl: event.target.value })}
+                id={ids.goal}
+                inputMode="decimal"
+                suffix="LDC"
+                value={form.goal}
+                onChange={(event) => edit({ goal: event.target.value })}
               />
             </Field>
           )}
-          {error && (
-            <Callout tone="danger" title="没有保存">
-              {error}
-            </Callout>
-          )}
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              disabled={busy || (!card && !enabled)}
-              onClick={() => void save()}
-            >
-              {busy ? "正在保存…" : "保存"}
-            </Button>
-            <Button onClick={() => void navigate({ to: "/tips" })}>取消</Button>
-          </div>
-        </Panel>
-        <div className="grid content-start gap-3 @wide/window:sticky @wide/window:top-24">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Segmented
-              label="放在哪"
-              size="sm"
-              value={place}
-              onChange={setPlace}
-              options={[
-                { value: "bio", label: "个人页" },
-                { value: "post", label: "帖子" },
-                { value: "phone", label: "手机" },
-              ]}
+          <Switch
+            label="最近打赏"
+            description="开了以后留言大家看得到，不开只有你看得到"
+            checked={standard && form.showRecent}
+            disabled={!standard}
+            onChange={(showRecent) => edit({ showRecent })}
+          />
+          <Switch
+            label="总榜"
+            description="这张卡上每个人的合计，从多到少"
+            checked={standard && form.showTop}
+            disabled={!standard}
+            onChange={(showTop) => edit({ showTop })}
+          />
+        </div>
+        <ChoiceCards
+          label="关联（选填，方便你看打赏从哪来）"
+          value={form.link}
+          columns={2}
+          onChange={(link) => edit({ link })}
+          options={[
+            { value: "none", title: "不关联", description: "只看合计" },
+            {
+              value: "profile",
+              title: "我的个人页",
+              description: "贴在“关于我”里",
+            },
+            { value: "topic", title: "社区帖子", description: "贴帖子链接" },
+          ]}
+        />
+        {form.link === "topic" && (
+          <Field label="帖子链接" htmlFor={ids.topic}>
+            <TextInput
+              id={ids.topic}
+              value={form.topicUrl}
+              placeholder="https://linux.do/t/…"
+              onChange={(event) => edit({ topicUrl: event.target.value })}
             />
-            <span className="text-xs text-ink-3">
-              {place === "bio"
-                ? "个人页的“关于我”最高 300"
-                : place === "post"
-                  ? "帖子里卡片最宽 500，居中"
-                  : "手机上宽约 344"}
-            </span>
+          </Field>
+        )}
+        {error && (
+          <Callout tone="danger" title="没有保存">
+            {error}
+          </Callout>
+        )}
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            aria-disabled={busy || closed || undefined}
+            data-disabled={closed || undefined}
+            onClick={() => {
+              if (busy || closed) return;
+              void save();
+            }}
+          >
+            {busy ? "正在保存…" : "保存"}
+          </Button>
+          <Button onClick={() => void navigate({ to: "/tips" })}>取消</Button>
+        </div>
+      </Panel>
+      <PageSection
+        title="预览"
+        description={
+          place === "bio"
+            ? "个人页的“关于我”最高 300"
+            : place === "post"
+              ? "帖子里卡片最宽 500，居中"
+              : "手机上宽约 344"
+        }
+        action={
+          <Segmented
+            label="放在哪"
+            size="sm"
+            value={place}
+            onChange={setPlace}
+            options={[
+              { value: "bio", label: "个人页" },
+              { value: "post", label: "帖子" },
+              { value: "phone", label: "手机" },
+            ]}
+          />
+        }
+      >
+        <Squircle radius={radius.card}>
+          <div
+            className="overflow-x-auto bg-white p-4"
+            style={{ maxWidth: width + 32 }}
+          >
+            <TipCardView card={preview} viewer={null} />
           </div>
-          <Squircle radius={radius.card}>
-            <div
-              className="overflow-x-auto bg-white p-4"
-              style={{ maxWidth: width + 32 }}
-            >
-              <TipCardView card={preview} viewer={null} />
-            </div>
-          </Squircle>
+        </Squircle>
+      </PageSection>
+      <PageSection
+        title="嵌入代码"
+        description={card ? undefined : "保存以后才有。"}
+      >
+        {card && (
           <div className="grid gap-2 text-sm">
             <span className="font-medium text-ink-2">
-              社区里（贴进帖子或“关于我”）{card ? "" : "：保存以后才有"}
+              社区里（贴进帖子或“关于我”）
             </span>
-            {card && (
-              <>
-                <code className="block break-all rounded-xl bg-white p-3 text-xs text-ink-2 shadow-[0_0_0_1px_var(--color-line)]">
-                  {tipEmbedCode(card.code, user.displayName, height, "forum")}
-                </code>
-                <span className="font-medium text-ink-2">
-                  社区外的网页（只能用 Credit 站付）
-                </span>
-                <code className="block break-all rounded-xl bg-white p-3 text-xs text-ink-2 shadow-[0_0_0_1px_var(--color-line)]">
-                  {tipEmbedCode(card.code, user.displayName, height, "outside")}
-                </code>
-                {changedHeight && (
-                  <span className="text-warning">
-                    高度变了：保存以后，嵌着的地方要换上新的嵌入代码。
-                  </span>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <CopyTextButton
-                    label="复制社区里的"
-                    text={tipEmbedCode(
-                      card.code,
-                      user.displayName,
-                      height,
-                      "forum",
-                    )}
-                  />
-                  <CopyTextButton
-                    label="复制社区外的"
-                    text={tipEmbedCode(
-                      card.code,
-                      user.displayName,
-                      height,
-                      "outside",
-                    )}
-                  />
-                  <CopyTextButton
-                    label="复制打赏卡链接"
-                    text={tipCardLink(card.code)}
-                  />
-                  <span className="text-xs text-ink-3">
-                    {tipCardLink(card.code)}
-                  </span>
-                </div>
-              </>
+            <Squircle radius={radius.input}>
+              <code className="block break-all bg-white squircle-ring p-3 text-xs text-ink-2 [--sq-ring:var(--color-line)]">
+                {tipEmbedCode(card.code, user.displayName, height, "forum")}
+              </code>
+            </Squircle>
+            <span className="font-medium text-ink-2">
+              社区外的网页（只能用 Credit 站付）
+            </span>
+            <Squircle radius={radius.input}>
+              <code className="block break-all bg-white squircle-ring p-3 text-xs text-ink-2 [--sq-ring:var(--color-line)]">
+                {tipEmbedCode(card.code, user.displayName, height, "outside")}
+              </code>
+            </Squircle>
+            {changedHeight && (
+              <span className="text-warning">
+                高度变了：保存以后，嵌着的地方要换上新的嵌入代码。
+              </span>
             )}
+            <div className="flex flex-wrap items-center gap-2">
+              <CopyTextButton
+                label="复制社区里的"
+                text={tipEmbedCode(
+                  card.code,
+                  user.displayName,
+                  height,
+                  "forum",
+                )}
+              />
+              <CopyTextButton
+                label="复制社区外的"
+                text={tipEmbedCode(
+                  card.code,
+                  user.displayName,
+                  height,
+                  "outside",
+                )}
+              />
+              <CopyTextButton
+                label="复制打赏卡链接"
+                text={tipCardLink(card.code)}
+              />
+              <span className="text-xs text-ink-3">
+                {tipCardLink(card.code)}
+              </span>
+            </div>
           </div>
-        </div>
-      </div>
+        )}
+      </PageSection>
     </Page>
   );
 }

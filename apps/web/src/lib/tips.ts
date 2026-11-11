@@ -165,7 +165,10 @@ export function useTipList(
     },
     getNextPageParam: (last) => last.cursor ?? undefined,
     retry: false,
-    placeholderData: (previous) => previous,
+    // Another filter's rows stay, dimmed, until this one's are in; the
+    // other tab's never stand in (07 §1: another list shows grey rows).
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[3] === side ? previous : undefined,
   });
 }
 
