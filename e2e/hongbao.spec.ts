@@ -735,7 +735,22 @@ test.describe("红包页", () => {
     await expect(main.getByText(/还剩 [34]:\d\d 可以重新发送/)).toBeVisible();
     await expect(main.getByText(/只能重新发送一次/)).toBeVisible();
 
+    // Once only, so it asks first; 再等等 sends nothing.
     await main.getByRole("button", { name: "重新发送" }).click();
+    const ask = page.getByRole("dialog", { name: "确定重新发送？" });
+    await expect(
+      ask.getByText(
+        /只能重新发送一次。请先确认你已经注册好 LINUX DO Credit 账户/,
+      ),
+    ).toBeVisible();
+    await ask.getByRole("button", { name: "再等等" }).click();
+    await expect(ask).toHaveCount(0);
+    expect(resends).toEqual([]);
+    await main.getByRole("button", { name: "重新发送" }).click();
+    await page
+      .getByRole("dialog", { name: "确定重新发送？" })
+      .getByRole("button", { name: "重新发送" })
+      .click();
     await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
     await expect(main.getByText("核对中")).toBeVisible();
     expect(resends).toEqual([csrfToken]);

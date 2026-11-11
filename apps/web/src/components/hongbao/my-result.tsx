@@ -20,6 +20,7 @@ import { useIdentity } from "../../lib/session";
 import { amountText } from "../../lib/units";
 import { useBefore } from "../../lib/use-before";
 import { Callout } from "../page/page";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -118,6 +119,62 @@ function ResendCountdown({ to }: { to: number }) {
 }
 
 /**
+ * 重新发送 asks first (the user, 2026-11-11): a payment is sent again only
+ * once, so the person says their account is ready before it goes. One
+ * wording for every 三方积分, which issuers do not write, and the same shape
+ * for Credit.
+ */
+function ResendButton({
+  account,
+  amount,
+  pending,
+  onConfirm,
+}: {
+  /** "已经在 x.com 开好账户", "已经注册好 LINUX DO Credit 账户". */
+  account: string;
+  /** "12.50 LDC", "300 星星". */
+  amount: string;
+  pending: boolean;
+  onConfirm: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  return (
+    <>
+      <Button
+        variant="primary"
+        size="sm"
+        aria-disabled={pending || undefined}
+        onClick={() => {
+          if (!pending) setAsking(true);
+        }}
+      >
+        {pending ? "正在重新发送…" : "重新发送"}
+      </Button>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title="确定重新发送？"
+        text={`只能重新发送一次。请先确认你${account}；如果还是找不到你的账户，这笔 ${amount} 就不再补发。`}
+        actions={
+          <>
+            <Button onClick={() => setAsking(false)}>再等等</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setAsking(false);
+                onConfirm();
+              }}
+            >
+              重新发送
+            </Button>
+          </>
+        }
+      />
+    </>
+  );
+}
+
+/**
  * No Credit account yet: within five minutes of the upstream's answer the
  * viewer may open one and send the payment again, once (api:
  * payments/resend.ts, user's rule); past that it is not paid.
@@ -165,17 +222,12 @@ function NoCreditAccount({
           注册 Credit 账户
           <ArrowUpRight aria-hidden="true" />
         </ButtonLink>
-        <Button
-          variant="primary"
-          size="sm"
-          aria-disabled={resend.isPending || undefined}
-          onClick={() => {
-            if (resend.isPending) return;
-            resend.mutate(claimId, { onSuccess: onResent });
-          }}
-        >
-          {resend.isPending ? "正在重新发送…" : "重新发送"}
-        </Button>
+        <ResendButton
+          account="已经注册好 LINUX DO Credit 账户"
+          amount={`${amount} LDC`}
+          pending={resend.isPending}
+          onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
+        />
       </div>
       <p className="mt-2 text-xs">
         还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。
@@ -302,17 +354,12 @@ function NoPointsAccount({
         <NoteMarkdown className="mt-2 text-sm">{words}</NoteMarkdown>
       ) : null}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          aria-disabled={resend.isPending || undefined}
-          onClick={() => {
-            if (resend.isPending) return;
-            resend.mutate(claimId, { onSuccess: onResent });
-          }}
-        >
-          {resend.isPending ? "正在重新发送…" : "重新发送"}
-        </Button>
+        <ResendButton
+          account={`已经在 ${points.host} 开好账户`}
+          amount={amountText(amount, unit)}
+          pending={resend.isPending}
+          onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
+        />
       </div>
       <p className="mt-2 text-xs">
         还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。

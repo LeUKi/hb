@@ -514,6 +514,10 @@ test("没有 Credit 账户：领取被拒，注册后自己重新发送一次就
 
   // Registered now: sent again once, looked up first, then paid.
   await main.getByRole("button", { name: "重新发送" }).click();
+  await latecomer.page
+    .getByRole("dialog", { name: "确定重新发送？" })
+    .getByRole("button", { name: "重新发送" })
+    .click();
   await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
   await expect(main.getByText("已发放")).toBeVisible({ timeout: 40_000 });
   const paid = await participation(latecomer.context, activity.id);
