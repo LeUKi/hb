@@ -433,6 +433,27 @@
     }
   }
 
+  /* 附带网页's window and sheet (docs/redesign/09-idle-frames.md): the page
+     inside never blurs the glass again. The blur is only behind the title
+     bar, a layer of its own (GlassBar in attached-page.tsx); the window
+     keeps the glass's ring and light edge, clear over the bar, and under
+     the page the glass's colour without the blur. */
+  .window-glass-bar {
+    background: rgb(255 250 248 / 0.84);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+  }
+  .window-glass.window-glass-split {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: linear-gradient(transparent 0 4rem, rgb(237 214 216) 4rem);
+  }
+  @media (max-width: 639px), (max-height: 559px) {
+    .window-glass-bar {
+      background: rgb(255 250 248 / 0.92);
+    }
+  }
+
   /* In-page surface on the glass (command pages): a light panel with a
      hairline and a top highlight, no drop shadow. */
   .panel {
@@ -852,7 +873,38 @@
       (backdrop-filter: blur(1px)) or
       (-webkit-backdrop-filter: blur(1px))
     ) {
-    .window-glass {
+    .window-glass,
+    .window-glass-bar {
+      background: rgb(255 250 248 / 0.97);
+    }
+    .window-bar:is([data-scrolled], [data-bleed]) {
+      background-color: rgb(255 250 248 / 0.94);
+    }
+    .window-bar[data-bleed][data-lacquer] {
+      background-color: rgb(28 24 22 / 0.92);
+    }
+    .glass-pop {
+      background: #ffffff;
+    }
+    .scrim {
+      background: rgb(40 8 14 / 0.42);
+    }
+  }
+
+  /* The system asks for less transparency (macOS 降低透明度, Windows
+     透明效果 off): no live blur anywhere, the fallback's solid surfaces
+     above instead (docs/redesign/09-idle-frames.md). */
+  @media (prefers-reduced-transparency: reduce) {
+    *,
+    *::before,
+    *::after {
+      /* biome-ignore lint/complexity/noImportantStyles: every blur, utilities and inline styles too. */
+      -webkit-backdrop-filter: none !important;
+      /* biome-ignore lint/complexity/noImportantStyles: every blur, utilities and inline styles too. */
+      backdrop-filter: none !important;
+    }
+    .window-glass,
+    .window-glass-bar {
       background: rgb(255 250 248 / 0.97);
     }
     .window-bar:is([data-scrolled], [data-bleed]) {
@@ -1841,6 +1893,11 @@
     inset: 0;
     border-radius: inherit;
     background: inherit;
+  }
+  /* Only while someone is here (lib/awake.ts): a pulse left running under
+     the window's glass blurs the window again every frame. :where keeps the
+     selector as weak as before, so reduced motion below still wins. */
+  :where(:root[data-awake]) .hb-live-dot::after {
     animation: hb-live-pulse 2.4s ease-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
@@ -1848,8 +1905,8 @@
       display: none;
     }
   }
-  /* 附带网页's sheet, down: its arrow nods up. */
-  .hb-nudge-up {
+  /* 附带网页's sheet, down: its arrow nods up, while someone is here. */
+  :where(:root[data-awake]) .hb-nudge-up {
     animation: hb-nudge-up 1.4s ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
@@ -2081,7 +2138,9 @@
     );
     transform: translateX(-120%);
   }
-  .hb-seal[data-state="idle"]::after {
+  /* The idle sheen sweeps while someone is here (lib/awake.ts); the
+     pending one is the loading look and keeps going. */
+  :where(:root[data-awake]) .hb-seal[data-state="idle"]::after {
     animation: hb-seal-sheen 6.4s ease-in-out 1.2s infinite;
   }
   .hb-seal[data-state="pending"]::after {

@@ -1,5 +1,6 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { isAwake, onAwakeChange } from "../../lib/awake";
 import { cn } from "../../lib/cn";
 import { useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
@@ -53,13 +54,15 @@ function glyph(
 }
 
 // One clock for every stand-in on the page: it runs while one is on the
-// page and the page is in front.
+// page, the page is in front and someone is here (lib/awake.ts: still a few
+// seconds after the last input, it held a whole window's glass blurring 16
+// times a second).
 const listeners = new Set<() => void>();
 let tick = 0;
 let timer: number | undefined;
 
 function run() {
-  if (timer !== undefined || document.hidden) return;
+  if (timer !== undefined || document.hidden || !isAwake()) return;
   timer = window.setInterval(() => {
     tick += 1;
     for (const listener of listeners) listener();
@@ -71,15 +74,24 @@ function halt() {
   timer = undefined;
 }
 
+let stopAwake: (() => void) | undefined;
+
 function onVisibility() {
   if (document.hidden) halt();
   else run();
+}
+
+/** Asleep: stop where it is; awake: go on. */
+function onAwake() {
+  if (isAwake()) run();
+  else halt();
 }
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
   if (listeners.size === 1) {
     document.addEventListener("visibilitychange", onVisibility);
+    stopAwake = onAwakeChange(onAwake);
     run();
   }
   return () => {
@@ -87,6 +99,8 @@ function subscribe(listener: () => void) {
     if (listeners.size > 0) return;
     halt();
     document.removeEventListener("visibilitychange", onVisibility);
+    stopAwake?.();
+    stopAwake = undefined;
   };
 }
 

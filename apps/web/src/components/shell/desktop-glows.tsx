@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
+import { useAwake } from "../../lib/awake";
 import { useReducedMotionPref } from "../../lib/motion";
 import { pageFullAtom } from "./attached-page";
 
@@ -33,8 +34,9 @@ function swing(seconds: number, period: number) {
 /**
  * Only where the 背景 shows around the window (a full-screen phone window
  * hides it, as does the 附带网页 gone full screen); held where they are
- * while motion is reduced, and while the tab is hidden. At rest they match
- * the boot loader exactly.
+ * while motion is reduced, while the tab is hidden, and while nobody is
+ * here (lib/awake.ts: 8 s after the last input). At rest they match the
+ * boot loader exactly.
  */
 export function DesktopGlows() {
   const root = useRef<HTMLDivElement>(null);
@@ -42,6 +44,7 @@ export function DesktopGlows() {
   const clock = useRef(0);
   const reduced = useReducedMotionPref();
   const covered = useAtomValue(pageFullAtom);
+  const awake = useAwake();
   useEffect(() => {
     const spans = [...(root.current?.children ?? [])] as HTMLElement[];
     const shown = matchMedia("(min-width: 640px) and (min-height: 560px)");
@@ -58,14 +61,14 @@ export function DesktopGlows() {
       });
     };
     place();
-    if (reduced || covered) return;
+    if (reduced || covered || !awake) return;
     const timer = window.setInterval(() => {
       if (document.hidden || !shown.matches) return;
       clock.current += STEP_MS;
       place();
     }, STEP_MS);
     return () => window.clearInterval(timer);
-  }, [reduced, covered]);
+  }, [reduced, covered, awake]);
   return (
     <div ref={root} aria-hidden="true" className="desktop-glows">
       <span className="desktop-glow desktop-glow-gold" />

@@ -23,6 +23,7 @@ import {
 import {
   AnimatePresence,
   animate,
+  type MotionValue,
   motion,
   useDragControls,
   useMotionValue,
@@ -503,6 +504,28 @@ function BarButton({
  * its address, as tall as the 红包 window's 顶栏, its tops in line. The
  * notice under it says the rest.
  */
+/**
+ * The 附带网页 window's glass (docs/redesign/09-idle-frames.md): its blur
+ * only behind the title bar (4rem: the window's bar, the sheet's handle and
+ * header), a layer of its own behind the window. A page inside a blurring
+ * layer, or over one, blurs it again with each of its frames (a game, 60 a
+ * second: a whole window's blur each time, measured 2026-11-11); nothing
+ * that moves is in this one or over it. The window over it keeps the
+ * glass's ring and light edge, clear over the bar (.window-glass-split).
+ */
+function GlassBar({ radius }: { radius: number | MotionValue<number> }) {
+  return (
+    <Squircle radius={radius}>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+      >
+        <div className="window-glass-bar absolute inset-x-0 top-0 h-16" />
+      </div>
+    </Squircle>
+  );
+}
+
 function TitleBar({
   host,
   author,
@@ -685,8 +708,9 @@ function SideWindow({
         }}
       >
         <SquirclePlate className="window-plate" radius={corner} />
+        <GlassBar radius={corner} />
         <Squircle radius={corner}>
-          <div className="window-glass absolute inset-0 overflow-hidden">
+          <div className="window-glass window-glass-split absolute inset-0 overflow-hidden">
             <div
               className="absolute inset-y-0 left-0 flex w-full flex-col"
               style={{ minWidth: SIDE_MIN }}
@@ -1123,8 +1147,9 @@ function Sheet({
           }
         >
           <SquirclePlate className="window-plate" radius={radius.window} />
+          <GlassBar radius={radius.window} />
           <Squircle radius={radius.window}>
-            <div className="window-glass absolute inset-0 overflow-hidden select-none">
+            <div className="window-glass window-glass-split absolute inset-0 overflow-hidden select-none">
               {/* Over the glass's light, not under it. */}
               <div className="absolute inset-0 flex flex-col">
                 <div
