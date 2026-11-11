@@ -52,7 +52,7 @@ import { useIdentity } from "../../lib/session";
 import { windowDialogsAtom } from "../../lib/store";
 import { useOmniboxMode } from "../omnibox/state";
 import { Button } from "../ui/button";
-import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import { radius, Squircle, SquirclePlate, SquircleTop } from "../ui/squircle";
 import {
   heldAtom,
   requestAtom,
@@ -510,19 +510,17 @@ function BarButton({
  * header), a layer of its own behind the window. A page inside a blurring
  * layer, or over one, blurs it again with each of its frames (a game, 60 a
  * second: a whole window's blur each time, measured 2026-11-11); nothing
- * that moves is in this one or over it. The window over it keeps the
+ * that moves is in this one or over it, nor in a clip with it (a clip the
+ * window's size around it took the page in again: 6.3% of the GPU against
+ * 4.1% without, measured on Stage). The window over it keeps the
  * glass's ring and light edge, clear over the bar (.window-glass-split).
  */
 function GlassBar({ radius }: { radius: number | MotionValue<number> }) {
   return (
-    <Squircle radius={radius}>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 overflow-hidden"
-      >
-        <div className="window-glass-bar absolute inset-x-0 top-0 h-16" />
-      </div>
-    </Squircle>
+    <SquircleTop
+      radius={radius}
+      className="window-glass-bar pointer-events-none absolute inset-x-0 top-0 h-16"
+    />
   );
 }
 

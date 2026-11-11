@@ -307,6 +307,41 @@ export function SquirclePlate({
 }
 
 /**
+ * A strip along the top of a squircle surface, with the surface's two upper
+ * corners and square lower ones, drawn on the strip itself (no clip around
+ * it): the 附带网页 window's glass behind its title bar (docs/redesign/
+ * 09-idle-frames.md). A clip the size of the window around it would take in
+ * the page below, and the page's frames would blur the strip again.
+ * Natively the surface's superellipse (sized by the strip's width, the
+ * shorter side of a window being far over the corner); elsewhere a plain
+ * radius, within 1px of it, as the plate's.
+ */
+export function SquircleTop({
+  radius: value,
+  className,
+}: {
+  radius: number | MotionValue<number>;
+  className?: string;
+}) {
+  const [ref, box] = useBorderBox();
+  const cornerRadius = useRadius(value);
+  const native = useNativeSquircle();
+  const shape =
+    native && box
+      ? cornerShape(box.width, box.width, cornerRadius, SMOOTHING)
+      : { borderRadius: cornerRadius };
+  const style: CSSProperties = {
+    borderRadius: `${shape.borderRadius}px ${shape.borderRadius}px 0 0`,
+    ...("cornerShape" in shape && shape.cornerShape
+      ? { cornerShape: shape.cornerShape }
+      : null),
+  };
+  return (
+    <span ref={ref} aria-hidden="true" className={className} style={style} />
+  );
+}
+
+/**
  * A squircle background layer for elements that keep painting outside their
  * edge (a button's drop shadow): the element stays unclipped, the fill is.
  */
