@@ -184,11 +184,18 @@ export const pointsSystemConfigSchema = z.strictObject({
     (value) => !reservedPointsWord(value),
     "名称不能用本站自己的说法",
   ),
-  unit: shortText(POINTS_LIMITS.unitWidthMax, "单位")
+  unit: z
+    .string()
+    .trim()
+    .refine((value) => count(value) >= 1, "请填写单位")
     .refine(
-      (value) => unitWidth(value) <= POINTS_LIMITS.unitWidthMax,
+      // Marks and joiners take no width; still at most 16 code points.
+      (value) =>
+        unitWidth(value) <= POINTS_LIMITS.unitWidthMax &&
+        count(value) <= POINTS_LIMITS.unitWidthMax * 2,
       `单位最多 ${POINTS_LIMITS.unitWidthMax / 2} 个汉字或 ${POINTS_LIMITS.unitWidthMax} 个字母`,
     )
+    .refine((value) => !/[\r\n]/.test(value), "单位只能写一行")
     .refine((value) => !reservedPointsWord(value), "单位不能用本站自己的说法"),
   step: pointsStepSchema,
   issuerName: shortText(POINTS_LIMITS.issuerNameMax, "网站名称"),

@@ -91,7 +91,10 @@ describe("三方积分 contracts (third-party-points-design)", () => {
     const wide = unit("贡献积分点");
     expect(wide.success).toBe(false);
     expect(wide.error?.issues[0]?.message).toBe("单位最多 4 个汉字或 8 个字母");
-    expect(unit("Diamonds!").success).toBe(false);
+    expect(unit(`a${"\u0301".repeat(20)}`).success).toBe(false);
+    expect(unit("Diamonds!").error?.issues[0]?.message).toBe(
+      "单位最多 4 个汉字或 8 个字母",
+    );
   });
   it("takes printable keys and cuts the remark", () => {
     expect(pointsKeySchema.safeParse("sk_live_abc-123").success).toBe(true);

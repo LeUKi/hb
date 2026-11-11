@@ -68,7 +68,7 @@ export function pointsProblem(points) {
     value.trim() !== "" &&
     [...value].length <= max;
   if (!text(points.name, 8)) return "hongbao.points.name 要是 1–8 个字";
-  if (!text(points.unit, 8) || unitWidth(points.unit.trim()) > 8)
+  if (!text(points.unit, 16) || unitWidth(points.unit.trim()) > 8)
     return "hongbao.points.unit 最多 4 个汉字或 8 个字母";
   if (
     typeof points.step !== "string" ||
