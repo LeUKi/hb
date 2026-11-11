@@ -339,8 +339,9 @@ export function ChoiceCards<T extends string>({
   }[];
   onChange: (value: T) => void;
   label: string;
-  /** 1: one under another, in a narrow column (分享's 发什么). */
-  columns?: 1 | 2 | 4;
+  /** 1: one under another, in a narrow column (分享's 发什么); 3: three
+   * short ones side by side on a wide window (邀请's 有效期). */
+  columns?: 1 | 2 | 3 | 4;
   disabled?: boolean;
   /** A card of its own after these (从哪发's 三方积分, which opens a dialog). */
   children?: ReactNode;
@@ -352,9 +353,11 @@ export function ChoiceCards<T extends string>({
         "grid min-w-0 gap-2",
         columns === 4
           ? "grid-cols-2 @wide/window:grid-cols-4"
-          : columns === 1
-            ? "grid-cols-1"
-            : "grid-cols-1 @wide/window:grid-cols-2",
+          : columns === 3
+            ? "grid-cols-1 @wide/window:grid-cols-3"
+            : columns === 1
+              ? "grid-cols-1"
+              : "grid-cols-1 @wide/window:grid-cols-2",
       )}
     >
       {options.map((option) => {

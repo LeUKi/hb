@@ -5,6 +5,7 @@ import { AnimatePresence } from "motion/react";
 import { useId, useRef, useState } from "react";
 import {
   type AdminTopupItem,
+  type AdminTransferList,
   type AdminWithdrawalItem,
   useAdminAdjustments,
   useAdminAttention,
@@ -34,7 +35,13 @@ import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
 import { CopyButton } from "../../ui/copy-button";
-import { Field, Segmented, TextArea, TextInput } from "../../ui/field";
+import {
+  ChoiceCards,
+  Field,
+  Segmented,
+  TextArea,
+  TextInput,
+} from "../../ui/field";
 import { Fish, fishText } from "../../ui/fish";
 import { PersonLine } from "../../ui/person-line";
 import { ListItem, Reveal, Swap } from "../../ui/reveal";
@@ -54,6 +61,7 @@ import {
   DetailRows,
   ListDetail,
   listLoad,
+  useSettled,
 } from "./admin-frame";
 
 type View = "attention" | "all" | "withdrawals" | "transfers" | "adjustments";
@@ -661,7 +669,8 @@ function Attention() {
     <ListDetail
       items={items}
       list={list}
-      total={undefined}
+      // Counted once all are in (the list says 共 N 笔 then).
+      total={listQuery.hasNextPage ? undefined : items.length}
       load={resultOf(listQuery)}
       selectedId={selected}
       onSelect={setSelected}
@@ -709,7 +718,8 @@ function Withdrawals() {
     <ListDetail
       items={items}
       list={list}
-      total={undefined}
+      // Counted once all are in (the list says 共 N 笔 then).
+      total={listQuery.hasNextPage ? undefined : items.length}
       load={resultOf(listQuery)}
       selectedId={selected}
       onSelect={setSelected}
@@ -740,7 +750,8 @@ function Topups({ view }: { view: "attention" | "all" }) {
     <ListDetail
       items={items}
       list={list}
-      total={undefined}
+      // Counted once all are in (the list says 共 N 笔 then).
+      total={listQuery.hasNextPage ? undefined : items.length}
       load={resultOf(listQuery)}
       selectedId={selected}
       onSelect={setSelected}
@@ -829,9 +840,125 @@ const transferStatusTone = {
   not_sent: "neutral",
 } as const;
 
+type AdminTransferItem = AdminTransferList["items"][number];
+
+function TransferRowBody({ item }: { item: AdminTransferItem }) {
+  return (
+    <>
+      <Avatar
+        name={item.from.displayName}
+        src={item.from.avatarUrl}
+        size={36}
+      />
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="truncate text-base text-ink">
+          @{item.from.username} → @{item.to.username}
+          {item.destination === "credit" ? "（Credit）" : ""}
+        </span>
+        {item.remark && (
+          <span className="truncate text-xs text-ink-2">{item.remark}</span>
+        )}
+        <span className="truncate text-xs text-ink-3">
+          {item.apiKeyName ? `密钥「${item.apiKeyName}」` : "网页"} ·{" "}
+          {clockSeconds(item.createdAt)}
+        </span>
+      </span>
+      <span className="grid shrink-0 justify-items-end gap-1">
+        <Fish minor={item.amountMinor} className="text-sm font-semibold" />
+        {item.destination === "credit" && (
+          <StatusChip tone={transferStatusTone[item.status]} dot>
+            {transferStatusText[item.status]}
+          </StatusChip>
+        )}
+      </span>
+    </>
+  );
+}
+
+/** Someone in a 转账: avatar, name, @username and 数字 ID. */
+function TransferParty({ party }: { party: AdminTransferItem["from"] }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2">
+      <Avatar name={party.displayName} src={party.avatarUrl} size={20} />
+      {party.displayName} @{party.username}
+      <span className="text-xs text-ink-3">数字 ID {party.userId}</span>
+    </span>
+  );
+}
+
+/**
+ * One 转账, from what its row already carries (balance-design §16): who to
+ * whom, how much, where to, how it went, the remark, by web or which key,
+ * when, and its numbers. One to a Credit account is also a 转出: its
+ * sending is in that list.
+ */
+function TransferDetail({ item }: { item: AdminTransferItem }) {
+  const credit = item.destination === "credit";
+  return (
+    <DetailRows
+      rows={[
+        { label: "转出方", value: <TransferParty party={item.from} /> },
+        { label: "收款人", value: <TransferParty party={item.to} /> },
+        { label: "数量", value: <Fish minor={item.amountMinor} /> },
+        {
+          label: "到哪",
+          value: credit ? "收款人的 Credit 账户" : "收款人的🐟额",
+        },
+        ...(credit
+          ? [
+              {
+                label: "状态",
+                value: (
+                  <span className="grid justify-items-start gap-1">
+                    <StatusChip tone={transferStatusTone[item.status]} dot>
+                      {transferStatusText[item.status]}
+                    </StatusChip>
+                    <span className="text-xs text-ink-3">
+                      {item.status === "not_sent"
+                        ? "没有发出去，🐟 已退回。原因在“转出”里的这一笔。"
+                        : "和转出一样排队发放，经过在“转出”里的这一笔。"}
+                    </span>
+                  </span>
+                ),
+              },
+            ]
+          : []),
+        { label: "备注", value: item.remark ?? "未填写" },
+        {
+          label: "从哪转",
+          value: item.apiKeyName ? `密钥「${item.apiKeyName}」` : "网页",
+        },
+        { label: "时间", value: clockSeconds(item.createdAt) },
+        {
+          label: "编号",
+          value: (
+            <span className="flex items-center gap-1">
+              <span className="min-w-0 font-mono text-xs">{item.id}</span>
+              <CopyButton value={item.id} label="编号" />
+            </span>
+          ),
+        },
+        ...(item.outTransferNo
+          ? [
+              {
+                label: "转账单号",
+                value: (
+                  <span className="font-mono text-xs">
+                    {item.outTransferNo}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
+}
+
 /** 转账 (balance-design §16): who to whom, where to, and how it went. */
 function Transfers() {
   const query = useAdminTransfers();
+  const [selected, setSelected] = useState<string | null>(null);
   const list = useQueryLazyList({
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
@@ -841,60 +968,26 @@ function Transfers() {
   });
   const items = (query.data?.pages ?? []).flatMap((page) => page.items);
   return (
-    <ResultLoad id={items.length ? "rows" : "empty"} load={resultOf(query)}>
-      {items.length === 0 ? (
+    <ListDetail
+      items={items}
+      list={list}
+      // Every one read: the end says how many.
+      total={query.hasNextPage ? undefined : items.length}
+      load={resultOf(query)}
+      selectedId={selected}
+      onSelect={setSelected}
+      placeholder="点一笔转账看详情。"
+      unit="笔"
+      noun="转账"
+      empty={
         <EmptyNote
           title="还没有转账"
           text="开通🐟额 PLUS 的人在网页或开放接口转的，每一笔都在这里。"
         />
-      ) : (
-        <div className="grid gap-2">
-          <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
-            <AnimatePresence initial={false}>
-              {items.map((item) => (
-                <ListItem
-                  key={item.id}
-                  className="flex items-center gap-3 px-3 py-2.5"
-                >
-                  <Avatar
-                    name={item.from.displayName}
-                    src={item.from.avatarUrl}
-                    size={36}
-                  />
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="truncate text-base text-ink">
-                      @{item.from.username} → @{item.to.username}
-                      {item.destination === "credit" ? "（Credit）" : ""}
-                    </span>
-                    {item.remark && (
-                      <span className="truncate text-xs text-ink-2">
-                        {item.remark}
-                      </span>
-                    )}
-                    <span className="truncate text-xs text-ink-3">
-                      {item.apiKeyName ? `密钥「${item.apiKeyName}」` : "网页"}{" "}
-                      · {clockSeconds(item.createdAt)}
-                    </span>
-                  </span>
-                  <span className="grid shrink-0 justify-items-end gap-1">
-                    <Fish
-                      minor={item.amountMinor}
-                      className="text-sm font-semibold"
-                    />
-                    {item.destination === "credit" && (
-                      <StatusChip tone={transferStatusTone[item.status]} dot>
-                        {transferStatusText[item.status]}
-                      </StatusChip>
-                    )}
-                  </span>
-                </ListItem>
-              ))}
-            </AnimatePresence>
-          </Panel>
-          <LazyListEnd list={list} done={`共 ${items.length} 笔`} />
-        </div>
-      )}
-    </ResultLoad>
+      }
+      row={(item) => <TransferRowBody item={item} />}
+      detail={(item) => <TransferDetail item={item} />}
+    />
   );
 }
 
@@ -1176,9 +1269,14 @@ function InviteLinks({
   const maxUses = maxUsesOf(count);
   // 以谁的名义: who that is here; one who has not been cannot be named.
   const named = name.trim().toLowerCase();
-  const preview = useInviteePreview(identity.user?.id ?? "", named);
+  // Looked up once typing pauses (0.3 s), not on every key; until then
+  // (and while it reads) nothing is said about the name.
+  const settledName = useSettled(named);
+  const preview = useInviteePreview(identity.user?.id ?? "", settledName);
   const found =
-    !preview.isPlaceholderData && preview.data ? preview.data.user : undefined;
+    settledName === named && !preview.isPlaceholderData && preview.data
+      ? preview.data.user
+      : undefined;
   const nameMissing = named.length > 0 && found === null;
   const nameReady = !named || found?.username.toLowerCase() === named || false;
   const noteLength = Array.from(note.trim()).length;
@@ -1267,44 +1365,53 @@ function InviteLinks({
             <p className="text-sm text-ink-2">
               不写用户名，谁拿到都能接受，适合发到群里。
             </p>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-              <Field
-                label="最多几个人用"
-                htmlFor={inputId}
-                hint="1–1000 人，不填不限"
-                error={
-                  maxUses === "invalid" ? "填 1–1000 之间的整数" : undefined
-                }
-              >
-                <TextInput
-                  id={inputId}
-                  value={count}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="不限"
-                  suffix="人"
-                  onChange={(event) => {
-                    setCount(event.target.value);
-                    setError(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void submit();
-                  }}
-                />
-              </Field>
-              <Field label="有效期">
-                <Segmented
-                  label="有效期"
-                  value={days}
-                  onChange={setDays}
-                  options={[
-                    { value: "1", label: "1 天" },
-                    { value: "7", label: "7 天" },
-                    { value: "forever", label: "永久" },
-                  ]}
-                />
-              </Field>
-            </div>
+            <Field
+              label="最多几个人用"
+              htmlFor={inputId}
+              hint="1–1000 人，不填不限"
+              error={maxUses === "invalid" ? "填 1–1000 之间的整数" : undefined}
+            >
+              <TextInput
+                id={inputId}
+                value={count}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="不限"
+                suffix="人"
+                onChange={(event) => {
+                  setCount(event.target.value);
+                  setError(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void submit();
+                }}
+              />
+            </Field>
+            <Field label="有效期">
+              <ChoiceCards
+                label="有效期"
+                value={days}
+                onChange={setDays}
+                columns={3}
+                options={[
+                  {
+                    value: "1",
+                    title: "1 天",
+                    description: "24 小时后失效，适合当场发到群里。",
+                  },
+                  {
+                    value: "7",
+                    title: "7 天",
+                    description: "一周后失效，适合发在帖子里。",
+                  },
+                  {
+                    value: "forever",
+                    title: "永久",
+                    description: "不会过期，不用了记得停用。",
+                  },
+                ]}
+              />
+            </Field>
             <Field
               label="以谁的名义"
               optional
@@ -1787,7 +1894,7 @@ export function UserBalance({ userId }: { userId: string }) {
         }}
         busy={busy}
         title="调整🐟额"
-        text="只能追加，不能改或删。原因会写在这个人的明细里；扣回可以让可用变成负数。"
+        text="只能追加，不能改或删。原因会写在这个人的明细里。"
         error={error}
         actions={
           <>
@@ -1803,14 +1910,21 @@ export function UserBalance({ userId }: { userId: string }) {
           </>
         }
       >
-        <Segmented
+        <ChoiceCards
           label="调整方向"
           value={direction}
           onChange={setDirection}
-          stretch
           options={[
-            { value: "add", label: "补加" },
-            { value: "deduct", label: "扣回" },
+            {
+              value: "add",
+              title: "补加",
+              description: "给这个人的可用加上🐟。",
+            },
+            {
+              value: "deduct",
+              title: "扣回",
+              description: "从这个人的可用里扣掉，可以扣成负数。",
+            },
           ]}
         />
         <Field

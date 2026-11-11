@@ -136,6 +136,7 @@ for transfer in page["items"]:
   return (
     <Page>
       <PageHeader
+        back={{ label: "帮助", href: "/help" }}
         title={
           <span className="inline-flex items-center gap-2">
             🐟额开放接口

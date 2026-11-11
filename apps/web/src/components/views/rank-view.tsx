@@ -216,11 +216,11 @@ function Row({
   visible: boolean;
 }) {
   const face = faceOf(entry, user);
-  return (
+  const row = (
     <div
       className={cn(
         "flex items-center gap-3 px-3 py-2.5",
-        entry.me && "rounded-[14px] bg-accent-soft",
+        entry.me && "bg-accent-soft",
       )}
     >
       <span
@@ -244,6 +244,8 @@ function Row({
       <Amount value={entry.amount} className="shrink-0 text-base" />
     </div>
   );
+  // One's own row is tinted: a list row's squircle (04 §8).
+  return entry.me ? <Squircle radius={radius.row}>{row}</Squircle> : row;
 }
 
 /**

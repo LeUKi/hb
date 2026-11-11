@@ -16,15 +16,26 @@ import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { WindowClip } from "./window-clip";
 import { useWindowInfo } from "./window-info";
 
-/** Inside a dialog's content: a dialog opened here stacks over it. */
-const InsideDialog = createContext(false);
+/**
+ * How many dialogs this content is inside: a dialog opened here stacks
+ * over them all, with its own 压暗层 over the one below (a detail shown as
+ * a dialog → its picker → a confirm: three levels).
+ */
+const InsideDialog = createContext(0);
+
+/** Each level's 压暗层 and frame, over the level below. */
+const layers = [
+  { scrim: "z-40", frame: "z-50" },
+  { scrim: "z-[60]", frame: "z-[70]" },
+  { scrim: "z-[80]", frame: "z-[90]" },
+] as const;
 
 /**
  * Another kind of dialog's content (a 红包's panel): a window dialog opened
  * in it stacks over it, its own 压暗层 covering it, as over a window dialog.
  */
 export function StacksDialogs({ children }: { children: ReactNode }) {
-  return <InsideDialog.Provider value={true}>{children}</InsideDialog.Provider>;
+  return <InsideDialog.Provider value={1}>{children}</InsideDialog.Provider>;
 }
 
 /**
@@ -70,7 +81,8 @@ export function WindowDialog({
   // Opened from inside another dialog (a detail pane shown as one): drawn
   // over it, never beside it at the same level.
   const inside = useContext(InsideDialog);
-  const stacked = nested || inside;
+  const depth = Math.min(Math.max(inside, nested ? 1 : 0), layers.length - 1);
+  const layer = layers[depth] ?? layers[0];
   const latestClosed = useRef(onClosed);
   latestClosed.current = onClosed;
   const latestFocus = useRef(initialFocus);
@@ -121,7 +133,7 @@ export function WindowDialog({
           <WindowClip key="scrim">
             <motion.div
               aria-hidden="true"
-              className={`scrim absolute inset-0 ${stacked ? "z-[60]" : "z-40"}`}
+              className={`scrim absolute inset-0 ${layer.scrim}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -131,9 +143,7 @@ export function WindowDialog({
           </WindowClip>
           <div
             key="frame"
-            className={`pointer-events-none absolute inset-0 flex ${
-              stacked ? "z-[70]" : "z-50"
-            } ${
+            className={`pointer-events-none absolute inset-0 flex ${layer.frame} ${
               compact
                 ? "items-end p-2 pr-[max(0.5rem,var(--safe-right))] pb-[max(0.5rem,var(--safe-bottom))] pl-[max(0.5rem,var(--safe-left))]"
                 : "items-center justify-center p-6 pr-[max(1.5rem,var(--safe-right))] pl-[max(1.5rem,var(--safe-left))]"
@@ -186,7 +196,7 @@ export function WindowDialog({
                   className="glass-pop relative flex min-h-0 flex-1 flex-col overflow-y-auto"
                   {...fade}
                 >
-                  <InsideDialog.Provider value={true}>
+                  <InsideDialog.Provider value={depth + 1}>
                     {children}
                   </InsideDialog.Provider>
                 </motion.div>

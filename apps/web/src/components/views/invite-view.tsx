@@ -5,7 +5,7 @@ import { ActivityRequestError } from "../../lib/activities";
 import { type InvitePage, useAcceptInvite, useInvite } from "../../lib/balance";
 import { PlusName } from "../balance/plus";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
-import { Page, Panel } from "../page/page";
+import { Page, PageHeader, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -69,19 +69,24 @@ export function InviteView({ token }: { token: string }) {
     <PageLoad load={queryLoad(query)}>
       {page && (
         <Page>
-          <Panel className="mx-auto grid w-full max-w-md gap-5 p-6">
-            <div className="flex items-center gap-3">
-              <Avatar
-                name={page.invite.inviter?.displayName ?? "?"}
-                src={page.invite.inviter?.avatarUrl ?? null}
-                size={44}
-              />
-              <h1 className="text-lg font-semibold text-ink">
-                {page.invite.inviter?.displayName}（@
-                {page.invite.inviter?.username}）邀请你开通
-                <PlusName />
-              </h1>
-            </div>
+          {/* The page's own title row: a 重试 that worked brings focus here. */}
+          <PageHeader
+            title={
+              <span className="flex items-center gap-3">
+                <Avatar
+                  name={page.invite.inviter?.displayName ?? "?"}
+                  src={page.invite.inviter?.avatarUrl ?? null}
+                  size={44}
+                />
+                <span className="min-w-0">
+                  {page.invite.inviter?.displayName}（@
+                  {page.invite.inviter?.username}）邀请你开通
+                  <PlusName />
+                </span>
+              </span>
+            }
+          />
+          <Panel className="grid gap-5 p-6">
             {/* A 通用链接's 附言, as written: line breaks kept, no links. */}
             {page.invite.note && (
               <p className="whitespace-pre-line border-line border-l-2 pl-3 text-sm text-ink [overflow-wrap:anywhere]">

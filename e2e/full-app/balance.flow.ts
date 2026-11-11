@@ -306,7 +306,8 @@ test("🐟额通用链接：永久、不限人数、以别人的名义带附言�
   await admin.getByRole("button", { name: "邀请", exact: true }).click();
   const dialog = admin.getByRole("dialog", { name: "邀请" });
   await dialog.getByRole("button", { name: "通用链接", exact: true }).click();
-  await dialog.getByRole("button", { name: "永久", exact: true }).click();
+  // 有效期 is a choice card: its name runs on into its sentence.
+  await dialog.getByRole("button", { name: /^永久/ }).click();
   await dialog.getByLabel("以谁的名义").fill("nobody-was-here");
   await expect(dialog.getByText("这个人还没来过本站")).toBeVisible();
   await dialog.getByLabel("以谁的名义").fill("@FullAppSecond");

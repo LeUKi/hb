@@ -162,6 +162,7 @@ export function HelpPageView() {
   return (
     <Page>
       <PageHeader
+        back={{ label: "帮助", href: "/help" }}
         title="附带网页 · 接入说明"
         actions={<StartLink />}
         description="发红包时可以附带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里）。按下面改一改你的网站，让它能在红包页里显示；要知道看的人是谁，用红包站的身份（第 2 节），或者沿用网站自己的登录（第 3 节）。"

@@ -496,7 +496,7 @@ function PaymentPage({
     <Page>
       <PageHeader
         refreshable
-        eyebrow="付款记录"
+        back={{ label: "付款记录", href: "/payments" }}
         title={`付给 ${recipient.displayName}`}
         description={`${activity.title} · ${clockSeconds(Date.parse(payment.createdAt))} ${verb}`}
       />

@@ -225,6 +225,7 @@ export function HelpCodeView() {
   return (
     <Page>
       <PageHeader
+        back={{ label: "帮助", href: "/help" }}
         title="代码判定红包 · 开发文档"
         actions={<StartLink />}
         description="写一段代码，决定谁领多少。登录就能发；代码在本站的沙箱里跑，开放时公布指纹，结束后公开代码。"

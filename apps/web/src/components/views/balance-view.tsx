@@ -61,6 +61,7 @@ import { PersonLine } from "../ui/person-line";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { useSettled } from "./admin/admin-frame";
 import {
   withdrawalStatusText,
   withdrawalStatusTone,
@@ -996,7 +997,9 @@ function InviteDialog({
     null,
   );
   const [error, setError] = useState<string | null>(null);
-  const preview = useInviteePreview(user.id, username);
+  // Looked up once typing pauses (0.3 s), not on every key.
+  const settledName = useSettled(username);
+  const preview = useInviteePreview(user.id, settledName);
   const mine = useMyInvites(user.id, open);
   const { create } = useInviteActions(user.id);
   const name = username.trim().replace(/^@/, "");

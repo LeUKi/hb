@@ -32,6 +32,7 @@ import { PersonLine } from "../ui/person-line";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { useSettled } from "../views/admin/admin-frame";
 import { withdrawalWaitText } from "../views/balance-withdrawal-view";
 import { PlusBadge } from "./plus";
 
@@ -260,12 +261,18 @@ export function TransferDialog({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<BalanceTransfer | null>(null);
   const requestId = useRef(crypto.randomUUID());
-  const preview = useRecipient(user.id, username);
+  // Looked up once typing pauses (0.3 s), not on every key.
+  const settledName = useSettled(username);
+  const preview = useRecipient(user.id, settledName);
   const { create } = useTransferActions(user.id);
   const checkoutActions = useCheckoutActions(user.id);
   const name = username.trim().replace(/^@/, "");
   const known = name.length > 0 ? preview.data : undefined;
-  const recipient = known?.user && !known.self ? known.user : null;
+  const shown = known?.user && !known.self ? known.user : null;
+  // What is shown can still be an earlier name's (typing, or its read on
+  // the way): 转账 waits until it is the name in the box.
+  const recipient =
+    settledName === username && !preview.isPlaceholderData ? shown : null;
   const creditBlock =
     settings.transferToCreditBlock === "WITHDRAW_DISABLED" ||
     settings.transferToCreditBlock === "TRANSFER_CREDIT_UNAVAILABLE"
@@ -274,7 +281,7 @@ export function TransferDialog({
         ? "站长的 Credit 账户收不了平台应用的发放"
         : null;
   // Once the recipient is found: whether their 收银台 can take it.
-  const checkoutBlock = recipient ? (known?.checkoutBlock ?? null) : null;
+  const checkoutBlock = shown ? (known?.checkoutBlock ?? null) : null;
   // Credit chosen, then no longer possible: back to 🐟额.
   useEffect(() => {
     if (destination === "credit" && creditBlock) setDestination("balance");

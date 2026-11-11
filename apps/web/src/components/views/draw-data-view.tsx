@@ -51,6 +51,7 @@ import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { MorphLabel } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import { MessageView } from "./message-view";
 
 // 🎲 开奖数据 (docs/draw-proof-design.md §5): everything that decided a v2
@@ -123,9 +124,11 @@ function FullHex({ value }: { value: string }) {
 
 function Formula({ children }: { children: ReactNode }) {
   return (
-    <code className="block rounded-lg bg-fill px-3 py-2 font-mono text-xs leading-relaxed text-ink-2 break-all whitespace-pre-wrap">
-      {children}
-    </code>
+    <Squircle radius={radius.input}>
+      <code className="block bg-fill px-3 py-2 font-mono text-xs leading-relaxed text-ink-2 break-all whitespace-pre-wrap">
+        {children}
+      </code>
+    </Squircle>
   );
 }
 

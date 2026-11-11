@@ -518,17 +518,28 @@ function LegacyRow({
 }) {
   const navigate = useNavigate();
   const usage = useMerchantUsage(user.id, merchant.id).data;
+  const href = `/merchant/${encodeURIComponent(merchant.id)}`;
   return (
     <li>
       <Squircle radius={radius.row}>
-        <button
-          type="button"
-          onClick={() =>
+        {/* A real link: a modified click opens it in a new tab. */}
+        <a
+          href={href}
+          onClick={(event) => {
+            if (
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey ||
+              event.button !== 0
+            )
+              return;
+            event.preventDefault();
             void navigate({
               to: "/merchant/$merchantId",
               params: { merchantId: merchant.id },
-            })
-          }
+            });
+          }}
           className="flex w-full items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
         >
           <Squircle radius={11}>
@@ -549,7 +560,7 @@ function LegacyRow({
             className="size-5 shrink-0 text-ink-3"
             aria-hidden="true"
           />
-        </button>
+        </a>
       </Squircle>
     </li>
   );

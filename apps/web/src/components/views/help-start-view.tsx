@@ -135,6 +135,7 @@ export function HelpStartView() {
   return (
     <Page>
       <PageHeader
+        back={{ label: "帮助", href: "/help" }}
         title="做一个玩法"
         description="红包的玩法可以写成判定器，可以配一个网页，也可以接自己的服务。先按需求选一种做法，再看对应的说明。"
       />
