@@ -11,19 +11,19 @@
 :root {
   --mini-page: #fbf6f5;
 }
+/* As tall as the content, never the frame's height: since 2026-11-08 the
+   社区 opens the frame at 640 and then sets it to the document's height, so
+   a min-height of 100% kept every page at 640 (a 702 page in a 700 post, a
+   打赏卡 in 389 scrolling). The root's background still fills the frame. */
 html,
 body {
   height: auto;
-  min-height: 100%;
   overflow: visible;
   background: var(--mini-page);
 }
 /* While the frame holds the whole page, the page cannot scroll (main.tsx). */
 html[data-hold-scroll] {
   overflow: hidden;
-}
-#hb-mini-root {
-  min-height: 100%;
 }
 .hb-mini {
   --bar-h: 3rem;
