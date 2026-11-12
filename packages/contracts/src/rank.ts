@@ -21,6 +21,21 @@ export const RANK_VISIBLE_BY_DEFAULT: Record<RankBoard, boolean> = {
   received: false,
 };
 
+/**
+ * 分数 (docs/leaderboard-design.md §1): √(金额 in LDC × 人数). Money and
+ * people weigh alike: a large sum to one person scores little, and so does
+ * a sliver to many.
+ */
+export function rankScore(amountMinor: number, people: number) {
+  return Math.sqrt((amountMinor / 100) * people);
+}
+
+/** As shown: whole from 10 up, one decimal below (“716”, “7.3”, “0.1”). */
+export function formatRankScore(score: number) {
+  const tenths = Math.round(score * 10) / 10;
+  return tenths >= 10 ? String(Math.round(score)) : tenths.toFixed(1);
+}
+
 export const rankQuerySchema = z.strictObject({
   board: rankBoardSchema.default("sent"),
   range: rankRangeSchema.default("week"),
@@ -48,12 +63,16 @@ export type RankPerson = {
 export type RankEntry = {
   /** Their place in the board's order, from 0: unique, unlike `rank`. */
   position: number;
-  /** 第 N 名: the same for the same amount (1, 2, 2, 4). */
+  /** 第 N 名: the same for the same shown score (1, 2, 2, 4). */
   rank: number;
   person: RankPerson | null;
   /** The one reading: shown as themselves to themselves either way. */
   me: boolean;
+  /** 分数 as shown, from `formatRankScore`. */
+  score: string;
   amount: string;
+  /** 发出: how many took from them; 领到: how many 红包作者 they took from. */
+  people: number;
   /** 发出: 红包 taken from; 领到: 红包 taken. */
   activities: number;
   /** 发出: times taken from them; 领到: the same as `activities`. */
@@ -64,7 +83,9 @@ export type RankEntry = {
 export type RankMe = {
   rank: number | null;
   position: number | null;
+  score: string;
   amount: string;
+  people: number;
   activities: number;
   claims: number;
   visible: boolean;

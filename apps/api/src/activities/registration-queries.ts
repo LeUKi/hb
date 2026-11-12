@@ -481,6 +481,11 @@ export const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
  * points are no LDC.
  */
 export const othersOnly = "c.user_id!=a.author_id AND a.funding<>'points'";
+/**
+ * A payment that failed never reached them (the money stayed with the
+ * 红包作者): like a returned share, it counts in neither sum (2026-11-12).
+ */
+export const delivered = "(p.status IS NULL OR p.status<>'failed')";
 
 /**
  * 我的 / 历史's numbers. Each count starts from this person's own rows (by
@@ -498,9 +503,9 @@ export async function accountHistorySummary(
       UNION SELECT activity_id FROM activity_registrations WHERE user_id=?
     )) AS participatedCount,
     (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
-      WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly}) AS sentMinor,
+      WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly} AND ${delivered}) AS sentMinor,
     (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
-      WHERE c.user_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly}) AS receivedMinor`)
+      WHERE c.user_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly} AND ${delivered}) AS receivedMinor`)
     .bind(userId, userId, userId, userId, userId)
     .first<{
       initiatedCount: number;

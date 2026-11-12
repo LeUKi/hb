@@ -40,8 +40,9 @@ const boards: readonly RankBoard[] = ["sent", "received"];
 const ranges: readonly RankRange[] = ["week", "all"];
 
 const descriptions: Record<RankBoard, string> = {
-  sent: "按大家从红包里领到的金额排，退回的不算。",
-  received: "按领到的金额排，领取和中奖都算；默认匿名。",
+  sent: "按发出的金额和领取的人数一起算：分数 = √(金额 × 人数)。退回和没发出的不算。",
+  received:
+    "按领到的金额和红包作者的人数一起算：分数 = √(金额 × 人数)。领取和中奖都算，默认匿名。",
 };
 
 /** What the switch says, on or off (the same on /me). */
@@ -56,22 +57,54 @@ export const rankSwitchLabel: Record<RankBoard, string> = {
   received: "在领到榜上显示我",
 };
 
-/** 发出: “3 个红包 · 22 人次”; 领到: “领了 3 个红包”. */
+/**
+ * What the score is made of: 发出 “123.94 LDC · 发给 22 人 · 3 个红包”,
+ * 领到 “… · 来自 2 人 · …”.
+ */
 function countsOf(
   board: RankBoard,
-  entry: { activities: number; claims: number },
+  entry: { amount: string; people: number; activities: number },
 ) {
-  return board === "sent"
-    ? [`${entry.activities} 个红包`, `${entry.claims} 人次`]
-    : [`领了 ${entry.activities} 个红包`];
+  return [
+    `${entry.amount} LDC`,
+    board === "sent" ? `发给 ${entry.people} 人` : `来自 ${entry.people} 人`,
+    `${entry.activities} 个红包`,
+  ];
 }
 
-/** “123.94 LDC”, the unit a step smaller. */
-function Amount({ value, className }: { value: string; className?: string }) {
+/**
+ * The parts in one line, wrapping between parts (never inside one) where
+ * a phone is too narrow for all three.
+ */
+function Parts({
+  board,
+  entry,
+  className,
+}: {
+  board: RankBoard;
+  entry: { amount: string; people: number; activities: number };
+  className?: string;
+}) {
+  const parts = countsOf(board, entry);
+  return (
+    <span
+      className={cn("flex flex-wrap gap-x-1 text-xs text-ink-3", className)}
+    >
+      {parts.map((text, index) => (
+        <span key={text} className="whitespace-nowrap">
+          {index < parts.length - 1 ? `${text} · ` : text}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** “716 分”, the unit a step smaller. */
+function Score({ value, className }: { value: string; className?: string }) {
   return (
     <span className={cn("font-semibold text-ink tabular-nums", className)}>
       <RollingText text={value} />
-      <span className="ml-0.5 text-xs font-medium text-ink-3">LDC</span>
+      <span className="ml-0.5 text-xs font-medium text-ink-3">分</span>
     </span>
   );
 }
@@ -185,7 +218,7 @@ function Podium({
                 <span className="mt-0.5 max-w-full truncate text-sm">
                   {face.name}
                 </span>
-                <Amount value={entry.amount} className="text-base" />
+                <Score value={entry.score} className="text-base" />
                 {/* A line each: a podium card is narrow on a phone. */}
                 <span className="grid text-xs leading-snug text-ink-3">
                   {countsOf(board, entry).map((text) => (
@@ -203,7 +236,7 @@ function Podium({
   );
 }
 
-/** A place from the fourth on: 名次, who, the counts, the amount. */
+/** A place from the fourth on: 名次, who, what the score is made of, the score. */
 function Row({
   entry,
   board,
@@ -237,11 +270,9 @@ function Row({
           <span className="min-w-0 truncate">{face.name}</span>
           {entry.me && <SeenAs visible={visible} />}
         </span>
-        <span className="truncate text-xs text-ink-3">
-          {countsOf(board, entry).join(" · ")}
-        </span>
+        <Parts board={board} entry={entry} />
       </span>
-      <Amount value={entry.amount} className="shrink-0 text-base" />
+      <Score value={entry.score} className="shrink-0 text-base" />
     </div>
   );
   // One's own row is tinted: a list row's squircle (04 §8).
@@ -289,14 +320,12 @@ function MyRank({
               </span>
             )}
           </p>
+          {/* Under the place, not beside the score: there is no room on
+              a phone for both. */}
+          {me.rank !== null && <Parts board={board} entry={me} />}
         </div>
         {me.rank !== null && (
-          <div className="grid shrink-0 justify-items-end gap-0.5 text-right">
-            <Amount value={me.amount} className="text-base" />
-            <span className="text-xs text-ink-3">
-              {countsOf(board, me).join(" · ")}
-            </span>
-          </div>
+          <Score value={me.score} className="shrink-0 text-base" />
         )}
       </div>
       <div className="border-t border-line pt-3">
@@ -410,7 +439,9 @@ function Rank({
           rank: me.rank,
           person: null,
           me: true,
+          score: me.score,
           amount: me.amount,
+          people: me.people,
           activities: me.activities,
           claims: me.claims,
         }

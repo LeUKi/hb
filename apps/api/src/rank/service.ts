@@ -1,5 +1,6 @@
 import {
   formatAmount,
+  formatRankScore,
   RANK_LIST_LIMIT,
   RANK_PAGE_SIZE,
   RANK_SNAPSHOT_MS,
@@ -10,10 +11,12 @@ import {
   type RankPage,
   type RankRange,
   type RankVisibility,
+  rankScore,
 } from "@hb/contracts";
 import {
   claimAmount,
   claimJoins,
+  delivered,
   othersOnly,
 } from "../activities/registration-queries";
 import type { ApiBindings } from "../env";
@@ -22,8 +25,8 @@ import type { ApiBindings } from "../env";
 // snapshot kept for 5 minutes; who is shown is decided at each read, so a
 // changed switch counts at once.
 
-/** userId, amount in cents, 红包, times: best first. */
-type Entry = [string, number, number, number];
+/** userId, amount in cents, 红包, times, people: best score first. */
+type Entry = [string, number, number, number, number];
 type Snapshot = { computedAt: number; entries: Entry[] };
 
 /** 发出 adds up by the sender, 领到 by the one who took it. */
@@ -31,6 +34,13 @@ const byWhom: Record<RankBoard, string> = {
   sent: "a.author_id",
   received: "c.user_id",
 };
+/** 人数: 发出 counts who took, 领到 the 红包作者 taken from. */
+const counterpart: Record<RankBoard, string> = {
+  sent: "c.user_id",
+  received: "a.author_id",
+};
+
+const scoreOf = (entry: Entry) => rankScore(entry[1], entry[4]);
 
 const visibleColumn: Record<RankBoard, string> = {
   sent: "rank_sent_visible",
@@ -44,27 +54,38 @@ async function compute(
   now: number,
 ): Promise<Entry[]> {
   const who = byWhom[board];
+  // The same one pass over the claims as before: 人数 is one more count.
   const rows = await env.DB.prepare(`SELECT ${who} AS user_id,
       SUM(${claimAmount}) AS amount,
       COUNT(DISTINCT c.activity_id) AS activities,
-      COUNT(*) AS claims
+      COUNT(*) AS claims,
+      COUNT(DISTINCT ${counterpart[board]}) AS people
     ${claimJoins}
-    WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly} AND c.claimed_at>=?
-    GROUP BY ${who} HAVING amount>0
-    ORDER BY amount DESC, claims DESC, user_id`)
+    WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly} AND ${delivered} AND c.claimed_at>=?
+    GROUP BY ${who} HAVING amount>0`)
     .bind(range === "week" ? now - RANK_WEEK_MS : 0)
     .all<{
       user_id: string;
       amount: number;
       activities: number;
       claims: number;
+      people: number;
     }>();
-  return rows.results.map((row) => [
+  const entries: Entry[] = rows.results.map((row) => [
     row.user_id,
     row.amount,
     row.activities,
     row.claims,
+    row.people,
   ]);
+  // Best score first; on the same score, more money, then more 人次.
+  return entries.sort(
+    (a, b) =>
+      scoreOf(b) - scoreOf(a) ||
+      b[1] - a[1] ||
+      b[3] - a[3] ||
+      (a[0] < b[0] ? -1 : 1),
+  );
 }
 
 /** The board as of at most 5 minutes ago, worked out again if older. */
@@ -79,11 +100,14 @@ async function snapshot(
   )
     .bind(board, range)
     .first<{ computed_at: number; entries: string }>();
-  if (kept && now - kept.computed_at < RANK_SNAPSHOT_MS)
-    return {
-      computedAt: kept.computed_at,
-      entries: JSON.parse(kept.entries) as Entry[],
-    };
+  const keptEntries = kept ? (JSON.parse(kept.entries) as Entry[]) : [];
+  if (
+    kept &&
+    now - kept.computed_at < RANK_SNAPSHOT_MS &&
+    // One kept before 人数 counted (2026-11-12) is worked out again.
+    keptEntries.every((entry) => entry.length === 5)
+  )
+    return { computedAt: kept.computed_at, entries: keptEntries };
   const entries = await compute(env, board, range, now);
   // Two readers at once both work it out; the later one is kept.
   await env.DB.prepare(
@@ -96,13 +120,15 @@ async function snapshot(
   return { computedAt: now, entries };
 }
 
-/** 第 N 名 for each place: the same amount, the same rank (1, 2, 2, 4). */
+/** 第 N 名 for each place: the same shown score, the same rank (1, 2, 2, 4). */
 function ranksOf(entries: Entry[]) {
   const ranks: number[] = [];
-  for (const [index, entry] of entries.entries()) {
-    const before = entries[index - 1];
+  const shownScores = entries.map((entry) => formatRankScore(scoreOf(entry)));
+  for (const index of entries.keys()) {
     ranks.push(
-      before && before[1] === entry[1] ? (ranks[index - 1] ?? 1) : index + 1,
+      index > 0 && shownScores[index - 1] === shownScores[index]
+        ? (ranks[index - 1] ?? 1)
+        : index + 1,
     );
   }
   return ranks;
@@ -145,7 +171,7 @@ export async function rankPage(
     ).results.map((row) => [row.id, row]),
   );
   const items: RankEntry[] = slice.map(
-    ([id, amount, activities, claims], index) => {
+    ([id, amount, activities, claims, reach], index) => {
       const person = people.get(id);
       return {
         position: start + index,
@@ -160,7 +186,9 @@ export async function rankPage(
               }
             : null,
         me: id === viewerId,
+        score: formatRankScore(rankScore(amount, reach)),
         amount: formatAmount(amount),
+        people: reach,
         activities,
         claims,
       };
@@ -180,7 +208,9 @@ export async function rankPage(
       ? {
           rank: mine ? (ranks[position] ?? position + 1) : null,
           position: mine ? position : null,
+          score: formatRankScore(mine ? scoreOf(mine) : 0),
           amount: formatAmount(mine?.[1] ?? 0),
+          people: mine?.[4] ?? 0,
           activities: mine?.[2] ?? 0,
           claims: mine?.[3] ?? 0,
           visible: shown(viewer?.visible, board),

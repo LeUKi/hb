@@ -1,12 +1,14 @@
 import { env } from "cloudflare:test";
 import type { RankPage, RankVisibility } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
+import { accountHistorySummary } from "../src/activities/registration-queries";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { rankPage } from "../src/rank/service";
 import { sha256Hex } from "../src/security/crypto";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const day = 24 * 60 * 60 * 1000;
@@ -72,22 +74,32 @@ async function page(path: string, actor?: Actor) {
   return (await response.json()) as RankPage;
 }
 
-/** A 口令红包 by `author`, each claim worth its cents, taken at its time. */
+/**
+ * A 口令红包 by `author`, each claim worth its cents, taken at its time; a
+ * `failed` one has a payment that failed.
+ */
 async function hongbao(
   author: Actor,
-  claims: { by: Actor; minor: number; at: number }[],
+  claims: { by: Actor; minor: number; at: number; failed?: boolean }[],
 ) {
   const id = crypto.randomUUID();
   const passwordId = crypto.randomUUID();
+  // One 商户 per 红包作者: a payment names it.
+  const merchantId = `merchant-${author.id}`;
+  const clientId = `client-${author.id}`;
   const now = Date.now();
   await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO merchants(id,author_id,request_id,request_digest,client_id,label,mode,version,credential_version,created_at,updated_at) VALUES (?,?,?,'digest',?,'商户','simulation',1,1,?,?)",
+    ).bind(merchantId, author.id, `rank-${author.id}`, clientId, now, now),
     env.DB.prepare(`INSERT INTO activities
-      (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
+      (id,author_id,merchant_id,creation_request_id,creation_digest,title,force_dedicated,
        participation_mode,join_square,deleted_at,allocation,config,total_count,
        claimed_count,registered_count,reward_type,payment_mode,created_at,updated_at)
-      VALUES (?,?,?,'digest','排行榜红包',0,'password',0,NULL,'sequential','{}',?,?,0,'ldc','simulation',?,?)`).bind(
+      VALUES (?,?,?,?,'digest','排行榜红包',0,'password',0,NULL,'sequential','{}',?,?,0,'ldc','simulation',?,?)`).bind(
       id,
       author.id,
+      merchantId,
       `rank-${id}`,
       claims.length,
       claims.length,
@@ -99,33 +111,47 @@ async function hongbao(
     ).bind(passwordId, id, `digest-${id}`, now - 30 * day),
     ...claims.flatMap((claim, position) => {
       const inventoryId = crypto.randomUUID();
+      const claimId = crypto.randomUUID();
       return [
         env.DB.prepare(
           "INSERT INTO reward_inventory(id,activity_id,position,kind,amount_minor,created_at) VALUES (?,?,?,'ldc',?,?)",
         ).bind(inventoryId, id, position, claim.minor, now - 30 * day),
         env.DB.prepare(
           "INSERT INTO claims(id,activity_id,user_id,inventory_id,password_id,claimed_at) VALUES (?,?,?,?,?,?)",
-        ).bind(
-          crypto.randomUUID(),
-          id,
-          claim.by.id,
-          inventoryId,
-          passwordId,
-          claim.at,
-        ),
+        ).bind(claimId, id, claim.by.id, inventoryId, passwordId, claim.at),
+        ...(claim.failed
+          ? [
+              env.DB.prepare(
+                "INSERT INTO payment_tasks(id,claim_id,source,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at) VALUES (?,?,'claim',?,?,?,'simulation:1','taker',?,'simulation','failed',?,?,?)",
+              ).bind(
+                crypto.randomUUID(),
+                claimId,
+                merchantId,
+                clientId,
+                `business-${claimId}`,
+                claim.minor,
+                now,
+                now,
+                now,
+              ),
+            ]
+          : []),
       ];
     }),
   ]);
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch(
     [
       "rank_snapshots",
+      "payment_tasks",
       "claims",
       "activity_passwords",
       "reward_inventory",
       "activities",
+      "merchants",
       "sessions",
       "users",
     ].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
@@ -133,7 +159,7 @@ beforeEach(async () => {
 });
 
 describe("排行榜", () => {
-  it("adds up what was taken, ranks ties alike, and shows only those who chose to be", async () => {
+  it("scores what was taken, ranks ties alike, and shows only those who chose to be", async () => {
     const now = Date.now();
     const [aqing, laozhou, xiaoman, nanfeng, viewer] = await Promise.all(
       ["aqing", "laozhou", "xiaoman", "nanfeng", "viewer"].map(person),
@@ -170,7 +196,10 @@ describe("排行榜", () => {
           avatarUrl: "https://example.com/aqing.png",
         },
         me: false,
+        // √(16.50 × 3 people) ≈ 7.0
+        score: "7.0",
         amount: "16.50",
+        people: 3,
         activities: 2,
         claims: 4,
       },
@@ -179,7 +208,9 @@ describe("排行榜", () => {
         rank: 2,
         person: null,
         me: false,
+        score: "2.0",
         amount: "4.00",
+        people: 1,
         activities: 1,
         claims: 1,
       },
@@ -194,7 +225,8 @@ describe("排行榜", () => {
     expect(sentWeek.items.map((item) => item.amount)).toEqual(["6.50", "4.00"]);
     expect(sentWeek.me).toBeNull();
 
-    // 领到: 小满 13.00, the one reading 4.50, 南风 3.00.
+    // 领到: 小满 13.00 from one 红包作者 (3.6), the one reading 4.50 from
+    // two (3.0), 南风 3.00 from one (1.7).
     const receivedAll = await page(
       "/api/rank?board=received&range=all",
       viewer,
@@ -204,29 +236,97 @@ describe("排行榜", () => {
         item.rank,
         item.person?.username ?? null,
         item.me,
-        item.amount,
+        item.score,
       ]),
     ).toEqual([
-      [1, "xiaoman", false, "13.00"],
+      [1, "xiaoman", false, "3.6"],
       // The one reading is 匿名 by default, and told it is them.
-      [2, null, true, "4.50"],
-      [3, null, false, "3.00"],
+      [2, null, true, "3.0"],
+      [3, null, false, "1.7"],
     ]);
     expect(receivedAll.me).toEqual({
       rank: 2,
       position: 1,
+      score: "3.0",
       amount: "4.50",
+      people: 2,
       activities: 2,
       claims: 2,
       visible: false,
     });
     // This week 小满 and 南风 took 3.00 each: the same rank.
     const receivedWeek = await page("/api/rank?board=received&range=week");
-    expect(receivedWeek.items.map((item) => [item.rank, item.amount])).toEqual([
-      [1, "4.50"],
-      [2, "3.00"],
-      [2, "3.00"],
+    expect(
+      receivedWeek.items.map((item) => [item.rank, item.score, item.amount]),
+    ).toEqual([
+      [1, "3.0", "4.50"],
+      [2, "1.7", "3.00"],
+      [2, "1.7", "3.00"],
     ]);
+  });
+
+  it("weighs money and people alike, and leaves failed payments out", async () => {
+    const now = Date.now();
+    const [whale, friend, spreader, ...many] = await Promise.all(
+      [
+        "whale",
+        "friend",
+        "spreader",
+        ...Array.from({ length: 10 }, (_, index) => `many-${index}`),
+      ].map(person),
+    );
+    if (!whale || !friend || !spreader) throw new Error("people");
+    // 30.00 to one friend in two 红包: √(30 × 1) ≈ 5.5.
+    await hongbao(whale, [{ by: friend, minor: 1500, at: now - day }]);
+    await hongbao(whale, [{ by: friend, minor: 1500, at: now - day }]);
+    // 1.00 each to ten: √(10 × 10) = 10.
+    await hongbao(
+      spreader,
+      many.map((by) => ({ by, minor: 100, at: now - day })),
+    );
+    // 50.00 to the friend that never reached them.
+    await hongbao(spreader, [
+      { by: friend, minor: 5000, at: now - day, failed: true },
+    ]);
+
+    const sent = await page("/api/rank?board=sent&range=week", whale);
+    expect(
+      sent.items.map((item) => [
+        item.rank,
+        item.person?.username,
+        item.score,
+        item.amount,
+        item.people,
+        item.activities,
+      ]),
+    ).toEqual([
+      [1, "spreader", "10", "10.00", 10, 1],
+      [2, "whale", "5.5", "30.00", 1, 2],
+    ]);
+    expect(sent.me).toMatchObject({ rank: 2, score: "5.5", people: 1 });
+
+    // 领到: the friend's 30.00 from one 红包作者, then ten alike at 1.0.
+    const received = await page("/api/rank?board=received&range=week");
+    expect(received.total).toBe(11);
+    expect(received.items[0]).toMatchObject({
+      rank: 1,
+      score: "5.5",
+      amount: "30.00",
+      people: 1,
+    });
+    expect(
+      new Set(
+        received.items.slice(1).map((item) => `${item.rank} ${item.score}`),
+      ),
+    ).toEqual(new Set(["2 1.0"]));
+
+    // 我的 sums leave the failed one out as well.
+    expect(await accountHistorySummary(env, spreader.id)).toMatchObject({
+      sentAmount: "10.00",
+    });
+    expect(await accountHistorySummary(env, friend.id)).toMatchObject({
+      receivedAmount: "30.00",
+    });
   });
 
   it("keeps a snapshot for 5 minutes, but a changed switch counts at once", async () => {
@@ -292,9 +392,14 @@ describe("排行榜", () => {
     const takers = await Promise.all(
       Array.from({ length: 105 }, (_, index) => person(`many-${index}`)),
     );
+    // Scores 105, 104, … 1: no two alike.
     await hongbao(
       author,
-      takers.map((by, index) => ({ by, minor: 1000 - index, at: now - day })),
+      takers.map((by, index) => ({
+        by,
+        minor: (105 - index) ** 2 * 100,
+        at: now - day,
+      })),
     );
     const last = takers.at(-1);
     if (!last) throw new Error("people");
@@ -317,7 +422,12 @@ describe("排行榜", () => {
     expect(
       (await page("/api/rank?board=received&range=all&cursor=100")).items,
     ).toEqual([]);
-    expect(me).toMatchObject({ rank: 105, position: 104, amount: "8.96" });
+    expect(me).toMatchObject({
+      rank: 105,
+      position: 104,
+      score: "1.0",
+      amount: "1.00",
+    });
   });
 
   it("reads and changes one's own switches only, with the CSRF token", async () => {

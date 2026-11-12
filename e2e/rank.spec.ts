@@ -9,7 +9,7 @@ import { csrfToken, mockSession, openApp, shown, viewer } from "./support/app";
 function entry(
   position: number,
   name: string | null,
-  amount: string,
+  score: string,
   me = false,
 ): RankEntry {
   return {
@@ -19,7 +19,9 @@ function entry(
       ? { username: `user${position}`, displayName: name, avatarUrl: null }
       : null,
     me,
-    amount,
+    score,
+    amount: "120.00",
+    people: 8,
     activities: 3,
     claims: 12,
   };
@@ -61,17 +63,17 @@ test.describe("排行榜", () => {
       rankPage(
         url.searchParams.get("board") === "received"
           ? [
-              entry(0, null, "315.34"),
-              entry(1, "秋刀鱼", "285.24"),
-              entry(2, null, "281.93"),
-              entry(3, null, "234.01"),
+              entry(0, null, "315"),
+              entry(1, "秋刀鱼", "285"),
+              entry(2, null, "282"),
+              entry(3, null, "234"),
             ]
           : [
-              entry(0, "阿青", "1846.17"),
-              entry(1, "老周", "614.60"),
-              entry(2, "南风", "509.00"),
-              entry(3, "木木", "374.06"),
-              entry(4, null, "293.61"),
+              entry(0, "阿青", "1846"),
+              entry(1, "老周", "615"),
+              entry(2, "南风", "509"),
+              entry(3, "木木", "374"),
+              entry(4, null, "29.4"),
             ],
       ),
     );
@@ -82,15 +84,22 @@ test.describe("排行榜", () => {
     await expect(page.getByText("你的排名")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "阿青" })).toBeVisible();
     await expect(shown(page, "第 1 名")).toBeVisible();
-    await expect(shown(page, "3 个红包")).toHaveCount(3);
-    await expect(shown(page, "3 个红包 · 12 人次")).toHaveCount(2);
+    // The score, and what it is made of: a line each on the podium.
+    await expect(shown(page, "1846")).toBeVisible();
+    await expect(shown(page, "发给 8 人")).toHaveCount(3);
+    await expect(shown(page, "120.00 LDC · 发给 8 人 · 3 个红包")).toHaveCount(
+      2,
+    );
     await expect(shown(page, "匿名")).toHaveCount(1);
 
     await page.getByRole("button", { name: "领到" }).click();
     await expect(page).toHaveURL(/\/rank\?board=received$/);
     await expect(shown(page, "匿名")).toHaveCount(3);
     await expect(page.getByRole("button", { name: "秋刀鱼" })).toBeVisible();
-    await expect(shown(page, "领了 3 个红包")).toHaveCount(4);
+    await expect(shown(page, "来自 8 人")).toHaveCount(3);
+    await expect(shown(page, "120.00 LDC · 来自 8 人 · 3 个红包")).toHaveCount(
+      1,
+    );
 
     await page.getByRole("button", { name: "全部" }).click();
     await expect(page).toHaveURL(/board=received&range=all$/);
@@ -111,7 +120,9 @@ test.describe("排行榜", () => {
     const me: RankMe = {
       rank: 26,
       position: 25,
+      score: "6.9",
       amount: "12.00",
+      people: 4,
       activities: 2,
       claims: 5,
       visible: true,
@@ -120,7 +131,7 @@ test.describe("排行榜", () => {
       entry(
         position,
         position === 25 ? null : `第${position + 1}位`,
-        (100 - position).toFixed(2),
+        String(100 - position),
         position === 25,
       ),
     );
@@ -180,7 +191,7 @@ test.describe("排行榜", () => {
   }) => {
     await mockSession(page, viewer);
     const people = Array.from({ length: 100 }, (_, position) =>
-      entry(position, `第${position + 1}位`, (200 - position).toFixed(2)),
+      entry(position, `第${position + 1}位`, String(200 - position)),
     );
     await answerRank(page, (url) => {
       const start = Number(url.searchParams.get("cursor") ?? 0);
@@ -190,7 +201,9 @@ test.describe("排行榜", () => {
         me: {
           rank: 126,
           position: 125,
+          score: "1.0",
           amount: "1.00",
+          people: 1,
           activities: 1,
           claims: 1,
           visible: false,
