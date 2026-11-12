@@ -23,8 +23,7 @@ export function MessageView({
 }: {
   icon?: ComponentType<{ className?: string }>;
   title: string;
-  /** One sentence (a live number in it, say: /magic's countdown). */
-  text: ReactNode;
+  text: string;
   action?: ReactNode;
 }) {
   const { goHome } = useOmniboxController();

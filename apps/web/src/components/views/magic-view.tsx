@@ -1,21 +1,35 @@
 import type { MiniMagic } from "@hb/contracts";
 import { MINI_HOP_PATH } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Clock, ExternalLink, LogIn, SearchX } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { getLoginHref, useLogout } from "../../lib/auth";
+import { cn } from "../../lib/cn";
 import { useMagic } from "../../lib/magic";
 import { useIdentity } from "../../lib/session";
+import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { PageLoad, PageSkeleton, queryLoad } from "../page/page-state";
+import { BrandMark } from "../shell/brand-mark";
+import { usePageTitle } from "../shell/use-page-title";
 import { Button } from "../ui/button";
+import { LinuxDoMark } from "../ui/linux-do-mark";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
-import { IdentityFailedView, MessageView } from "./message-view";
+import { Squircle } from "../ui/squircle";
+import { IdentityFailedView } from "./message-view";
 
 // /magic (docs/mini-app-design.md §8): the one address the 社区's mini app
 // opens. The app tells 红包站 first where it wants to go; this page shows
 // whoever is signed in what that is and opens it after a short countdown.
 // Every other case says why not and what to do: signed out, too long ago,
-// nothing asked (or a different account here).
+// nothing asked (or a different account here). Its own face, not a bare
+// 提示页 (the user: “404 有点丑”): the way from the 社区 to 红包站 drawn on
+// top, the words kept short and narrow, the page centred in the window.
 
 const TITLE = "打开社区里点的页面";
 /** Seconds before it opens by itself. */
@@ -72,6 +86,86 @@ function useOpen() {
   );
 }
 
+/**
+ * The way from the 社区 to 红包站: LINUX DO's mark, a track, 红包站's.
+ * While it counts down the track carries the loading sheen; where nothing
+ * goes through, it is faint.
+ */
+function Route({ state }: { state: "moving" | "still" | "broken" }) {
+  return (
+    <div aria-hidden="true" className="flex items-center gap-3">
+      <Squircle radius={17}>
+        <span className="grid size-14 place-items-center bg-white/80 shadow-[inset_0_1px_0_rgb(255_255_255/0.9)]">
+          <LinuxDoMark className="size-8" />
+        </span>
+      </Squircle>
+      <span
+        className={cn(
+          "flex items-center text-ink-3",
+          state === "broken" && "opacity-40",
+        )}
+      >
+        <span
+          className={cn(
+            "h-1 w-12 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-ink-3)_35%,transparent)]",
+            state === "moving" && "loading-sheen loading-sheen-gold",
+          )}
+        />
+        <ChevronRight className="-ml-1.5 size-5" />
+      </span>
+      <BrandMark size={56} />
+    </div>
+  );
+}
+
+/** The page's one layout: the way, a title, a sentence or two, actions. */
+function MagicLayout({
+  route,
+  title,
+  text,
+  note,
+  actions,
+}: {
+  route: "moving" | "still" | "broken";
+  title: string;
+  text: ReactNode;
+  note?: string;
+  actions: ReactNode;
+}) {
+  usePageTitle(title);
+  return (
+    // Centred in what the window shows under its bar.
+    <div className="flex min-h-[calc(100cqh-var(--bar-h))] flex-col items-center justify-center gap-6 px-6 py-10 text-center">
+      <Route state={route} />
+      <div className="grid max-w-[26rem] justify-items-center gap-2">
+        {/* Focusable from code: where reading starts again after 重试. */}
+        <h1
+          tabIndex={-1}
+          className="text-xl font-semibold text-ink outline-none"
+        >
+          {title}
+        </h1>
+        {/* Lines break at the punctuation, inside a word only when one
+            would not fit (a long 红包 title on a phone). */}
+        <p className="text-base break-keep text-ink-2 [overflow-wrap:anywhere]">
+          {text}
+        </p>
+        {note && (
+          <p className="text-sm break-keep text-ink-3 [overflow-wrap:anywhere]">
+            {note}
+          </p>
+        )}
+      </div>
+      <div className="flex flex-wrap justify-center gap-2">{actions}</div>
+    </div>
+  );
+}
+
+function HomeButton() {
+  const { goHome } = useOmniboxController();
+  return <Button onClick={goHome}>回到首页</Button>;
+}
+
 export function MagicView() {
   const identity = useIdentity();
   const query = useMagic(identity.user?.id ?? null);
@@ -96,17 +190,21 @@ export function MagicView() {
 /** Signed out: who they are is 红包站's sign-in, then back here. */
 function SignInFirst() {
   return (
-    <MessageView
-      icon={LogIn}
+    <MagicLayout
+      route="still"
       title="登录后接着打开"
-      text="你在社区小程序里点了打开。用 LINUX DO 登录红包站（和社区是同一个账号），登录后会接着打开刚才的页面。"
-      action={
-        <Button
-          variant="primary"
-          onClick={() => window.location.assign(getLoginHref(MINI_HOP_PATH))}
-        >
-          用 LINUX DO 登录
-        </Button>
+      text="你在社区小程序里点了打开。登录红包站后，会接着打开刚才的页面。"
+      note="用 LINUX DO 登录，和社区是同一个账号。"
+      actions={
+        <>
+          <Button
+            variant="primary"
+            onClick={() => window.location.assign(getLoginHref(MINI_HOP_PATH))}
+          >
+            用 LINUX DO 登录
+          </Button>
+          <HomeButton />
+        </>
       }
     />
   );
@@ -130,8 +228,8 @@ function Countdown({ hop }: { hop: Hop }) {
   // Credit 站 is another site: 前往 rather than 打开.
   const verb = hop.kind === "credit" ? "前往" : "打开";
   return (
-    <MessageView
-      icon={ExternalLink}
+    <MagicLayout
+      route={running ? "moving" : "still"}
       title={running ? `即将${titleOf[hop.kind]}` : titleOf[hop.kind]}
       text={
         running ? (
@@ -143,14 +241,14 @@ function Countdown({ hop }: { hop: Hop }) {
           `${whatOf(hop)}。已停下，需要时点“${verb}”。`
         )
       }
-      action={
+      actions={
         <>
           <Button ref={openButton} variant="primary" onClick={() => open(hop)}>
             <MorphLabel fit={false}>
               {running ? `现在${verb}` : verb}
             </MorphLabel>
           </Button>
-          {running && (
+          {running ? (
             <Button
               onClick={() => {
                 setRunning(false);
@@ -158,8 +256,10 @@ function Countdown({ hop }: { hop: Hop }) {
                 openButton.current?.focus();
               }}
             >
-              先不打开
+              先不{verb}
             </Button>
+          ) : (
+            <HomeButton />
           )}
         </>
       }
@@ -172,21 +272,27 @@ function TooLate({ hop }: { hop: Hop }) {
   const open = useOpen();
   if (hop.kind === "credit")
     return (
-      <MessageView
-        icon={Clock}
+      <MagicLayout
+        route="broken"
         title="付款页已经失效"
-        text="Credit 站的付款页只在几分钟内有效。回到社区小程序里的打赏卡，再点一次“去 Credit 站付款”。"
+        text="Credit 站的付款页只在几分钟内有效。"
+        note="回到社区小程序里的打赏卡，再点一次“去 Credit 站付款”。"
+        actions={<HomeButton />}
       />
     );
   return (
-    <MessageView
-      icon={Clock}
+    <MagicLayout
+      route="still"
       title="这次打开已经过时"
-      text={`${whatOf(hop)}是 ${agoOf(hop.at)}在社区小程序里点的，超过 10 分钟就不再自动打开。还要的话点“仍然打开”，或者回社区再点一次。`}
-      action={
-        <Button variant="primary" onClick={() => open(hop)}>
-          仍然打开
-        </Button>
+      text={`${whatOf(hop)}，是 ${agoOf(hop.at)}在社区小程序里点的。`}
+      note="超过 10 分钟就不再自动打开。还要的话点“仍然打开”，或者回社区再点一次。"
+      actions={
+        <>
+          <Button variant="primary" onClick={() => open(hop)}>
+            仍然打开
+          </Button>
+          <HomeButton />
+        </>
       }
     />
   );
@@ -205,30 +311,33 @@ function NothingAsked({
 }) {
   const logout = useLogout(csrf);
   return (
-    <MessageView
-      icon={SearchX}
-      title="没有找到要打开的页面"
-      text={`这个地址是社区小程序用来打开红包站的。要是你刚在社区里点了打开，可能这里登录的 @${username} 和社区里的不是同一个账号：换成同一个账号登录，再回社区点一次。`}
-      action={
-        <Button
-          variant="primary"
-          aria-disabled={logout.isPending || undefined}
-          onClick={() => {
-            if (logout.isPending) return;
-            logout.mutate(undefined, {
-              onSuccess: () =>
-                window.location.assign(getLoginHref(MINI_HOP_PATH)),
-            });
-          }}
-        >
-          <MorphLabel fit={false}>
-            {logout.isPending
-              ? "正在退出…"
-              : logout.isError
-                ? "退出没有完成，再试一次"
-                : "换个账号登录"}
-          </MorphLabel>
-        </Button>
+    <MagicLayout
+      route="broken"
+      title="没有要打开的页面"
+      text="社区小程序打开红包站时，会经过这里。"
+      note={`刚在社区点过的话，可能这里登录的 @${username}，不是社区里那个账号。`}
+      actions={
+        <>
+          <HomeButton />
+          <Button
+            aria-disabled={logout.isPending || undefined}
+            onClick={() => {
+              if (logout.isPending) return;
+              logout.mutate(undefined, {
+                onSuccess: () =>
+                  window.location.assign(getLoginHref(MINI_HOP_PATH)),
+              });
+            }}
+          >
+            <MorphLabel fit={false}>
+              {logout.isPending
+                ? "正在退出…"
+                : logout.isError
+                  ? "退出没有完成，再试一次"
+                  : "换个账号登录"}
+            </MorphLabel>
+          </Button>
+        </>
       }
     />
   );
