@@ -12,6 +12,7 @@ import {
   getManagedActivity,
   openActivity,
 } from "../src/activities/service";
+import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
@@ -46,6 +47,7 @@ import {
   plus as codePlus,
   judgeSettings,
 } from "./code-fixtures";
+import { forum, miniForum } from "./mini-fixtures";
 
 // 三方积分 (docs/third-party-points-design.md): an issuer's points paid per
 // claim through its three endpoints, with no queued waits.
@@ -846,5 +848,80 @@ export function judge(s, tools) {
     await expect(
       openActivity(bindings, saved.id, sender.id, saved.version),
     ).rejects.toMatchObject({ code: "JUDGE_NOT_FOR_POINTS" });
+  });
+});
+
+describe("三方积分红包 in the 社区's mini app (docs/mini-app-design.md §9)", () => {
+  it("shows one to 0.2.5 with the issuer's words and claims it; older versions are sent to 红包站", async () => {
+    await online();
+    await env.DB.prepare(
+      "UPDATE points_systems SET no_recipient=?, arrival=? WHERE id=?",
+    )
+      .bind("先到星星小站开户。", "到账后在我的星星里看。", systemId)
+      .run();
+    const activity = await opened({
+      mode: "fixed",
+      totalAmount: "30.00",
+      count: 3,
+    });
+    const claimer = await actor();
+    issuer.open(claimer.externalId, claimer.username, 0);
+    const site = await miniForum(bindings, origin);
+    const read = async (version: string) => {
+      const jwt = await site.token("/api/mini/hongbao", {
+        sub: claimer.externalId,
+        version,
+        query_keys: ["id"],
+      });
+      return app.request(
+        `${origin}/api/mini/hongbao?id=${activity.id}`,
+        { headers: { Origin: forum, Authorization: `Bearer ${jwt}` } },
+        site.bindings,
+      );
+    };
+
+    const old = await read("0.2.4");
+    expect(old.status).toBe(409);
+    expect(((await old.json()) as { error: { code: string } }).error.code).toBe(
+      "POINTS_NOT_IN_MINI",
+    );
+
+    const shown = await read("0.2.5");
+    expect(shown.status).toBe(200);
+    const body = (await shown.json()) as {
+      activity: { points?: { id: string; unit: string } };
+      pointsCopy?: { noRecipient: string; arrival: string };
+    };
+    expect(body.activity.points).toMatchObject({ id: systemId, unit: "星星" });
+    expect(body.pointsCopy).toMatchObject({
+      noRecipient: "先到星星小站开户。",
+      arrival: "到账后在我的星星里看。",
+    });
+
+    const jwt = await site.token("/api/mini/claim", {
+      sub: claimer.externalId,
+      htm: "POST",
+      query_keys: ["id"],
+    });
+    const claimed = await app.request(
+      `${origin}/api/mini/claim?id=${activity.id}`,
+      {
+        method: "POST",
+        headers: {
+          Origin: forum,
+          Authorization: `Bearer ${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          submissionId: crypto.randomUUID(),
+          password: "StarPassword",
+        }),
+      },
+      site.bindings,
+    );
+    expect(claimed.status).toBe(200);
+    expect(((await claimed.json()) as { result: string }).result).toBe(
+      "claimed",
+    );
   });
 });

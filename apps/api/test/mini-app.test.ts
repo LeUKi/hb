@@ -5,10 +5,13 @@ import {
 } from "cloudflare:test";
 import {
   emptyActivityInput,
+  encodeActivityEmoji,
   forumAvatar,
   type LdcActivityInput,
+  MINI_HOP_TTL_MS,
   type MiniHongbaoResponse,
   type MiniLiveMessage,
+  type MiniMagic,
   type PublicActivity,
   type PublicRecipientList,
 } from "@hb/contracts";
@@ -26,6 +29,7 @@ import {
 import { createMerchant } from "../src/payments/merchants";
 import { base64UrlEncode } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { actor } from "./code-fixtures";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
 // 社区小程序 (docs/mini-app-design.md §7): the forum signs each request its
@@ -136,9 +140,14 @@ function read(
   );
 }
 
-async function claim(id: string, body: unknown, sub = "332940") {
+async function claim(
+  id: string,
+  body: unknown,
+  sub = "332940",
+  claims: Claims = {},
+) {
   const jwt = await token("/api/mini/claim", {
-    claims: { sub, htm: "POST" },
+    claims: { sub, htm: "POST", ...claims },
   });
   return app.request(
     `${origin}/api/mini/claim?id=${id}`,
@@ -274,6 +283,7 @@ beforeEach(async () => {
       "activity_passwords",
       "activities",
       "merchants",
+      "mini_hops",
       "sessions",
       "users",
     ].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
@@ -518,6 +528,55 @@ describe("社区小程序's routes", () => {
     expect(((await allowed.json()) as { result: string }).result).toBe(
       "claimed",
     );
+  });
+
+  it("keeps the 信任等级 the 社区 signs: a first-timer's account has it, and a 领取范围 by level knows them", async () => {
+    const activity = await running({ scope: { levels: [2, 3, 4] } });
+    const body = () => ({
+      submissionId: crypto.randomUUID(),
+      password: "社区里的口令",
+      forumUser: { username: "level_one", name: "一级" },
+    });
+    // Signed at Lv1: outside, said plainly (no sign-in would change it).
+    const outside = await claim(activity.id, body(), "332940", {
+      trust_level: 1,
+    });
+    expect(outside.status).toBe(403);
+    expect(
+      ((await outside.json()) as { error: { code: string } }).error.code,
+    ).toBe("NOT_IN_SCOPE");
+    const level = () =>
+      env.DB.prepare("SELECT trust_level FROM users WHERE external_id='332940'")
+        .first<{ trust_level: number | null }>()
+        .then((row) => row?.trust_level);
+    expect(await level()).toBe(1);
+    // Lv2 since, by a newer token: in.
+    await advanceAttemptCooldown(
+      env.DB,
+      (
+        await env.DB.prepare(
+          "SELECT id FROM users WHERE external_id='332940'",
+        ).first<{ id: string }>()
+      )?.id ?? "",
+    );
+    const inside = await claim(activity.id, body(), "332940", {
+      trust_level: 2,
+    });
+    expect(((await inside.json()) as { result: string }).result).toBe(
+      "claimed",
+    );
+    expect(await level()).toBe(2);
+  });
+
+  it("refuses a 信任等级 outside 0–4 as any token off", async () => {
+    const activity = await running();
+    const response = await claim(
+      activity.id,
+      { submissionId: crypto.randomUUID(), password: "社区里的口令" },
+      "332940",
+      { trust_level: 5 },
+    );
+    expect(response.status).toBe(401);
   });
 
   it("claims, and the read has their claim after", async () => {
@@ -871,6 +930,98 @@ describe("社区小程序's live channel", () => {
 
 // Last in the file: a 打赏卡 is never deleted, so its owner cannot be
 // cleared away before another test.
+// Before 打赏: its cards stay (TIP_CARD_PERMANENT), so their people too.
+describe("中转 (docs/mini-app-design.md §8)", () => {
+  async function hop(sub: string, to: unknown) {
+    const jwt = await token("/api/mini/hop", {
+      claims: { sub, htm: "POST", query_keys: [] },
+    });
+    return app.request(
+      `${origin}/api/mini/hop`,
+      {
+        method: "POST",
+        headers: {
+          Origin: forum,
+          Authorization: `Bearer ${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ to }),
+      },
+      bindings,
+    );
+  }
+  const go = (cookie?: string) =>
+    app.request(
+      `${origin}/api/mini/magic`,
+      { headers: cookie ? { Cookie: cookie } : {} },
+      bindings,
+    );
+
+  it("takes a path here or Credit 站, nothing else", async () => {
+    for (const to of [
+      "/%F0%9F%A7%A7/abc",
+      "/points/1",
+      "https://credit.linux.do/paying/online?order_no=1",
+    ])
+      expect((await hop("332940", to)).status).toBe(200);
+    for (const to of [
+      "//evil.example/x",
+      "https://evil.example/",
+      "https://user:pass@credit.linux.do/",
+      "/a%2fb",
+      "",
+      42,
+    ])
+      expect((await hop("332940", to)).status).toBe(400);
+  });
+
+  it("tells whoever is signed in what their 社区 self asked for last, and what it is", async () => {
+    const read = async (cookie?: string) => {
+      const response = await go(cookie);
+      return {
+        status: response.status,
+        body:
+          response.status === 200
+            ? ((await response.json()) as MiniMagic)
+            : null,
+      };
+    };
+    expect((await read()).status).toBe(401);
+
+    const someone = await actor();
+    expect((await read(someone.cookie)).body).toEqual({ hop: null });
+    const activity = await running();
+    const path = `/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(activity.id))}`;
+    await hop(someone.externalId, "/tips");
+    await hop(someone.externalId, path);
+    const shown = (await read(someone.cookie)).body?.hop;
+    expect(shown).toMatchObject({
+      to: path,
+      fresh: true,
+      kind: "hongbao",
+      title: "社区里领的红包",
+    });
+
+    await hop(someone.externalId, "https://credit.linux.do/paying/online?x=1");
+    expect((await read(someone.cookie)).body?.hop).toMatchObject({
+      kind: "credit",
+      title: null,
+    });
+
+    // Another person's ask is not theirs.
+    const other = await actor();
+    expect((await read(other.cookie)).body).toEqual({ hop: null });
+
+    // Too long ago: still told, no longer fresh (the page asks first).
+    await env.DB.prepare(
+      "UPDATE mini_hops SET created_at=? WHERE linux_do_id=?",
+    )
+      .bind(Date.now() - MINI_HOP_TTL_MS - 1, someone.externalId)
+      .run();
+    expect((await read(someone.cookie)).body?.hop?.fresh).toBe(false);
+  });
+});
+
 describe("打赏 in the 社区", () => {
   it("reads a card for whoever the forum names, and a first tip makes their account", async () => {
     await env.DB.prepare(

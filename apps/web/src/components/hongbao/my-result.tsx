@@ -21,7 +21,8 @@ import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
-import { pointsFailureWords, usePointsDetail } from "../../lib/points";
+import { usePointsDetail } from "../../lib/points";
+import { pointsFailureWords } from "../../lib/points-words";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { useIdentity } from "../../lib/session";
 import { amountText } from "../../lib/units";
@@ -386,6 +387,61 @@ function NoPointsAccount({
   );
 }
 
+/**
+ * The same in the 社区's mini app: 重新发送 is on 红包站 alone (as for LDC,
+ * NoCreditAccountHere), so it says how to get there in time and opens this
+ * 红包 there (SiteLinkContext). The issuer's words come with the mini read.
+ */
+function NoPointsAccountHere({
+  payment,
+  amount,
+  points,
+}: {
+  payment: PaymentView;
+  amount: string;
+  points: ActivityPoints;
+}) {
+  const detail = usePointsDetail(points.id);
+  const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
+  const open = useBefore(until);
+  const SiteLink = useContext(SiteLinkContext);
+  const words = detail.data?.system.noRecipient;
+  if (!open || !SiteLink)
+    return (
+      <Callout
+        icon={UserRoundX}
+        title="这笔没能发出"
+        className="w-full text-left"
+      >
+        {points.host} 找不到你的账户。被拒后 5
+        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+      </Callout>
+    );
+  return (
+    <Callout
+      tone="warning"
+      icon={UserRoundX}
+      title={`你在 ${points.host} 还没有账户`}
+      className="w-full text-left"
+    >
+      <p>
+        这笔 {amountText(amount, { unit: points.unit, step: points.step })}{" "}
+        暂时发不出去。先在那边开好账户，再到红包站打开这个红包，登录后点“重新发送”，只能发一次。
+      </p>
+      {words ? (
+        <NoteMarkdown className="mt-2 text-sm">{words}</NoteMarkdown>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SiteLink />
+        <span className="text-xs">
+          还剩 <ResendCountdown to={until} />
+          ，过时不再补发
+        </span>
+      </div>
+    </Callout>
+  );
+}
+
 /** A 三方积分 payout's line under its status (§9): where it went, or why not. */
 function PointsPaymentNote({
   payment,
@@ -724,7 +780,15 @@ export function MyResult({
         // it ended 未发出) why it was not paid.
         (payment.status === "attention" || payment.status === "failed") &&
         payment.reason === "recipient" &&
-        mine.claimId ? (
+        embedded ? (
+          <NoPointsAccountHere
+            payment={payment}
+            amount={amount}
+            points={activity.points}
+          />
+        ) : (payment.status === "attention" || payment.status === "failed") &&
+          payment.reason === "recipient" &&
+          mine.claimId ? (
           <NoPointsAccount
             activityId={activity.id}
             claimId={mine.claimId}

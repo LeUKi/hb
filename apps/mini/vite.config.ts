@@ -19,7 +19,8 @@ export default defineConfig({
       // What needs a session on 红包站 (its own requests, 重新发送) is not
       // built in: the parts drawn here never reach it (lib/embedded.ts), and
       // the forum allows no network but its own (docs/mini-app-design.md).
-      ...["session", "claims", "activities"].map((name) => ({
+      // 三方积分's issuer words come with the mini read (off-site/points.ts).
+      ...["session", "claims", "activities", "points"].map((name) => ({
         find: new RegExp(`^(?:\\.\\./)+lib/${name}$`),
         replacement: fileURLToPath(
           new URL(`./src/off-site/${name}.ts`, import.meta.url),

@@ -17,7 +17,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { useSetAtom, useStore } from "jotai";
-import { Check, Copy, RotateCcw, X } from "lucide-react";
+import { Check, Copy, ExternalLink, RotateCcw, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import {
   createContext,
@@ -67,7 +67,11 @@ import {
 } from "../../web/src/components/ui/squircle";
 import { activityCode, RED_PACKET } from "../../web/src/lib/activity-route";
 import { AvatarSourceContext } from "../../web/src/lib/avatar-source";
-import { EmbeddedContext, SiteLinkContext } from "../../web/src/lib/embedded";
+import {
+  EmbeddedContext,
+  SiteLinkContext,
+  SiteOpenContext,
+} from "../../web/src/lib/embedded";
 import { activityShareUrl } from "../../web/src/lib/emoji-links";
 import { haptic } from "../../web/src/lib/haptics";
 import {
@@ -83,7 +87,8 @@ import { useRosterList } from "../../web/src/lib/roster";
 import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import { forumAvatars } from "./avatars";
-import { OpenLink } from "./open-link";
+import { PointsCopyContext } from "./off-site/points";
+import { OpenLink, openOnSite, SITE } from "./open-link";
 import type { MiniSdk } from "./sdk";
 import { TipScreen, TipsHome } from "./tips";
 
@@ -93,9 +98,6 @@ import { TipScreen, TipsHome } from "./tips";
 // part is the mini app's: the 口令 under the seal (红包站 has its command
 // box), and 在红包站打开 where the forum cannot (代码判定, a human check, a
 // name 红包站 cannot take). What leads off the page is left out (lib/embedded.ts).
-
-/** 红包站's origin, for its links (vite.config.ts). */
-const SITE = __HB_ORIGIN__;
 
 /**
  * A timed draft with no live connection up is read at its time and again
@@ -113,6 +115,9 @@ const ROSTER_FOLLOW_MS = 10_000;
  * client crashed on them). 红包站 reads either form.
  */
 const siteLink = (id: string) => forumHref(activityShareUrl(id, SITE));
+
+/** The same 红包's page as a path on 红包站, for 中转 (open-link.tsx). */
+const sitePath = (id: string) => new URL(siteLink(id)).pathname;
 
 /**
  * The roster mineOf reads titles from: none (the 名单 is read only once its
@@ -157,18 +162,18 @@ const emptyRead = {
 /** Why this is done on 红包站, and its link there to open. */
 function OnSite({
   sdk,
-  url,
+  to,
   children,
 }: {
   sdk: MiniSdk;
-  url: string;
+  to: string;
   children: string;
 }) {
   return (
     <Squircle radius={radius.card}>
       <div className="hb-note-card mt-2 grid w-full max-w-[36rem] gap-2.5 px-4 py-3 text-left">
         <p className="text-sm text-ink">{children}</p>
-        <OpenLink sdk={sdk} url={url} />
+        <OpenLink sdk={sdk} to={to} />
       </div>
     </Squircle>
   );
@@ -182,34 +187,48 @@ function Slash() {
 /**
  * Where 分享 is on 红包站 (page-actions.tsx), across from 「N 人在看」: the
  * 红包's address as 红包站 writes it, /🧧/ and its 表情码, and the copy
- * icon; pressed, it copies that link. The code shrinks until all 14 fit,
- * never below 8px (the address bar's FitCode, its room the row's rather
- * than its own).
+ * icon, which copies that link; beside it, the open icon, which opens the
+ * 红包 on 红包站 (中转, open-link.tsx). The code shrinks until all 14 fit,
+ * never below 8px (the address bar's FitCode, its room the row's less the
+ * open button rather than its own).
  */
-function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
+function AddressActions({ sdk, id }: { sdk: MiniSdk; id: string }) {
   const shape = useButtonShape(buttonRadius.sm, buttonHeight.sm);
   const code = activityCode(id);
   const rowRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLSpanElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const openRef = useRef<HTMLButtonElement>(null);
   const [size, setSize] = useState(15);
   const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  const [opening, setOpening] = useState<"idle" | "busy" | "failed">("idle");
   useEffect(() => {
     if (state === "idle") return;
     const timer = window.setTimeout(() => setState("idle"), 1200);
     return () => window.clearTimeout(timer);
   }, [state]);
+  useEffect(() => {
+    if (opening !== "failed") return;
+    const timer = window.setTimeout(() => setOpening("idle"), 1200);
+    return () => window.clearTimeout(timer);
+  }, [opening]);
   useLayoutEffect(() => {
     const row = rowRef.current;
     const text = codeRef.current;
     const button = buttonRef.current;
-    if (!row || !text || !button) return;
-    // Its width at 15px, once. The room is the row's less the button's
-    // padding, slashes, 🧧 and icon: none of them follow the code.
+    const open = openRef.current;
+    if (!row || !text || !button || !open) return;
+    // Its width at 15px, once. The room is the row's less the open button
+    // and the gap, the copy button's padding, slashes, 🧧 and icon: none of
+    // them follow the code.
     text.style.fontSize = "15px";
     const natural = text.scrollWidth;
     const fit = () => {
-      const room = row.clientWidth - (button.offsetWidth - text.offsetWidth);
+      const room =
+        row.clientWidth -
+        open.offsetWidth -
+        6 -
+        (button.offsetWidth - text.offsetWidth);
       const next = Math.max(8, Math.min(15, (15 * room) / natural - 0.1));
       text.style.fontSize = `${next}px`;
       setSize(next);
@@ -227,6 +246,13 @@ function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
       },
       () => setState("failed"),
     );
+  const open = () => {
+    if (opening === "busy") return;
+    setOpening("busy");
+    void openOnSite(sdk, sitePath(id)).then((opened) =>
+      setOpening(opened === "failed" ? "failed" : "idle"),
+    );
+  };
   return (
     <div
       className="pointer-events-none sticky top-3 z-20 h-0"
@@ -234,7 +260,7 @@ function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
     >
       <div
         ref={rowRef}
-        className="absolute top-0 right-3 left-[8.5rem] flex justify-end @wide/window:right-5 @wide/window:left-[9.25rem]"
+        className="absolute top-0 right-3 left-[8.5rem] flex justify-end gap-1.5 @wide/window:right-5 @wide/window:left-[9.25rem]"
       >
         {/* 分享's glass; the icon says what pressing it does. */}
         <button
@@ -267,8 +293,31 @@ function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
             <Copy aria-hidden="true" />
           )}
         </button>
+        <button
+          ref={openRef}
+          type="button"
+          className="btn btn-secondary pointer-events-auto size-9 shrink-0 p-0 [&_svg]:size-4"
+          style={shape}
+          aria-label="在红包站打开"
+          title="在红包站打开"
+          aria-disabled={opening === "busy" || undefined}
+          onClick={open}
+        >
+          <SquircleFill radius={buttonRadius.sm} />
+          {opening === "failed" ? (
+            <X className="text-danger" aria-hidden="true" />
+          ) : (
+            <ExternalLink aria-hidden="true" />
+          )}
+        </button>
         <span role="status" className="sr-only">
-          {state === "done" ? "已复制" : state === "failed" ? "没能复制" : ""}
+          {state === "done"
+            ? "已复制"
+            : state === "failed"
+              ? "没能复制"
+              : opening === "failed"
+                ? "没能打开"
+                : ""}
         </span>
       </div>
     </div>
@@ -363,9 +412,14 @@ function Page({
   const SiteLink = useMemo(
     () =>
       function SiteLink() {
-        return <OpenLink sdk={sdk} url={siteLink(id)} />;
+        return <OpenLink sdk={sdk} to={sitePath(id)} />;
       },
     [sdk, id],
+  );
+  // Another page of 红包站 (a 三方积分's 详情页), the same way.
+  const siteOpen = useCallback(
+    (path: string) => void openOnSite(sdk, path),
+    [sdk],
   );
   const activity = data ? hongbaoOf(data.activity) : null;
   const view = publicViewOf(data?.activity ?? emptyRead);
@@ -693,7 +747,7 @@ function Page({
     leaveError: null,
     message: null,
   };
-  const siteUrl = siteLink(activity.id);
+  const sitePage = sitePath(activity.id);
 
   const action = (
     <>
@@ -728,12 +782,12 @@ function Page({
       </Reveal>
       {message && <p className="text-sm text-danger">{message}</p>}
       {blocked && elsewhere && (
-        <OnSite sdk={sdk} url={siteUrl}>
+        <OnSite sdk={sdk} to={sitePage}>
           {elsewhere}
         </OnSite>
       )}
       {blocked && !elsewhere && signIn !== null && (
-        <OnSite sdk={sdk} url={siteUrl}>
+        <OnSite sdk={sdk} to={sitePage}>
           {signIn}
         </OnSite>
       )}
@@ -742,49 +796,60 @@ function Page({
 
   return (
     <SiteLinkContext.Provider value={SiteLink}>
-      <div
-        className="relative flex flex-col pb-4 [overflow-anchor:none]"
-        data-phase={seal.phase}
-      >
-        <LiveViewers activityId={id} running={!view.ended} />
-        <CopyAddress sdk={sdk} id={id} />
-        <p className="sr-only" role="status">
-          {seal.announcement}
-        </p>
-        <HongbaoHero activity={activity} hongbao={hongbao} action={action} />
-        <WindowDialog
-          open={noteOpen}
-          onClose={() => setNoteOpen(false)}
-          labelledBy="note-title"
-          width="34rem"
-        >
-          <NoteContent activity={activity} onClose={() => setNoteOpen(false)} />
-        </WindowDialog>
-        {/* 名单弹窗: 红包站's, everyone's view of it (the sender's own, with
+      <SiteOpenContext.Provider value={siteOpen}>
+        <PointsCopyContext.Provider value={data?.pointsCopy ?? null}>
+          <div
+            className="relative flex flex-col pb-4 [overflow-anchor:none]"
+            data-phase={seal.phase}
+          >
+            <LiveViewers activityId={id} running={!view.ended} />
+            <AddressActions sdk={sdk} id={id} />
+            <p className="sr-only" role="status">
+              {seal.announcement}
+            </p>
+            <HongbaoHero
+              activity={activity}
+              hongbao={hongbao}
+              action={action}
+            />
+            <WindowDialog
+              open={noteOpen}
+              onClose={() => setNoteOpen(false)}
+              labelledBy="note-title"
+              width="34rem"
+            >
+              <NoteContent
+                activity={activity}
+                onClose={() => setNoteOpen(false)}
+              />
+            </WindowDialog>
+            {/* 名单弹窗: 红包站's, everyone's view of it (the sender's own, with
           口令 and payments, is on 红包站). */}
-        <WindowDialog
-          open={rosterOpen}
-          onClose={() => setRosterOpen(false)}
-          labelledBy="roster-title"
-          width="30rem"
-        >
-          <RosterPanel
-            data={{
-              activity,
-              view,
-              roster,
-              author: false,
-            }}
-            lists={{
-              claims: claimsList.query,
-              registrations: registrationsList.query,
-            }}
-            viewer={forumName}
-            onClose={() => setRosterOpen(false)}
-          />
-        </WindowDialog>
-        <SelfClaimDialog />
-      </div>
+            <WindowDialog
+              open={rosterOpen}
+              onClose={() => setRosterOpen(false)}
+              labelledBy="roster-title"
+              width="30rem"
+            >
+              <RosterPanel
+                data={{
+                  activity,
+                  view,
+                  roster,
+                  author: false,
+                }}
+                lists={{
+                  claims: claimsList.query,
+                  registrations: registrationsList.query,
+                }}
+                viewer={forumName}
+                onClose={() => setRosterOpen(false)}
+              />
+            </WindowDialog>
+            <SelfClaimDialog />
+          </div>
+        </PointsCopyContext.Provider>
+      </SiteOpenContext.Provider>
     </SiteLinkContext.Provider>
   );
 }

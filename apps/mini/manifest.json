@@ -2,7 +2,7 @@
   "format": 1,
   "id": "01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7",
   "name": "红包",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "entry": "index.html",
   "script": "app.js",
   "style": "app.css",
@@ -16,6 +16,7 @@
     "network.request",
     "network.websocket"
   ],
+  "links": ["https://staging.hb.lafi.sh/magic"],
   "endpoints": {
     "hongbao": {
       "url": "https://staging.hb.lafi.sh/api/mini/hongbao",
@@ -56,6 +57,12 @@
     "tipsHome": {
       "url": "https://staging.hb.lafi.sh/api/mini/tips-home",
       "method": "GET",
+      "query": [],
+      "auth": "platform"
+    },
+    "hop": {
+      "url": "https://staging.hb.lafi.sh/api/mini/hop",
+      "method": "POST",
       "query": [],
       "auth": "platform"
     }

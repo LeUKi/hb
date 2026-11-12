@@ -14,6 +14,11 @@ export type PlatformIdentity = {
   aud: string;
   /** The LINUX DO id: with `iss`, the account. */
   sub: string;
+  /**
+   * 信任等级 0–4 when the forum signed it (its kit of 2026-11-11), a
+   * snapshot as of `iat`; absent from older issuers' tokens.
+   */
+  trust_level?: number;
   app_id: string;
   version: string;
   channel: "production" | "sandbox";
@@ -306,6 +311,10 @@ export async function verifyPlatformRequest(
       !takesChannel(trust, c.channel) ||
       typeof c.sub !== "string" ||
       !/^[1-9][0-9]{0,19}$/.test(c.sub) ||
+      (Object.hasOwn(c, "trust_level") &&
+        (!Number.isInteger(c.trust_level) ||
+          (c.trust_level as number) < 0 ||
+          (c.trust_level as number) > 4)) ||
       typeof c.version !== "string" ||
       !/^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$/.test(c.version) ||
       !Array.isArray(c.scopes) ||

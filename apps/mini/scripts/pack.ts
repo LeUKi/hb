@@ -26,11 +26,13 @@ const manifest = JSON.parse(await readFile("manifest.json", "utf8")) as {
   version: string;
   endpoints?: Record<string, { url: string }>;
   websockets?: Record<string, { url: string }>;
+  links?: string[];
 };
 manifest.id = process.env.MINI_APP_ID || manifest.id;
 manifest.version = process.env.MINI_APP_VERSION || manifest.version;
-// 红包站's endpoints: Stage (sandbox builds) as written, or the one the
-// build was made for (vite.config.ts takes the same for its links).
+// 红包站's endpoints and the one link it opens (中转, /magic): Stage (sandbox
+// builds) as written, or the one the build was made for (vite.config.ts
+// takes the same for its links).
 const site = new URL(
   process.env.MINI_APP_HB_ORIGIN || "https://staging.hb.lafi.sh",
 );
@@ -42,6 +44,11 @@ for (const endpoint of [
   url.host = site.host;
   endpoint.url = url.href;
 }
+manifest.links = manifest.links?.map((link) => {
+  const url = new URL(link);
+  url.host = site.host;
+  return url.href;
+});
 const files = {
   "index.html": await readFile("src/template.html"),
   "app.js": await readFile("dist/web/app.js"),

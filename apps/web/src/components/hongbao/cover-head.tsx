@@ -1,10 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, Braces, Globe } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../../lib/cn";
 import { coverTags } from "../../lib/cover-tags";
-import { useEmbedded } from "../../lib/embedded";
+import { SiteOpenContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { markdownText } from "../../lib/markdown-text";
 import { useAttachedPageOpener } from "../shell/attached-page-state";
@@ -130,6 +136,7 @@ export function CoverHead({
   const page = useAttachedPageOpener();
   const { compact } = useWindowInfo();
   const embedded = useEmbedded();
+  const siteOpen = useContext(SiteOpenContext);
   const navigate = useNavigate();
   // 三方积分's 详情页 (docs/third-party-points-design.md §9).
   const openPoints = (id: string) => void navigate({ href: `/points/${id}` });
@@ -342,8 +349,14 @@ export function CoverHead({
                     </>
                   }
                   link={
+                    // In the mini app, on 红包站 (a new page, the 社区 asks).
                     embedded
-                      ? undefined
+                      ? siteOpen
+                        ? {
+                            label: "在红包站查看详情 ↗",
+                            open: () => siteOpen(`/points/${tag.points.id}`),
+                          }
+                        : undefined
                       : {
                           label: "查看详情 ›",
                           open: () => openPoints(tag.points.id),

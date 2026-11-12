@@ -3,6 +3,7 @@ import type {
   CreateTipInput,
   MiniClaimInput,
   MiniHongbaoResponse,
+  MiniHopInput,
   MiniLiveMessage,
   MiniRosterKind,
   MiniRosterPage,
@@ -212,3 +213,7 @@ export const checkTip = (sdk: MiniSdk, code: string, tip: string) =>
 
 export const readTipsHome = (sdk: MiniSdk) =>
   call<MiniTipsHome>(sdk, "tipsHome", {});
+
+/** 中转 (docs/mini-app-design.md §8): where 红包站's /magic leads them next. */
+export const hop = (sdk: MiniSdk, to: string) =>
+  call<{ ok: true }>(sdk, "hop", { json: { to } satisfies MiniHopInput });

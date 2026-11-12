@@ -1,9 +1,16 @@
 import {
   type ClaimResult,
   createTipSchema,
+  decodeActivityEmoji,
   FORUM_ORIGIN,
+  MINI_HOP_TTL_MS,
+  MINI_POINTS_VERSION,
   type MiniHongbaoResponse,
+  type MiniHopKind,
+  type MiniMagic,
+  type MiniPointsCopy,
   type MiniRosterPage,
+  miniVersionAtLeast,
   type PublicActivity,
   passwordSchema,
 } from "@hb/contracts";
@@ -12,6 +19,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { listPublicRecipients } from "../activities/claim-queries";
+import { scopeOf } from "../activities/claim-scope";
 import { VIA_HEADER, VIA_WRITTEN_HEADER } from "../activities/claim-service";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { humanCheckEnabled } from "../activities/human-check";
@@ -22,10 +30,13 @@ import {
 } from "../activities/registration-queries";
 import { getPublicActivity } from "../activities/service";
 import { findActivity } from "../activities/storage";
+import { requireAuth } from "../auth/session";
 import type { ApiBindings, ApiContext } from "../env";
+import { CREDIT_ORIGIN } from "../payments/real-protocol";
+import { copyOf, readSystem } from "../points/systems";
 import { activityObject } from "../runtime/objects";
 import { decryptString, encryptString } from "../security/crypto";
-import { requireAppOrigin } from "../security/http";
+import { requireAppOrigin, safeRelativeReturnTo } from "../security/http";
 import { listOwnCards, publicCard, requireCard } from "../tips/cards";
 import {
   checkTipOnCard,
@@ -129,10 +140,67 @@ function activityIdOf(c: Context<ApiContext>) {
  */
 async function siteUserOf(env: ApiBindings, identity: PlatformIdentity) {
   return env.DB.prepare(
-    "SELECT id, profile_seen_at FROM users WHERE provider='linux_do' AND external_id=? AND active=1",
+    "SELECT id, profile_seen_at, trust_level FROM users WHERE provider='linux_do' AND external_id=? AND active=1",
   )
     .bind(identity.sub)
-    .first<{ id: string; profile_seen_at: number | null }>();
+    .first<SiteUser>();
+}
+
+type SiteUser = {
+  id: string;
+  profile_seen_at: number | null;
+  trust_level: number | null;
+};
+
+/**
+ * The 信任等级 the 社区 signed into the token (since its kit of
+ * 2026-11-11), kept as a LINUX DO sign-in keeps it: a 领取范围 by 信任等级
+ * then knows someone who has only ever come through the mini app. Written
+ * only when it moved.
+ */
+async function keepTrust(
+  env: ApiBindings,
+  user: SiteUser,
+  identity: PlatformIdentity,
+): Promise<SiteUser> {
+  const level = identity.trust_level;
+  if (level === undefined || level === user.trust_level) return user;
+  await env.DB.prepare(
+    "UPDATE users SET trust_level=?, updated_at=? WHERE id=?",
+  )
+    .bind(level, Date.now(), user.id)
+    .run();
+  return { ...user, trust_level: level };
+}
+
+/**
+ * 三方积分 红包 (docs/mini-app-design.md §9): versions before
+ * MINI_POINTS_VERSION cannot show them and are sent to 红包站, as before.
+ */
+function assertShowsPoints(
+  row: { funding: string | null },
+  identity: PlatformIdentity,
+) {
+  if (
+    row.funding === "points" &&
+    !miniVersionAtLeast(identity.version, MINI_POINTS_VERSION)
+  )
+    throw new ActivityError(
+      409,
+      "POINTS_NOT_IN_MINI",
+      "这个红包发的是三方积分，社区里还打不开，请到红包站领取。",
+    );
+}
+
+/** The issuer's words the result card shows (third-party-points §9). */
+async function pointsCopyOf(
+  env: ApiBindings,
+  systemId: string | null,
+): Promise<MiniPointsCopy | undefined> {
+  const system = systemId ? await readSystem(env, systemId) : null;
+  if (!system) return undefined;
+  const { noRecipient, arrival, notAllowed } = copyOf(system);
+  return { noRecipient, arrival, notAllowed };
 }
 
 const signInFirst = (message: string) =>
@@ -163,8 +231,8 @@ async function registerFromForum(
     );
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO users (id, provider, external_id, username, display_name, active, created_at, updated_at)
-      VALUES (?, 'linux_do', ?, ?, ?, 1, ?, ?)
+    `INSERT INTO users (id, provider, external_id, username, display_name, trust_level, active, created_at, updated_at)
+      VALUES (?, 'linux_do', ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT (provider, external_id) DO NOTHING`,
   )
     .bind(
@@ -172,6 +240,7 @@ async function registerFromForum(
       identity.sub,
       forumUser.username,
       forumUser.name.trim() || forumUser.username,
+      identity.trust_level ?? null,
       now,
       now,
     )
@@ -206,17 +275,13 @@ miniRoutes.get("/mini/hongbao", async (c) => {
     findActivity(c.env, id),
   ]);
   if (!row) activityNotFound();
-  // 三方积分 (docs/third-party-points-design.md §1): not in the mini app
-  // in its first phase; it says where to go instead.
-  if (row.funding === "points")
-    throw new ActivityError(
-      409,
-      "POINTS_NOT_IN_MINI",
-      "这个红包发的是三方积分，社区里还打不开，请到红包站领取。",
-    );
-  const participation = user
-    ? await getCurrentParticipationForActivity(c.env, row, user.id)
-    : null;
+  assertShowsPoints(row, identity);
+  const [participation, pointsCopy] = await Promise.all([
+    user ? getCurrentParticipationForActivity(c.env, row, user.id) : null,
+    row.funding === "points"
+      ? pointsCopyOf(c.env, row.pointsSystemId)
+      : undefined,
+  ]);
   c.header("Cache-Control", "no-store");
   return c.json(
     await withForumAvatars(c.env, {
@@ -228,6 +293,7 @@ miniRoutes.get("/mini/hongbao", async (c) => {
       known: user !== null,
       author: user !== null && row.authorId === user.id,
       lookOnly: lookOnly(trust, identity),
+      ...(pointsCopy ? { pointsCopy } : {}),
     } satisfies MiniHongbaoResponse),
   );
 });
@@ -294,14 +360,18 @@ miniRoutes.post(
       );
     const activity = await findActivity(c.env, id);
     if (!activity) activityNotFound();
+    assertShowsPoints(activity, identity);
     if (activity.participationMode === "code" || humanCheckEnabled(activity))
       throw new ActivityError(409, "CLAIM_ELSEWHERE", "这个红包要到红包站领。");
     const { submissionId, password, forumUser } = parsed.data;
     if (activity.participationMode !== "direct" && !password)
       throw new ActivityError(400, "PASSWORD_REQUIRED", "先输入口令。");
-    const user =
+    const user = await keepTrust(
+      c.env,
       (await siteUserOf(c.env, identity)) ??
-      (await registerFromForum(c.env, identity, forumUser));
+        (await registerFromForum(c.env, identity, forumUser)),
+      identity,
+    );
     const response = await activityObject(c.env, id).fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,
       {
@@ -319,8 +389,14 @@ miniRoutes.post(
       },
     );
     if (!response.ok) {
-      // 信任等级 or a name in its range that only LINUX DO can vouch for.
-      if (response.status === 403 && user.profile_seen_at === null) {
+      // A name in its range that only LINUX DO can vouch for, or a 信任等级
+      // the 社区 did not sign (an older token).
+      const scope = scopeOf(activity);
+      if (
+        response.status === 403 &&
+        user.profile_seen_at === null &&
+        (user.trust_level === null || Boolean(scope?.users?.length))
+      ) {
         const body = (await response
           .clone()
           .json()
@@ -391,6 +467,109 @@ miniRoutes.get("/mini/live", async (c) => {
     },
   );
 });
+
+// 中转 (docs/mini-app-design.md §8): the 社区 opens only the exact
+// addresses a version declares, so the app opens 红包站's /magic alone and
+// says first where it leads. That page needs 红包站's own sign-in to know
+// whose it is: someone signed out is asked to sign in with LINUX DO first.
+
+const hopSchema = z.strictObject({ to: z.string().min(1).max(2048) });
+
+/** Where a 中转 may lead: a path on 红包站, or Credit 站 (an 打赏's cashier). */
+function hopTarget(to: string) {
+  if (to.startsWith("/")) return safeRelativeReturnTo(to) === to ? to : null;
+  try {
+    const url = new URL(to);
+    return url.origin === CREDIT_ORIGIN && !url.username && !url.password
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+miniRoutes.post(
+  "/mini/hop",
+  bodyLimit({
+    maxSize: 4096,
+    onError: () => {
+      throw new ActivityError(413, "PAYLOAD_TOO_LARGE", "提交内容太长。");
+    },
+  }),
+  async (c) => {
+    const trust = await trustOf(c.env);
+    const identity = await identityOf(c, trust);
+    const parsed = hopSchema.safeParse(await c.req.json().catch(() => null));
+    const target = parsed.success ? hopTarget(parsed.data.to) : null;
+    if (!target)
+      throw new ActivityError(400, "INVALID_HOP", "要打开的地址不对。");
+    // One row per person, the last one asked (a sandbox build's too: it
+    // moves no money and makes no account).
+    await c.env.DB.prepare(
+      `INSERT INTO mini_hops (linux_do_id, target, created_at) VALUES (?, ?, ?)
+        ON CONFLICT (linux_do_id) DO UPDATE SET target=excluded.target, created_at=excluded.created_at`,
+    )
+      .bind(identity.sub, target, Date.now())
+      .run();
+    return c.json({ ok: true as const });
+  },
+);
+
+// The page at /magic (docs/mini-app-design.md §8), for whoever is signed
+// in here: what their 社区 self asked for last, said as the page says it.
+miniRoutes.get("/mini/magic", async (c) => {
+  const session = await requireAuth(c);
+  c.header("Cache-Control", "no-store");
+  const row = await c.env.DB.prepare(
+    "SELECT target, created_at FROM mini_hops WHERE linux_do_id=?",
+  )
+    .bind(session.user.linuxDoId)
+    .first<{ target: string; created_at: number }>();
+  if (!row) return c.json({ hop: null } satisfies MiniMagic);
+  const { kind, title } = await describeHop(c.env, row.target);
+  return c.json({
+    hop: {
+      to: row.target,
+      at: row.created_at,
+      fresh: Date.now() - row.created_at <= MINI_HOP_TTL_MS,
+      kind,
+      title,
+    },
+  } satisfies MiniMagic);
+});
+
+/** What a 中转's target is, and its name where it has one. */
+async function describeHop(
+  env: ApiBindings,
+  target: string,
+): Promise<{ kind: MiniHopKind; title: string | null }> {
+  if (!target.startsWith("/")) return { kind: "credit", title: null };
+  const parts = target.split("/");
+  const first = safeDecode(parts[1] ?? "");
+  if (first === "🧧" && parts.length === 3) {
+    const id = decodeActivityEmoji(safeDecode(parts[2] ?? ""));
+    const row = id
+      ? await env.DB.prepare("SELECT title FROM activities WHERE id=?")
+          .bind(id)
+          .first<{ title: string }>()
+      : null;
+    return { kind: "hongbao", title: row?.title ?? null };
+  }
+  if (first === "points" && parts.length === 3) {
+    const system = await readSystem(env, safeDecode(parts[2] ?? ""));
+    return { kind: "points", title: system?.name ?? null };
+  }
+  if (target === "/tips") return { kind: "tips", title: null };
+  return { kind: "page", title: null };
+}
+
+function safeDecode(part: string) {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
 
 // 打赏 in the 社区 (docs/tip-design.md §5, §7): a card (`?id=<卡号>`), a tip
 // on it, “查一下”, and the app's home (one's own cards). Everyone here is

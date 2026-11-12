@@ -24,14 +24,12 @@ import {
   readTip,
   readTipsHome,
 } from "./api";
-import { OpenLink } from "./open-link";
+import { OpenLink, openOnSite } from "./open-link";
 import type { MiniSdk } from "./sdk";
 
 // 打赏 in the 社区 (docs/tip-design.md §5, §7): a card (`?tip=<卡号>`), and
 // the app's home, one's own cards. Everyone here is known by the 社区:
 // someone not signed in sees no card, only that they need to sign in.
-
-const SITE = __HB_ORIGIN__;
 
 /** Not signed in to the 社区: nothing of the card, only what to do. */
 function SignInForTips() {
@@ -116,14 +114,8 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
   const actions = useMemo<TipCardActions>(
     () => ({
       deliver: "open",
-      open: (url) =>
-        sdk.links.open(url).then(
-          () => "opened" as const,
-          (error: { code?: string } | undefined) =>
-            error?.code === "USER_CANCELLED"
-              ? ("cancelled" as const)
-              : ("failed" as const),
-        ),
+      // Credit 站's cashier, through 红包站's 中转 (open-link.tsx).
+      open: (url) => openOnSite(sdk, url),
       create: async (input) => {
         if (view?.lookOnly)
           throw new HongbaoError(
@@ -251,11 +243,7 @@ export function TipsHome({
               <p>
                 还没有打赏卡。到红包站的“我的打赏”里新建一张，复制嵌入代码贴进帖子末尾或个人页的“关于我”，别人点一下就能打赏你。
               </p>
-              <OpenLink
-                sdk={sdk}
-                url={`${SITE}/tips`}
-                label="打开红包站的我的打赏"
-              />
+              <OpenLink sdk={sdk} to="/tips" label="打开红包站的我的打赏" />
             </div>
           ) : (
             <ul className="grid gap-2">

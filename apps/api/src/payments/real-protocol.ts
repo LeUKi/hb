@@ -38,6 +38,8 @@ export type RealCredentialVerificationResult = {
 };
 
 const DEFAULT_REAL_BASE_URL = "https://credit.linux.do";
+/** Credit 站, where an 打赏's cashier is (the 社区 mini app's 中转 leads there too). */
+export const CREDIT_ORIGIN = new URL(DEFAULT_REAL_BASE_URL).origin;
 const REAL_DISTRIBUTE_PATH = "/lpay/distribute";
 const REAL_QUERY_PATH = "/epay/api.php";
 

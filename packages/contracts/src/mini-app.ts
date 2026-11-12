@@ -17,6 +17,64 @@ export const MINI_APP_HONGBAO_PARAM = "hb";
 /** The launch parameter that names a 打赏卡 (docs/tip-design.md §7). */
 export const MINI_APP_TIP_PARAM = "tip";
 
+/**
+ * 中转 (docs/mini-app-design.md §8): the one address on 红包站 the mini app
+ * opens. The 社区 opens only exact addresses a version declares, so the app
+ * first tells 红包站 where it wants to go (POST /api/mini/hop, MiniHopInput),
+ * then opens this page; it shows whoever is signed in there what they asked
+ * for and opens it after a countdown (GET /api/mini/magic, MiniMagic).
+ */
+export const MINI_HOP_PATH = "/magic";
+/**
+ * How long a 中转 opens by itself, a 红包站 sign-in included; older, the
+ * page asks first.
+ */
+export const MINI_HOP_TTL_MS = 10 * 60_000;
+
+/** What the page at MINI_HOP_PATH may open, by what it is. */
+export type MiniHopKind = "hongbao" | "points" | "tips" | "credit" | "page";
+
+/** GET /api/mini/magic (signed in): the last 中转 its 社区 self asked for. */
+export type MiniMagic = {
+  hop: {
+    /** A path on 红包站, or a Credit 站 address. */
+    to: string;
+    /** When it was asked (ms). */
+    at: number;
+    /** Within MINI_HOP_TTL_MS: it opens by itself. */
+    fresh: boolean;
+    kind: MiniHopKind;
+    /** The 红包's title or the 三方积分's name; null when gone or none. */
+    title: string | null;
+  } | null;
+};
+
+/**
+ * POST /api/mini/hop: where /magic leads them next — a path on 红包站 (one
+ * slash, then the rest), or an address on Credit 站 (an 打赏's cashier).
+ */
+export type MiniHopInput = { to: string };
+
+/**
+ * The first mini app version that shows 三方积分 红包 (docs/mini-app-design.md
+ * §9): older ones are told to claim on 红包站, as before.
+ */
+export const MINI_POINTS_VERSION = "0.2.5";
+
+/** `version` (x.y.z, maybe more after) is at least `least`. */
+export function miniVersionAtLeast(version: string, least: string) {
+  const parts = (text: string) =>
+    (/^(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
+  const have = parts(version);
+  const need = parts(least);
+  if (have.length !== 3 || need.length !== 3) return false;
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (have[index] ?? 0) - (need[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
+}
+
 /** What decides how tall a 红包 is in a post. */
 export type MiniEmbedShape = {
   participation: "password" | "direct" | "code";
@@ -149,6 +207,18 @@ export type MiniHongbaoResponse = {
    * reviewers checking it): it shows the 红包, nobody can claim.
    */
   lookOnly: boolean;
+  /**
+   * A 三方积分 红包's issuer words the result card shows (红包站 reads them
+   * from /api/points/:id; the mini app reaches only its endpoints).
+   */
+  pointsCopy?: MiniPointsCopy;
+};
+
+/** An issuer's own words about a payout (docs/third-party-points-design.md §9). */
+export type MiniPointsCopy = {
+  noRecipient: string;
+  arrival: string;
+  notAllowed: string;
 };
 
 /**

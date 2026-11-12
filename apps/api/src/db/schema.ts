@@ -3204,3 +3204,16 @@ export const pointsSettings = sqliteTable(
   },
   (table) => [check("points_settings_singleton", sql`${table.id} = 'global'`)],
 );
+
+/**
+ * 社区小程序's 中转 (docs/mini-app-design.md §8): the 社区 opens only the
+ * exact addresses an app version declares, so the app opens one fixed
+ * address here (/magic) and says first where it should lead. One row per
+ * LINUX DO id, the last one asked; /magic reads it for whoever is signed in.
+ */
+export const miniHops = sqliteTable("mini_hops", {
+  linuxDoId: text("linux_do_id").primaryKey(),
+  /** A path on 红包站, or a Credit 站 address (an 打赏's cashier). */
+  target: text("target").notNull(),
+  createdAt: integer("created_at").notNull(),
+});

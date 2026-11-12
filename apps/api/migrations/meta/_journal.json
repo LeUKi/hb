@@ -449,6 +449,13 @@
       "when": 1794406352407,
       "tag": "0063_points_record_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1794462430352,
+      "tag": "0064_mini_hops",
+      "breakpoints": true
     }
   ]
 }

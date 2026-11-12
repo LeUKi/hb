@@ -12,7 +12,16 @@ export const EmbeddedContext = createContext(false);
 export const useEmbedded = () => useContext(EmbeddedContext);
 
 /**
- * In the mini app: a button that copies this 红包's link on 红包站, for what
- * only 红包站 does (重新发送 a payment). Its frame opens no links.
+ * In the mini app: a button that opens this 红包 on 红包站 (through its
+ * 中转, docs/mini-app-design.md §8), for what only 红包站 does (重新发送 a
+ * payment).
  */
 export const SiteLinkContext = createContext<ComponentType | null>(null);
+
+/**
+ * In the mini app: opens another page of 红包站 by its path, the same way
+ * (a 三方积分's 详情页 from the cover's tag).
+ */
+export const SiteOpenContext = createContext<((path: string) => void) | null>(
+  null,
+);

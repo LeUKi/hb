@@ -104,6 +104,13 @@ const inviteRoute = createRoute({
   path: "/invite/$token",
   staticData: { chrome: "docked", subpage: "邀请" },
 });
+// 社区小程序's 中转 (docs/mini-app-design.md §8): what its app asked to
+// open, opened after a countdown; open to anyone, guests asked to sign in.
+const magicRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/magic",
+  staticData: { chrome: "docked" },
+});
 const topicRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/💬/$topicId/$postNumber",
@@ -394,6 +401,7 @@ const routeTree = rootRoute.addChildren([
   drawDataRoute,
   redeemRoute,
   inviteRoute,
+  magicRoute,
   topicRoute,
   topicFirstPostRoute,
   newRoute,

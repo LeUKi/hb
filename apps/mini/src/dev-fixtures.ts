@@ -71,6 +71,7 @@ const ids = {
   self: "11111111-2222-4333-8444-555555555511",
   preview: "11111111-2222-4333-8444-555555555512",
   long: "11111111-2222-4333-8444-555555555513",
+  points: "11111111-2222-4333-8444-555555555514",
 } as const;
 
 export type CaseName = keyof typeof ids;
@@ -107,6 +108,62 @@ function claimOf(activity: PublicActivity, amount: string): ClaimDetail {
 
 export function caseOf(name: string): Case | null {
   switch (name) {
+    case "points": {
+      // 三方积分 (docs/mini-app-design.md §9): the claim finds no account
+      // at the issuer, so the card says to open an account and 重新发送 on
+      // 红包站 within its five minutes.
+      const activity = hongbao(ids.points, {
+        title: "星星红包",
+        participationMode: "direct",
+        funding: "points",
+        points: {
+          id: "22222222-3333-4444-8555-666666666601",
+          name: "星星",
+          unit: "星星",
+          step: 100,
+          host: "stars.example.com",
+        },
+        reward: {
+          mode: "fixed",
+          totalAmount: "3000.00",
+          unitAmount: "300.00",
+          count: 10,
+        },
+        beforeInfo: "领到的星星存进你在 stars.example.com 的账户。",
+      });
+      return {
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+          pointsCopy: {
+            noRecipient:
+              "到 [stars.example.com](https://stars.example.com) 用 LINUX DO 登录一次就有账户了。",
+            arrival: "到账后在「我的星星」里能看到。",
+            notAllowed: "",
+          },
+        },
+        claim: () => {
+          const claim = claimOf(activity, "300.00");
+          return {
+            result: "claimed",
+            claim: {
+              ...claim,
+              payment: {
+                id: crypto.randomUUID(),
+                mode: "simulation",
+                status: "attention",
+                reason: "recipient",
+                confirmedAt: null,
+                resendUntil: new Date(Date.now() + 300_000).toISOString(),
+              },
+            },
+          };
+        },
+      };
+    }
     case "password": {
       const activity = hongbao(ids.password);
       return {

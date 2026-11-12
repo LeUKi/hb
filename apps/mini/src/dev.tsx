@@ -5,8 +5,14 @@
 // none: no 红包; `?guest`: not signed in; `&title=`, `&note=`, `&after=`, `&pay=`,
 // `&opens=`, `&late=`, `&nolive`), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
-import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
+import {
+  MINI_HOP_PATH,
+  type MiniClaimInput,
+  type MiniHopInput,
+  type MiniLiveMessage,
+} from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
+import { fullLink, SITE } from "./open-link";
 import type { LaunchParameters, MiniSdk, MiniSocket, MiniTheme } from "./sdk";
 
 const query = new URLSearchParams(window.location.search);
@@ -95,6 +101,8 @@ const denied = () =>
   Object.assign(new Error("Permission denied"), { code: "PERMISSION_DENIED" });
 /** `?timeout=N`: the first N reads time out, as the SDK's do (`TIMEOUT`). */
 let timeouts = Number(query.get("timeout") ?? 0);
+/** Where the last 中转 asked /magic to lead (the `hop` endpoint). */
+let hopTarget = "/";
 
 /**
  * A member's picture, as the 社区 lends it (a Blob address): a tile in a
@@ -407,6 +415,11 @@ const sdk: MiniSdk = {
         timeouts -= 1;
         throw Object.assign(new Error("Timed out"), { code: "TIMEOUT" });
       }
+      // 中转 (open-link.tsx): where /magic leads next.
+      if (endpoint === "hop") {
+        hopTarget = (options?.json as MiniHopInput | undefined)?.to ?? "/";
+        return { status: 200, headers: {}, body: { ok: true } };
+      }
       // 打赏 (`?tip=simple|standard|list`): a sample card and its tips.
       const tipAnswer = tipRequest(endpoint, options);
       if (tipAnswer) return { status: 200, headers: {}, body: tipAnswer };
@@ -469,9 +482,19 @@ const sdk: MiniSdk = {
       return null;
     },
   },
+  // As the 社区 since its kit of 2026-11-08: only manifest.json's exact
+  // links. /magic itself is 红包站's (a session there): here it leads on at once.
   links: {
     open: async (url) => {
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (url !== `${SITE}${MINI_HOP_PATH}`)
+        throw Object.assign(new Error("Link not allowed"), {
+          code: "LINK_NOT_ALLOWED",
+        });
+      if (!window.confirm(`打开 ${url}？\n（替身：直接去 ${hopTarget}）`))
+        throw Object.assign(new Error("Cancelled"), {
+          code: "USER_CANCELLED",
+        });
+      window.open(fullLink(hopTarget), "_blank", "noopener,noreferrer");
       return null;
     },
   },

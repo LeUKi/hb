@@ -43,6 +43,7 @@ import { InviteView } from "../views/invite-view";
 import { JudgeNewView } from "../views/judge-new-view";
 import { JudgeView } from "../views/judge-view";
 import { JudgesView } from "../views/judges-view";
+import { MagicView } from "../views/magic-view";
 import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
 import { CommandPageView, MessageView } from "../views/message-view";
@@ -204,6 +205,8 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       );
     case "/invite/$token":
       return <InviteView token={params.token ?? ""} />;
+    case "/magic":
+      return <MagicView />;
     case "/🔑/$resultId":
       return <ResultsView kind="redeem" resultId={params.resultId ?? ""} />;
     case "/💬/$topicId/$postNumber": {
