@@ -459,6 +459,7 @@
         seat.me = {
           signedIn: true,
           name: seat.who,
+          avatar: config.avatars?.[seat.who] ?? null,
           open: !ended && settled === null,
           ...(ended ? { why: "ended" } : settled !== null ? { why: "already_claimed" } : {}),
           cooldownUntil: own?.cooldownUntil ?? null,
@@ -536,7 +537,7 @@
           window.__sim.connected[who] = true;
           reply({ value: {
             hongbao: state.hongbao,
-            viewer: who === config.guest ? { signedIn: false } : { signedIn: true, name: who },
+            viewer: who === config.guest ? { signedIn: false } : { signedIn: true, name: who, avatar: config.avatars?.[who] ?? null },
             theme: "light", view: state.view, me: seat.me, myView: seat.myView, clock: state.clock,
           } });
           return;

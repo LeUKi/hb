@@ -41,6 +41,21 @@ import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
 import { amountsIn, failureText, say, unitNow, yuan } from "./words.mjs";
 
+/** 模拟器里发红包的人。 */
+const AUTHOR = "红包作者";
+
+/** 模拟器里的头像：按名字定一个颜色，写名字的第一个字（SVG 的 data 地址，网页当头像地址用）。 */
+export function avatarOf(/** @type {string} */ name) {
+  let hue = 0;
+  for (const char of name) hue = (hue * 31 + (char.codePointAt(0) ?? 0)) % 360;
+  const initial = ([...name][0] ?? "?").replace(
+    /[&<>"]/g,
+    (char) => `&#${char.charCodeAt(0)};`,
+  );
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="hsl(${hue} 55% 52%)"/><text x="32" y="43" font-size="30" font-family="sans-serif" text-anchor="middle" fill="#fff">${initial}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 /** What a page writes; served from the simulator here. */
@@ -255,6 +270,7 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
   game.state = () => ({
     hongbao: {
       id: TEST_HONGBAO_ID,
+      sender: { name: AUTHOR, avatar: avatarOf(AUTHOR) },
       title,
       url: hostUrl,
       code: true,
@@ -616,8 +632,12 @@ export async function startPage({
                 guest: GUEST,
                 cooldown,
                 // The 红包 as its sender starts it from this judge.
+                // 模拟器里每个人的头像：一个带名字首字的色块（真的红包站是 LINUX DO 的头像）
+                avatars: Object.fromEntries(
+                  plan.people.map((who) => [who, avatarOf(who)]),
+                ),
                 hongbao: {
-                  author: "红包作者",
+                  author: AUTHOR,
                   prompt: sandbox.declarations.hongbao?.prompt ?? "",
                   note: sandbox.declarations.hongbao?.note ?? "",
                   pageAutoOpen:

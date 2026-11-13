@@ -66,6 +66,12 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
     unclaimed: quantity.mode === "pool" ? money.amount(quantity.left) : null,
     deadlineAt: activity.draw?.deadlineAt ?? activity.deadlineAt,
     judged,
+    // Who sent it, as the 红包 page shows them (2026-11-13: a game shows
+    // whose rules these are).
+    sender: {
+      name: activity.author.displayName,
+      avatar: activity.author.avatarUrl,
+    },
     // Its params everyone sees now, 结束后公开 ones once over; never a 密钥
     // (docs/judge-address-design.md §5).
     params: Object.fromEntries(
@@ -87,6 +93,7 @@ function meOf(
   user: {
     displayName: string;
     username: string;
+    avatarUrl: string | null;
     trustLevel: number | null;
   } | null,
   participation: ParticipationCache | undefined,
@@ -103,6 +110,7 @@ function meOf(
   return {
     signedIn: true as const,
     name: user.displayName,
+    avatar: user.avatarUrl,
     open: standing === null,
     ...(standing ? { why: standing } : {}),
     cooldownUntil,
@@ -342,7 +350,11 @@ export function usePageBridge(
           value: {
             hongbao: state.hongbao,
             viewer: state.user
-              ? { signedIn: true, name: state.user.displayName }
+              ? {
+                  signedIn: true,
+                  name: state.user.displayName,
+                  avatar: state.user.avatarUrl,
+                }
               : { signedIn: false },
             theme: "light",
             view: state.view,

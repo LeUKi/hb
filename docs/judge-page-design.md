@@ -300,7 +300,7 @@ return {
 | 写法 | 拿到的 |
 |---|---|
 | `hb.ready()` | `{ hongbao, viewer, theme }`。不在红包页里打开（直接打开、嵌在别处）时报错“没有接上红包页”。 |
-| `hongbao` | `id`、`title`、`url`（红包页地址）、`code`（是不是代码判定红包）、`status`（`draft` 未开放、`active` 进行中、`ended` 已结束）、`endedByCode`、`unit`（`LDC` 或 `🐟`）、`shares`（`{ total, claimed, remaining }`，红包没公开份数时是 null）、`pool`（奖池总额，没有时 null）、`deadlineAt`、`judged`（已判定几次） |
+| `hongbao` | `id`、`title`、`url`（红包页地址）、`code`（是不是代码判定红包）、`status`（`draft` 未开放、`active` 进行中、`ended` 已结束）、`endedByCode`、`unit`（`LDC` 或 `🐟`）、`shares`（`{ total, claimed, remaining }`，红包没公开份数时是 null）、`pool`（奖池总额，没有时 null）、`deadlineAt`、`judged`（已判定几次）、`sender`（发红包的人的昵称和头像 `{ name, avatar }`，2026-11-13 起） |
 | `viewer` | 登录了 `{ signedIn: true, name }`（昵称），没登录 `{ signedIn: false }` |
 | `theme` | 现在总是 `light`：本站只有浅色 |
 | `hb.view()` | 判定器的公开数据 `{ summary, data, at }`，没有时 null |
@@ -474,7 +474,7 @@ return {
 
 做的时候定的：
 
-- `hb.me()` 登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered }`；`why` 同“填进指令框”的原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`claim.payment` 是 `paid`（已到账，🐟额红包领到就算）、`paying`、`failed`、`none`（发红包的人自己领的，不付款）。判断“能不能参加”和 `hb.fill()` 用同一段代码。
+- `hb.me()` 登录了是 `{ signedIn: true, name, avatar, open, why, cooldownUntil, claim, registered }`（`avatar` 头像地址、没有时 null，`viewer` 里也有，2026-11-13 起）；`why` 同“填进指令框”的原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`claim.payment` 是 `paid`（已到账，🐟额红包领到就算）、`paying`、`failed`、`none`（发红包的人自己领的，不付款）。判断“能不能参加”和 `hb.fill()` 用同一段代码。
 - `hb.now()`：红包页知道和服务器差多少（登录时拿到的冷却信息里有服务器时间），打招呼时告诉网页，变了再推；没登录时是本机时间。
 - `hb.login()`：SDK 先看网页里有没有刚被点过（浏览器的 `navigator.userActivation`），没有就报 `no_gesture`；红包页三秒内最多弹一次，已经登录就直接回 `{ signedIn: true }`。
 - `/help/page` 第 5 节加“看的人自己的情况、时间和登录”一块，给 AI 的说明、开发包的类型和 `AGENTS.md` 都写了；假红包页也会给 `me`，`login` 只记一行。

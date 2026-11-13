@@ -359,11 +359,11 @@ export function judge({ input, state, user, hongbao }) {
 
 网页里加 `<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，就有全局的 `hb`。每个方法的返回和每种原因写在 `page/hb.d.ts`。
 
-- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`unit`、`step`、`points`（同红包信息的）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；只用来显示，后端要用的从红包信息接口读）等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
+- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`unit`、`step`、`points`（同红包信息的）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；只用来显示，后端要用的从红包信息接口读）、`sender`（发红包的人，`{ name, avatar }`：昵称和头像地址，没有头像时 `avatar` 是 `null`）等；`viewer` 是 `{ signedIn: true, name, avatar }` 或 `{ signedIn: false }`，只有昵称和头像。单独打开网页时它会报错。
 - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce" | "me" | "myView", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
 - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`，这时 `hb.me()` 和 `hb.myView()` 已经是这次判定之后的，接着读就行；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
 - `await hb.fill(text)`：把内容填进指令框（换掉里面原来打的字），不提交，按提交的是看的人自己；所有红包都能用，直接领的红包没有指令框，回 `no_input`。
-- `await hb.me()`：看的人自己的情况：能不能参加、冷却到什么时候（`cooldownUntil`）、领到多少、待结算（`pending`）、结算了没有。`await hb.myView()`：判定器写给他自己的数据。`await hb.mine(next)`：他自己的记录，一次 20 条。
+- `await hb.me()`：看的人自己的情况：昵称和头像（`name`、`avatar`）、能不能参加、冷却到什么时候（`cooldownUntil`）、领到多少、待结算（`pending`）、结算了没有。`await hb.myView()`：判定器写给他自己的数据。`await hb.mine(next)`：他自己的记录，一次 20 条。
 - `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它。`await hb.login()`：在看的人点了按钮时请红包页弹出登录卡片。
 - `await hb.identity({ nonce })`：红包站签名的身份令牌，交给网页自己的后端验证，见“后端认人和读红包”。
 - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。

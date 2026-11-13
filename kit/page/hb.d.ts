@@ -32,6 +32,8 @@ export interface HbHongbao {
   deadlineAt: string | null;
   /** 已判定几次 */
   judged: number | null;
+  /** 发红包的人：昵称和头像地址（没有头像时 null），同红包页上显示的；可能是伪造的，只用来显示 */
+  sender: { name: string; avatar: string | null };
   /**
    * 代码判定红包现在公开的参数（key → 值），同红包页代码一节列出的：结束后公开的
    * 结束后才有，密钥永远没有；没有参数时是 {}。地址参数是规范后的地址，以 / 结尾。
@@ -40,8 +42,10 @@ export interface HbHongbao {
   params: Record<string, unknown>;
 }
 
-/** 看的人：登录了只给昵称，不给编号。 */
-export type HbViewer = { signedIn: true; name: string } | { signedIn: false };
+/** 看的人：登录了只给昵称和头像地址（没有头像时 null），不给编号。 */
+export type HbViewer =
+  | { signedIn: true; name: string; avatar: string | null }
+  | { signedIn: false };
 
 /** 判定器写的公开数据（判定结果的 view）。 */
 export interface HbView {
@@ -162,6 +166,8 @@ export type HbMe =
       signedIn: true;
       /** 昵称 */
       name: string;
+      /** 头像地址；没有头像时 null */
+      avatar: string | null;
       /** 现在能不能参加（领取、报名或提交给判定器） */
       open: boolean;
       /** 不能参加的原因 */
