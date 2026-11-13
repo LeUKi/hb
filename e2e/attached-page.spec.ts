@@ -312,6 +312,7 @@ test.describe("附带网页", () => {
     ).toEqual({
       signedIn: true,
       name: viewer.displayName,
+      avatar: viewer.avatarUrl,
       open: true,
       cooldownUntil: null,
       claim: null,

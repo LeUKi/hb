@@ -4129,8 +4129,14 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
         judged: 7,
         // No params (judge-address §5).
         params: {},
+        // Who sent it, as the 红包 page shows them (2026-11-13).
+        sender: { name: author.displayName, avatar: author.avatarUrl },
       },
-      viewer: { signedIn: true, name: viewer.displayName },
+      viewer: {
+        signedIn: true,
+        name: viewer.displayName,
+        avatar: viewer.avatarUrl,
+      },
       theme: "light",
     });
     expect(
