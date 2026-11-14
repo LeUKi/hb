@@ -49,6 +49,11 @@ export const PARAM_LIMITS = Object.freeze({
   /** What check() may say at once. */
   checkProblems: 20,
   checkMessageCharacters: 100,
+  /** What explain() may say (docs/judge-square-design.md §3.3): a line per item, a short summary. */
+  explainCharacters: 60,
+  explainSummary: 3,
+  /** when (§3.2): the values of the item it follows. */
+  whenValues: 20,
   /** 密钥 (docs/judge-key-design.md): how many, how long, a prefix. */
   keys: 3,
   keyValueCharacters: 500,
@@ -134,6 +139,8 @@ const SHARED = [
   "secret",
   // 怎么填 ↗ (docs/judge-address-design.md §3).
   "guide",
+  // 看情况显示 (docs/judge-square-design.md §3.2).
+  "when",
 ];
 const OWN = {
   text: ["minLength", "maxLength"],
@@ -335,6 +342,90 @@ function columnsProblem(columns) {
   return null;
 }
 
+/**
+ * 看情况显示 (docs/judge-square-design.md §3.2): `when: { param, is }` shows
+ * an item only while an earlier choice (or switch) is one of `is`. Its own
+ * shape here; what it follows is checked against the list (readParams).
+ */
+function whenShapeProblem(item) {
+  const shape =
+    'when 要写成 { param: "前面一项选项或开关的 key", is: ["选项的 value"] }，开关写 is: true 或 false';
+  if (item.type === "key" || item.type === "url")
+    return `${TYPE_WORDS[item.type]}不能看情况显示，不能写 when`;
+  const when = item.when;
+  if (!isObject(when)) return shape;
+  const extra = unknownField(when, ["param", "is"], "when ");
+  if (extra) return extra;
+  if (typeof when.param !== "string" || !KEY.test(when.param)) return shape;
+  const values = whenValues(when.is);
+  if (values === null) return shape;
+  if (Array.isArray(values) && values.length > PARAM_LIMITS.whenValues)
+    return `when.is 最多 ${PARAM_LIMITS.whenValues} 个`;
+  return null;
+}
+
+/** when.is as kept: a list of option values, or a switch's true or false; null when it is neither. */
+function whenValues(is) {
+  if (typeof is === "boolean") return is;
+  const list = typeof is === "string" ? [is] : is;
+  if (
+    !Array.isArray(list) ||
+    list.length === 0 ||
+    list.some((value) => typeof value !== "string" || !value)
+  )
+    return null;
+  return [...new Set(list)];
+}
+
+/** What a when follows: its problem, or null (the item is already of the list). */
+function whenTargetProblem(list, index) {
+  const { when } = list[index];
+  const target = list.findIndex((other) => other.key === when.param);
+  if (target === -1) return `没有参数 ${when.param}`;
+  if (target >= index) return `${when.param} 要写在这一项前面`;
+  const followed = list[target];
+  if (followed.type === "switch")
+    return typeof when.is === "boolean"
+      ? null
+      : `${followed.label}是开关，is 写 true 或 false`;
+  if (followed.type !== "choice")
+    return `只能跟着选项或开关，${followed.label}是${TYPE_WORDS[followed.type]}`;
+  if (typeof when.is === "boolean")
+    return `${followed.label}是选项，is 写选项的 value`;
+  const unknown = when.is.find(
+    (value) => !followed.options.some((option) => option.value === value),
+  );
+  return unknown === undefined
+    ? null
+    : `${followed.label}没有“${unknown}”这个选项`;
+}
+
+/**
+ * Which items show for these values (§3.2): an item with `when` shows while
+ * the item it follows shows and is one of `is`. `values` are as read so far
+ * (the code's values, or what the form holds); an item before it decides.
+ */
+export function shownParams(list, values) {
+  const shown = new Set();
+  for (const item of list) {
+    if (item.when === undefined) {
+      shown.add(item.key);
+      continue;
+    }
+    const { param, is } = item.when;
+    if (!shown.has(param)) continue;
+    const followed = list.find((other) => other.key === param);
+    const value = values?.[param] ?? followed?.default ?? null;
+    if (
+      typeof is === "boolean"
+        ? (value === true) === is
+        : typeof value === "string" && is.includes(value)
+    )
+      shown.add(item.key);
+  }
+  return shown;
+}
+
 /** One declared item: its problem, or null. */
 function itemProblem(item) {
   if (!isObject(item)) return "要是一个对象";
@@ -359,6 +450,7 @@ function itemProblem(item) {
           pageProblem(item.guide),
         )
       : null) ??
+    (item.when !== undefined ? whenShapeProblem(item) : null) ??
     (item.type === "key" ? keyProblem(item) : null) ??
     (item.type === "url" ? urlProblem(item) : null) ??
     (item.revealAtEnd !== undefined && typeof item.revealAtEnd !== "boolean"
@@ -407,6 +499,8 @@ function itemProblem(item) {
 function tidy(item) {
   const kept = { ...item, label: item.label.trim() };
   if (item.hint !== undefined) kept.hint = item.hint.trim();
+  if (item.when !== undefined)
+    kept.when = { param: item.when.param, is: whenValues(item.when.is) };
   if (item.guide !== undefined) kept.guide = new URL(item.guide.trim()).href;
   if (item.type === "key")
     kept.to = isParamEntry(item.to)
@@ -471,6 +565,12 @@ export function readParams(value) {
     if (typeof item.to === "string") continue;
     const problem = addressParamProblem(list, item.to.param);
     if (problem) problems.push(`params（${item.key}）的 to：${problem}`);
+  }
+  // 看情况显示: what each when follows is an earlier choice or switch.
+  for (const [index, item] of list.entries()) {
+    if (item.when === undefined) continue;
+    const problem = whenTargetProblem(list, index);
+    if (problem) problems.push(`params（${item.key}）的 when：${problem}`);
   }
   // 选项联动: what an option sets is another param, as that one takes it.
   for (const item of list) {
@@ -699,6 +799,12 @@ export function paramValues(list, given, { local = false } = {}) {
   const values = {};
   for (const item of list) {
     if (item.type === "key") continue;
+    // 看情况显示 (§3.2): hidden, it is null for the code, whatever the form
+    // still holds (the item it follows is earlier, so already read).
+    if (item.when !== undefined && !shownParams(list, values).has(item.key)) {
+      values[item.key] = null;
+      continue;
+    }
     const read = readValue(
       item,
       input[item.key] === undefined ? item.default : input[item.key],
@@ -907,6 +1013,63 @@ export function readCheckAnswer(value, list) {
     problems.push({ key: entry.key, message });
   }
   return { problems };
+}
+
+/**
+ * explain(params, hongbao)'s answer (docs/judge-square-design.md §3.3):
+ * `{ hints, warnings, summary }` — a line under an item in place of its
+ * hint, a warning there (shown, not stopping anyone), a few lines under all
+ * the params — or `{ invalid }`, said once. Lines on hidden items are kept
+ * (the form shows only what it shows).
+ */
+export function readExplainAnswer(value, list) {
+  const empty = { hints: {}, warnings: {}, summary: [] };
+  if (value === undefined || value === null) return empty;
+  const shape =
+    "explain 要返回 { hints: { 参数的 key: 一句话 }, warnings: { 参数的 key: 一句话 }, summary: [一句话] }，都可以不写";
+  if (!isObject(value)) return { invalid: shape };
+  const extra = unknownField(
+    value,
+    ["hints", "warnings", "summary"],
+    "explain 返回的值",
+  );
+  if (extra) return { invalid: extra };
+  const most = PARAM_LIMITS.explainCharacters;
+  const line = (text, where) => {
+    if (typeof text !== "string") return { invalid: shape };
+    const trimmed = text.trim();
+    if (!trimmed || characters(trimmed) > most)
+      return { invalid: `explain 的${where}要是 1–${most} 个字` };
+    return { text: trimmed };
+  };
+  const answer = { hints: {}, warnings: {}, summary: [] };
+  for (const field of ["hints", "warnings"]) {
+    const given = value[field];
+    if (given === undefined || given === null) continue;
+    if (!isObject(given)) return { invalid: shape };
+    for (const [key, text] of Object.entries(given)) {
+      if (!list.some((item) => item.key === key))
+        return {
+          invalid: `explain 的 ${field} 里的 key（${key}）不是声明过的参数`,
+        };
+      const read = line(text, ` ${field}.${key} `);
+      if ("invalid" in read) return read;
+      answer[field][key] = read.text;
+    }
+  }
+  if (value.summary !== undefined && value.summary !== null) {
+    if (!Array.isArray(value.summary)) return { invalid: shape };
+    if (value.summary.length > PARAM_LIMITS.explainSummary)
+      return {
+        invalid: `explain 的 summary 最多 ${PARAM_LIMITS.explainSummary} 行`,
+      };
+    for (const [index, text] of value.summary.entries()) {
+      const read = line(text, ` summary 第 ${index + 1} 行`);
+      if ("invalid" in read) return read;
+      answer.summary.push(read.text);
+    }
+  }
+  return answer;
 }
 
 function rangeProblem(
@@ -1264,6 +1427,22 @@ export function paramLine(item, { params = [], network = null } = {}) {
     parts.push("发红包的人自己填");
     if (inNetwork(network, item.key)) parts.push("判定器会请求它");
   }
+  if (item.when !== undefined) {
+    const followed = params.find((other) => other.key === item.when.param);
+    const said =
+      typeof item.when.is === "boolean"
+        ? item.when.is
+          ? "打开"
+          : "关上"
+        : `选${item.when.is
+            .map(
+              (value) =>
+                followed?.options?.find((option) => option.value === value)
+                  ?.label ?? value,
+            )
+            .join("或")}`;
+    parts.push(`${followed?.label ?? item.when.param}${said}时才有`);
+  }
   if (item.required === false && item.type !== "switch") parts.push("选填");
   if (revealsAtEnd(item)) parts.push("结束后公开");
   return `${item.label}（${parts.join("，")}）`;
@@ -1300,12 +1479,14 @@ export function readDeclarations(answer) {
   const hongbao = read("hongbao", readHongbaoRules)?.rules ?? null;
   if (answer?.check === false) problems.push("check 要是一个函数");
   if (answer?.setup === false) problems.push("setup 要是一个函数");
+  if (answer?.explain === false) problems.push("explain 要是一个函数");
   return {
     meta,
     params,
     hongbao,
     check: answer?.check === true,
     setup: answer?.setup === true,
+    explain: answer?.explain === true,
     problems,
   };
 }

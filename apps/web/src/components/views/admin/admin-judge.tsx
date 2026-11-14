@@ -251,6 +251,10 @@ function Usage({ usage }: { usage: AdminJudgeUsage }) {
             ? `（其中换了 ${thisMonth.switches} 次实例）`
             : ""}
           {thisMonth.fetches > 0 ? ` · 联网请求 ${thisMonth.fetches} 次` : ""}
+          {thisMonth.tries > 0
+            ? ` · 检查参数和试一试 ${thisMonth.tries} 次`
+            : ""}
+          {thisMonth.fills > 0 ? ` · 填表试算 ${thisMonth.fills} 次` : ""}
         </p>
         <DayChart usage={usage} />
       </Panel>

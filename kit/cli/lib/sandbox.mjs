@@ -18,6 +18,7 @@ import {
   paramValues,
   readCheckAnswer,
   readDeclarations,
+  readExplainAnswer,
   readNetwork,
   readSetup,
   resolveNetwork,
@@ -380,6 +381,45 @@ export async function openSandbox(
   }
 
   /**
+   * explain(params, hongbao) once (docs/judge-square-design.md §3.3), as
+   * the site asks it while a sender fills the form: `{ hints, warnings,
+   * summary }`, `{ invalid }` or `{ failure, detail }`.
+   */
+  async function explain(params, hongbao) {
+    if (hung)
+      return {
+        failure: "timeout",
+        detail: `judge.js 顶层的代码超过 ${TIMEOUT_MS / 1000} 秒还没跑完`,
+      };
+    try {
+      const body = await ask(
+        runtime,
+        JSON.stringify({
+          explain: { params, hongbao, now: Date.now() },
+          capture: true,
+        }),
+      );
+      if (body === LATE) {
+        await restart();
+        return {
+          failure: "timeout",
+          detail: `explain 超过 ${TIMEOUT_MS / 1000} 秒没有返回`,
+        };
+      }
+      if (typeof body.host === "string") return failureOf(body.host);
+      if (body.error)
+        return { failure: body.error.kind, detail: body.error.detail };
+      return readExplainAnswer(body.answer, declarations.params);
+    } catch (error) {
+      await restart();
+      return {
+        failure: "unavailable",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
    * setup(params, hongbao) once (协议第四版), at `now`, Math.random() drawn
    * from `seed`: `{ state, view, unknown, logs? }` as readSetup reads it,
    * or `{ failure, detail, logs? }`. Null before the fourth protocol.
@@ -426,6 +466,7 @@ export async function openSandbox(
   return {
     run,
     check,
+    explain,
     setup,
     /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
     network,

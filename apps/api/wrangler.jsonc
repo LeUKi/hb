@@ -56,6 +56,11 @@
       "name": "OPEN_API_READS",
       "namespace_id": "1001",
       "simple": { "limit": 600, "period": 60 }
+    },
+    {
+      "name": "JUDGE_FILLS",
+      "namespace_id": "1002",
+      "simple": { "limit": 30, "period": 60 }
     }
   ],
   "services": [{ "binding": "CAP", "service": "hb-cap" }],

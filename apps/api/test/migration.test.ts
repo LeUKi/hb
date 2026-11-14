@@ -1496,6 +1496,8 @@ it("0049 keeps a 代码判定红包's code and its 用量 as they were, with no 
   expect(await db.prepare("SELECT * FROM judge_usage").first()).toEqual({
     ...usage,
     tries: 0,
+    // 0065: 填表试算 (judge-square §3.3).
+    fills: 0,
   });
 });
 
@@ -1592,7 +1594,8 @@ it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as t
     },
     // 0056: 撤回 (judge-square §17).
     version: { ...kept.version, withdrawn_at: null },
-    usage: kept.usage,
+    // 0065: 填表试算 (judge-square §3.3).
+    usage: { ...kept.usage, fills: 0 },
   });
   // The fourth protocol now: a run, a version and 用量 on it.
   const later = now + 1;

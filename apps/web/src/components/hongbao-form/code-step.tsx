@@ -3,6 +3,7 @@ import {
   JUDGE_NAME_LIMITS,
   type JudgeCheck,
   type JudgeDeclarations,
+  type JudgeExplanation,
   type JudgeNetworkEntry,
   type JudgeParam,
   type JudgeTryInput,
@@ -825,6 +826,8 @@ export function CodeStep({
   userId,
   declarations,
   paramErrorOf,
+  explanation,
+  explaining,
   tried,
   borrow,
   start,
@@ -847,6 +850,10 @@ export function CodeStep({
   declarations: JudgeDeclarations | null;
   /** A param's problem: its declaration's rules, then the code's check(). */
   paramErrorOf: (key: string) => string | undefined;
+  /** What explain() last said as the params were filled (§3.3). */
+  explanation: JudgeExplanation | null;
+  /** The params are being asked about now. */
+  explaining: boolean;
   /** The 红包 试一试 judges on, as filled in so far, in 分. */
   tried: JudgeTryInput["hongbao"];
   /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
@@ -1150,6 +1157,8 @@ export function CodeStep({
                 params={params}
                 values={form.judge.params}
                 errorOf={paramErrorOf}
+                explanation={explanation}
+                explaining={explaining}
                 locked={locked}
                 network={borrowed ? borrowed.network : judge.network}
                 ownId={sessionUser?.linuxDoId}

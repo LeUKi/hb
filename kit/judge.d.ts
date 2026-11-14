@@ -267,6 +267,20 @@ interface ParamBase {
    * 密钥放去哪拿密钥。规则同附带网页的地址
    */
   guide?: string;
+  /**
+   * 看情况显示：前面一项“选一个”选的是 `is` 里的值（开关写 true 或 false）时
+   * 才显示这一项；不显示时不用填，代码拿到的是 null。比如
+   * `when: { param: "reward", is: ["price"] }`。密钥和地址不能写
+   */
+  when?: ParamWhen;
+}
+
+/** 看情况显示：跟着前面哪一项、它是什么时显示。 */
+export interface ParamWhen {
+  /** 前面一项“选一个”或开关的 key */
+  param: string;
+  /** 选项的 value 的数组（一个或几个），或者开关的 true、false */
+  is: readonly string[] | boolean;
 }
 
 /** 指向一项地址参数（type: "url"）：用发红包的人在那一项填的地址。 */
@@ -436,8 +450,36 @@ export interface ParamProblem {
  */
 export type Check = (
   params: Params,
-  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+  hongbao: Pick<
+    Submission["hongbao"],
+    "title" | "total" | "count" | "minEach" | "unit" | "step" | "points"
+  >,
 ) => ParamProblem[] | Promise<ParamProblem[]>;
+
+/**
+ * judge.js 可以导出 `explain(params, hongbao)`：发红包的人边填边算的说明。
+ * 改了参数，网站停一下就跑一次，把结果显示在表单上：`hints` 代替那一项写死的
+ * hint，`warnings` 是那一项下面的黄字提醒（不拦，能照样发），`summary` 是参数
+ * 下面的几行总结。每句最多 60 个字，summary 最多 3 行，都可以不写。和 check()
+ * 一样，Math.random() 每次都一样，不能联网。
+ */
+export type Explain = (
+  params: Params,
+  hongbao: Pick<
+    Submission["hongbao"],
+    "title" | "total" | "count" | "minEach" | "unit" | "step" | "points"
+  >,
+) => Explanation | Promise<Explanation>;
+
+/** explain() 返回的。 */
+export interface Explanation {
+  /** 参数的 key → 那一项下面的说明（代替声明里的 hint） */
+  hints?: Record<string, string>;
+  /** 参数的 key → 那一项下面的黄字提醒；有提醒时只显示提醒 */
+  warnings?: Record<string, string>;
+  /** 参数下面的总结，最多 3 行 */
+  summary?: string[];
+}
 
 /**
  * 第四版：judge.js 可以导出 `setup(params, hongbao)`，开放时跑一次（算一次沙箱使用），
@@ -446,7 +488,10 @@ export type Check = (
  */
 export type Setup = (
   params: Params,
-  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+  hongbao: Pick<
+    Submission["hongbao"],
+    "title" | "total" | "count" | "minEach" | "unit" | "step" | "points"
+  >,
 ) =>
   | { state?: Json; view?: View | null }
   | undefined

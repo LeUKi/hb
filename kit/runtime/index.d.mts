@@ -334,6 +334,9 @@ export const PARAM_LIMITS: Readonly<{
   bytes: number;
   checkProblems: number;
   checkMessageCharacters: number;
+  explainCharacters: number;
+  explainSummary: number;
+  whenValues: number;
   keys: number;
   keyValueCharacters: number;
   keyPrefixCharacters: number;
@@ -409,6 +412,21 @@ export function readCheckAnswer(
   value: unknown,
   list: readonly ParamDeclaration[],
 ): { problems: ParamProblem[] } | { invalid: string };
+/** explain()'s answer (§3.3): lines by param key, a short summary. */
+export type Explanation = {
+  hints: Record<string, string>;
+  warnings: Record<string, string>;
+  summary: string[];
+};
+export function readExplainAnswer(
+  value: unknown,
+  list: readonly ParamDeclaration[],
+): Explanation | { invalid: string };
+/** 看情况显示 (§3.2): the keys of the items shown for these values. */
+export function shownParams(
+  list: readonly ParamDeclaration[],
+  values: Readonly<Record<string, unknown>> | null | undefined,
+): Set<string>;
 export function readHongbaoRules(
   value: unknown,
 ): { rules: HongbaoRules | null } | { problems: string[] };
@@ -448,6 +466,8 @@ export type Declarations = {
   check: boolean;
   /** Protocol 4: it exports setup(params, hongbao). */
   setup: boolean;
+  /** It exports explain(params, hongbao) (§3.3). */
+  explain: boolean;
   problems: string[];
 };
 export function readDeclarations(answer: unknown): Declarations;

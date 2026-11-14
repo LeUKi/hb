@@ -9,8 +9,12 @@ import type {
   JudgeCheck,
   JudgeCheckInput,
   JudgeDeclarations,
+  JudgeExplanation,
+  JudgeParamProblem,
   JudgeParamsCheck,
   JudgeParamsCheckInput,
+  JudgeParamsFill,
+  JudgeParamsFillInput,
   JudgeTry,
   JudgeTryInput,
   JudgeVersions,
@@ -27,6 +31,7 @@ import {
   othersProblem,
   paramValues,
   readCheckAnswer,
+  readExplainAnswer,
   readVerdict,
   startScenario,
   submissionSeed,
@@ -42,7 +47,12 @@ import {
 } from "../points/judge";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
-import { checkParamsInJudge, JUDGE_PROTOCOL, runJudge } from "./sandbox";
+import {
+  checkParamsInJudge,
+  explainParamsInJudge,
+  JUDGE_PROTOCOL,
+  runJudge,
+} from "./sandbox";
 import { publicVersionOf, updatingOf, usableByOthers } from "./square";
 import { judgeData, textDigest } from "./storage";
 import { usageStatement } from "./usage";
@@ -672,6 +682,72 @@ export async function checkMyParams(
   if ("failure" in outcome) return { failure: outcome.detail };
   const answer = readCheckAnswer(outcome.answer, run.declarations.params);
   return "invalid" in answer ? { failure: answer.invalid } : answer;
+}
+
+/**
+ * 填表试算 (§3.3): check() and explain() on the params as a sender fills
+ * them, side by side in the version's 判定器. Not the sender's runs a day
+ * (holdTries) and no judge_tries row: at most JUDGE_FILLS a minute each,
+ * counted apart in 用量 (fills) for the 站长.
+ */
+export async function fillMyParams(
+  env: ApiBindings,
+  userId: string,
+  judgeId: string,
+  n: number,
+  input: JudgeParamsFillInput,
+): Promise<JudgeParamsFill> {
+  const run = await versionToRun(env, userId, judgeId, n, input.params);
+  if ("problems" in run.read)
+    return { problems: run.read.problems, explanation: null };
+  const asks = {
+    check: run.declarations?.check === true,
+    explain: run.declarations?.explain === true,
+  };
+  if (!asks.check && !asks.explain) return { problems: [], explanation: null };
+  const limited = await env.JUDGE_FILLS?.limit({ key: userId });
+  if (limited && !limited.success)
+    throw new ActivityError(429, "JUDGE_FILL_LIMIT", "改得太快了，稍等一下。");
+  const now = Date.now();
+  await usageStatement(env, {
+    now,
+    fingerprint: run.row.fingerprint,
+    fresh: 0,
+    userId,
+    fills: 1,
+  }).run();
+  const sandbox = {
+    code: await run.code(),
+    fingerprint: run.row.fingerprint,
+    fresh: 0,
+  };
+  const asked = {
+    params: run.read.values,
+    hongbao: hongbaoForJudge(
+      triedHongbao(input.hongbao),
+      triedUnit(input.hongbao),
+    ),
+  };
+  const params = run.declarations?.params ?? [];
+  const [checked, explained] = await Promise.all([
+    asks.check ? checkParamsInJudge(env, sandbox, asked) : null,
+    asks.explain ? explainParamsInJudge(env, sandbox, asked) : null,
+  ]);
+  let problems: JudgeParamProblem[] = [];
+  if (checked) {
+    if ("failure" in checked) return { failure: checked.detail };
+    const answer = readCheckAnswer(checked.answer, params);
+    if ("invalid" in answer) return { failure: answer.invalid };
+    problems = answer.problems;
+  }
+  let explanation: JudgeExplanation | null = null;
+  if (explained) {
+    if ("failure" in explained) return { failure: explained.detail };
+    const answer = readExplainAnswer(explained.answer, params);
+    if ("invalid" in answer) return { failure: answer.invalid };
+    explanation = answer;
+  }
+  return { problems, explanation };
 }
 
 /**

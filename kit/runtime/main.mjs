@@ -8,6 +8,8 @@
 // (docs/judge-square-design.md §3, §4), from the fourth whether it has
 // `setup` (docs/judge-page-design.md §2) — for a deploy to check.
 // { check: { params, hongbao, now } } runs check(params, hongbao) once;
+// { explain: { params, hongbao, now } } runs explain(params, hongbao) once,
+// as a sender fills the form (docs/judge-square-design.md §3.3);
 // { setup: { params, hongbao, now, seed } } runs setup(params, hongbao)
 // once, at opening, Math.random() drawn from `seed` (seeds.mjs).
 // Fourth protocol: an answer's view.data is one level below its state.
@@ -58,7 +60,7 @@ function exported(code) {
       answer.unreadable.push(name);
     }
   }
-  for (const name of ["check", "setup"])
+  for (const name of ["check", "setup", "explain"])
     answer[name] =
       code[name] === undefined ? null : typeof code[name] === "function";
   return answer;
@@ -127,13 +129,17 @@ async function runSetup(code, { params, hongbao, now, seed }, capture) {
   }
 }
 
-/** check(params, hongbao) once: its answer, or how it failed. */
-async function runCheck(code, { params, hongbao, now }, capture) {
-  if (typeof code.check !== "function") return reply({ answer: [] });
+/**
+ * check(params, hongbao) or explain(params, hongbao) once: its answer, or
+ * how it failed. Neither has a submission to seed it.
+ */
+async function runOnParams(code, name, { params, hongbao, now }, capture) {
+  if (typeof code[name] !== "function")
+    return reply({ answer: name === "check" ? [] : null });
   begin({ now, next: createRandom(CHECK_SEED).api.next, capture });
   let answer;
   try {
-    answer = await code.check(
+    answer = await code[name](
       structuredClone(params),
       structuredClone(hongbao),
     );
@@ -146,7 +152,7 @@ async function runCheck(code, { params, hongbao, now }, capture) {
     return reply({ answer: answer ?? null, logs });
   } catch {
     return reply({
-      error: { kind: "invalid", detail: "check 返回的值转不成 JSON" },
+      error: { kind: "invalid", detail: `${name} 返回的值转不成 JSON` },
       logs,
     });
   }
@@ -154,8 +160,16 @@ async function runCheck(code, { params, hongbao, now }, capture) {
 
 export default {
   async fetch(request) {
-    const { submission, seeds, capture, network, describe, check, setup } =
-      await request.json();
+    const {
+      submission,
+      seeds,
+      capture,
+      network,
+      describe,
+      check,
+      setup,
+      explain: explaining,
+    } = await request.json();
     let code;
     try {
       loading ??= import("./judge.js");
@@ -168,7 +182,8 @@ export default {
         error: { kind: "no-judge", detail: "judge.js 没有导出 judge 函数" },
       });
     if (describe === true) return reply(exported(code));
-    if (check) return runCheck(code, check, capture);
+    if (check) return runOnParams(code, "check", check, capture);
+    if (explaining) return runOnParams(code, "explain", explaining, capture);
     if (setup) return runSetup(code, setup, capture);
     const { tools, next } = createTools(submission, seeds);
     begin({ now: submission.now, next, capture, network: network ?? null });

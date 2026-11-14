@@ -53,6 +53,8 @@ export type JudgeDeclarations = {
   check: boolean;
   /** v4: it exports setup(params, hongbao); absent from a v3 run. */
   setup?: boolean;
+  /** It exports explain(params, hongbao) (§3.3); absent before it was read. */
+  explain?: boolean;
 };
 
 /**
@@ -570,6 +572,27 @@ export type JudgeParamsCheckInput = z.infer<typeof judgeParamsCheckSchema>;
 /** What it said, item by item; or that it failed (and why). */
 export type JudgeParamsCheck =
   | { problems: ParamProblem[] }
+  | { failure: string };
+
+/**
+ * 填表试算 (docs/judge-square-design.md §3.3): check() and explain() on the
+ * params as a sender fills them — not their runs a day, at most so many a
+ * minute.
+ */
+export const judgeParamsFillSchema = judgeParamsCheckSchema;
+export type JudgeParamsFillInput = JudgeParamsCheckInput;
+/** explain()'s lines: by param key, and a short summary. */
+export type JudgeExplanation = {
+  hints: Record<string, string>;
+  warnings: Record<string, string>;
+  summary: string[];
+};
+/**
+ * What check() said (none when it has no check) and what explain() said
+ * (null when it has none); or that one failed (and why).
+ */
+export type JudgeParamsFill =
+  | { problems: ParamProblem[]; explanation: JudgeExplanation | null }
   | { failure: string };
 
 /** 试一试 (§6): one judgment with these params, no money, no record. */

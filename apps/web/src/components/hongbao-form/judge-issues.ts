@@ -8,6 +8,7 @@ import {
   keyParams,
   paramValues,
   readKeyValue,
+  shownParams,
 } from "../../../../../kit/runtime/params.mjs";
 import {
   cents,
@@ -20,14 +21,19 @@ import {
 // held to what its version declares — by the same rules the site keeps,
 // kit/runtime/params.mjs — and to its check(), and 发多少 to its ranges.
 
-/** Only the params this version declares: older ones are let go. */
+/**
+ * Only the params this version declares, and of them those shown (§3.2:
+ * a hidden one is null for the code; the draft keeps what was typed).
+ */
 export function declaredParams(
   declarations: JudgeDeclarations,
   params: Record<string, unknown>,
 ) {
+  const shown = shownParams(declarations.params, params);
   return Object.fromEntries(
-    Object.entries(params).filter(([key]) =>
-      declarations.params.some((item) => item.key === key),
+    Object.entries(params).filter(
+      ([key]) =>
+        shown.has(key) && declarations.params.some((item) => item.key === key),
     ),
   );
 }

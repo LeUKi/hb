@@ -323,6 +323,24 @@ export function checkParamsInJudge(
 }
 
 /**
+ * explain(params, hongbao) once as a sender fills the form
+ * (docs/judge-square-design.md §3.3), in the same 判定器: what it
+ * answered (for readExplainAnswer), or how it failed.
+ */
+export function explainParamsInJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+  input: { params: unknown; hongbao: unknown },
+) {
+  return askJudge(
+    env,
+    run,
+    { explain: { ...input, now: Date.now() } },
+    "explain",
+  );
+}
+
+/**
  * setup(params, hongbao) once at opening (docs/judge-page-design.md §2,
  * protocol 4), at `now`, Math.random() drawn from `seed` (setupSeed): what
  * it answered (for readSetup), or how it failed.

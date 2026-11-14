@@ -10,6 +10,7 @@ import type {
   JudgePage,
   JudgeParamsCheck,
   JudgeParamsCheckInput,
+  JudgeParamsFill,
   JudgeRecordFacts,
   JudgeRecordFilter,
   JudgeRecordList,
@@ -451,6 +452,26 @@ export async function fetchJudgeVersion(judgeId: string, n: number) {
     await api.api.me.judges[":id"].versions[":n"].$get(
       { param: { id: judgeId, n: String(n) } },
       { init: { cache: "no-store" } },
+    ),
+  );
+}
+
+/**
+ * 填表试算 (docs/judge-square-design.md §3.3): check() and explain() on the
+ * params as they are filled — not the sender's runs a day.
+ */
+export async function fillParams(
+  csrfToken: string | null | undefined,
+  {
+    judgeId,
+    n,
+    ...json
+  }: JudgeParamsCheckInput & { judgeId: string; n: number },
+) {
+  return readResponse<JudgeParamsFill>(
+    await api.api.me.judges[":id"].versions[":n"].fill.$post(
+      { param: { id: judgeId, n: String(n) }, json },
+      { headers: { "X-CSRF-Token": csrfToken ?? "" } },
     ),
   );
 }

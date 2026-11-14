@@ -59,6 +59,8 @@ export type UsageUse = {
   fetches?: number;
   /** check() and 试一试 runs (docs/judge-square-design.md §3, §6). */
   tries?: number;
+  /** check() and explain() as a sender fills the form (§3.3, 填表试算). */
+  fills?: number;
 };
 
 /**
@@ -74,16 +76,16 @@ export function usageStatement(env: ApiBindings, use: UsageUse) {
   // database's word on deploy or rerun, as judge_checks.kind is.
   return env.DB.prepare(`INSERT INTO judge_usage
     (day, sandbox_id, fingerprint, fresh, user_id, activity_id, deploys, reruns, claims, timeouts, switches, first_at, last_at,
-      protocol, networked, fetches, tries)
+      protocol, networked, fetches, tries, fills)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6,
       COALESCE((SELECT kind = 'deploy' FROM judge_checks WHERE id = ?14), ?7),
-      COALESCE((SELECT kind = 'rerun' FROM judge_checks WHERE id = ?14), ?8), ?9, ?10, ?11, ?12, ?13, ?15, ?16, ?17, ?18)
+      COALESCE((SELECT kind = 'rerun' FROM judge_checks WHERE id = ?14), ?8), ?9, ?10, ?11, ?12, ?13, ?15, ?16, ?17, ?18, ?19)
     ON CONFLICT(day, sandbox_id) DO UPDATE SET
       activity_id = COALESCE(judge_usage.activity_id, excluded.activity_id),
       deploys = judge_usage.deploys + excluded.deploys, reruns = judge_usage.reruns + excluded.reruns,
       claims = judge_usage.claims + excluded.claims, timeouts = judge_usage.timeouts + excluded.timeouts,
       switches = judge_usage.switches + excluded.switches, fetches = judge_usage.fetches + excluded.fetches,
-      tries = judge_usage.tries + excluded.tries,
+      tries = judge_usage.tries + excluded.tries, fills = judge_usage.fills + excluded.fills,
       last_at = MAX(judge_usage.last_at, excluded.last_at)`).bind(
     usageDay(firstAt),
     sandboxId(
@@ -108,6 +110,7 @@ export function usageStatement(env: ApiBindings, use: UsageUse) {
     Number(networked),
     use.fetches ?? 0,
     use.tries ?? 0,
+    use.fills ?? 0,
   );
 }
 
@@ -145,7 +148,7 @@ const COUNTS = `COUNT(*) AS shares,
   (SELECT COUNT(*) FROM judge_checks WHERE kind = 'deploy' AND created_at >= ?1) AS deploys,
   (SELECT COUNT(*) FROM judge_checks WHERE kind = 'rerun' AND created_at >= ?1) AS reruns,
   COALESCE(SUM(claims), 0) AS claims, COALESCE(SUM(timeouts), 0) AS timeouts, COALESCE(SUM(switches), 0) AS switches,
-  COALESCE(SUM(fetches), 0) AS fetches`;
+  COALESCE(SUM(fetches), 0) AS fetches, COALESCE(SUM(tries), 0) AS tries, COALESCE(SUM(fills), 0) AS fills`;
 
 const countsOf = (row: Record<string, unknown> | undefined) =>
   ({
@@ -156,6 +159,8 @@ const countsOf = (row: Record<string, unknown> | undefined) =>
     timeouts: Number(row?.timeouts ?? 0),
     switches: Number(row?.switches ?? 0),
     fetches: Number(row?.fetches ?? 0),
+    tries: Number(row?.tries ?? 0),
+    fills: Number(row?.fills ?? 0),
   }) satisfies AdminJudgeUsageCounts;
 
 const authorOf = (row: Record<string, unknown>) => ({

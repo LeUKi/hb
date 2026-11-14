@@ -78,6 +78,7 @@ import {
 } from "./steps";
 import { useBorrowJudge } from "./use-borrow-judge";
 import { useJudgeDeploy } from "./use-judge-deploy";
+import { useParamsFill } from "./use-params-fill";
 import { useLinearSteps } from "./use-step-flow";
 import { useSubmit } from "./use-submit";
 
@@ -286,11 +287,29 @@ export function HongbaoForm({
   const formPoints = useFormPoints(form);
   const tried = triedHongbao(form, declarations?.hongbao, formPoints);
   const checkKey = JSON.stringify([form.judge.params, tried]);
+  // 填表试算 (§3.3): check() and explain() asked as the params are filled.
+  const fill = useParamsFill({
+    judgeId: form.judge.judgeId,
+    n: usedN,
+    declarations: coded ? declarations : null,
+    params: declarations ? declaredParams(declarations, form.judge.params) : {},
+    hongbao: tried,
+    checkKey,
+  });
+  const liveChecked =
+    fill.answered?.key === checkKey ? fill.answered.problems : null;
   const judgeIssues = judgeIssuesOf(
     form,
     declarations,
-    checkedParams?.key === checkKey ? checkedParams.problems : [],
+    liveChecked ??
+      (checkedParams?.key === checkKey ? checkedParams.problems : []),
   );
+  // What check() said as they were filled shows at once (边填边查), its
+  // own rules' problems once the step was checked, as ever.
+  const liveParamError = (key: string) =>
+    liveChecked?.find(
+      (problem) => (problem.key || declarations?.params[0]?.key) === key,
+    )?.message;
 
   const formUnit = useFormUnit(form);
   const issues = [
@@ -463,6 +482,15 @@ export function HongbaoForm({
     if (!coded || !declarations?.check || !judgeId || n === undefined)
       return true;
     const key = checkKey;
+    // Asked already as they were filled: its word stands.
+    if (liveChecked) {
+      const [first] = liveChecked;
+      if (!first) return true;
+      haptic("error");
+      say(`参数没有通过判定器的检查：${first.message}`);
+      showIssue(`hb-param-${first.key}`);
+      return false;
+    }
     try {
       const answer = await paramsCheck.mutateAsync({
         judgeId,
@@ -664,7 +692,11 @@ export function HongbaoForm({
               scopeLine={scopeLine(form)}
               userId={user.id}
               declarations={declarations}
-              paramErrorOf={(key) => errorOf(`hb-param-${key}`)}
+              paramErrorOf={(key) =>
+                errorOf(`hb-param-${key}`) ?? liveParamError(key)
+              }
+              explanation={fill.explanation}
+              explaining={fill.pending}
               tried={tried}
               borrow={borrow}
               start={start}

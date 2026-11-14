@@ -9,6 +9,7 @@ import {
   judgeFeatureSchema,
   judgeListingSchema,
   judgeParamsCheckSchema,
+  judgeParamsFillSchema,
   judgeTakeDownSchema,
   judgeTrySchema,
   updateJudgeSchema,
@@ -42,6 +43,7 @@ import {
 import {
   checkMyParams,
   deployJudge,
+  fillMyParams,
   getMyJudge,
   listMyJudges,
   myJudgeVersion,
@@ -251,6 +253,23 @@ export const judgeRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       return c.json(
         await checkMyParams(
+          c.env,
+          session.user.id,
+          c.req.param("id"),
+          versionNumber(c.req.param("n")),
+          c.req.valid("json"),
+        ),
+      );
+    },
+  )
+  // 填表试算 (§3.3): check() and explain() as a sender fills the form.
+  .post(
+    "/me/judges/:id/versions/:n/fill",
+    validator("json", parsedWith(judgeParamsFillSchema)),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await fillMyParams(
           c.env,
           session.user.id,
           c.req.param("id"),

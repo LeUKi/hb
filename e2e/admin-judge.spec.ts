@@ -62,6 +62,8 @@ function usage(patch: Partial<AdminJudgeUsage> = {}): AdminJudgeUsage {
     timeouts: 0,
     switches: 0,
     fetches: 0,
+    tries: 0,
+    fills: 0,
   });
   return {
     readAt: now,
@@ -77,6 +79,8 @@ function usage(patch: Partial<AdminJudgeUsage> = {}): AdminJudgeUsage {
       timeouts: 2,
       switches: 1,
       fetches: 0,
+      tries: 0,
+      fills: 0,
     },
     freeRows: 1000,
     pricePerRow: 0.002,

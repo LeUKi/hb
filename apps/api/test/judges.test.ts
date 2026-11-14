@@ -159,6 +159,7 @@ ${JUDGE}// ${crypto.randomUUID()}`;
       hongbao: { count: { min: 1, max: 5 } },
       check: false,
       setup: false,
+      explain: false,
     });
     expect(detail.usable).toMatchObject({ n: 1 });
   });

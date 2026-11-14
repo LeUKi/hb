@@ -6,6 +6,7 @@ import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   revealsAtEnd,
+  shownParams,
   sortedJson,
 } from "../../../../../kit/runtime/params.mjs";
 import { haptic } from "../../lib/haptics";
@@ -129,11 +130,24 @@ function ParamsFact({
   keys: NonNullable<PublicJudge["keys"]>;
 }) {
   const unit = useAtomValue(activeUnitAtom);
+  // 看情况显示 (§3.2): one the sender never saw is left out — unless what
+  // it follows is not shown yet (结束后公开), and nothing can tell.
+  const listed = params.map(({ param }) => param);
+  const shown = shownParams(
+    listed,
+    Object.fromEntries(params.map(({ param, value }) => [param.key, value])),
+  );
+  const visible = params.filter(
+    ({ param }) =>
+      shown.has(param.key) ||
+      (param.when !== undefined &&
+        !listed.some((other) => other.key === param.when?.param)),
+  );
   return (
     <div className="grid gap-1">
       <span className="text-xs text-ink-3">参数</span>
       <ul className="grid gap-0.5 text-sm text-ink">
-        {params.map(({ param, value }) =>
+        {visible.map(({ param, value }) =>
           (param.type === "list" || param.type === "table") &&
           Array.isArray(value) &&
           value.length > 0 ? (

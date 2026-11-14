@@ -2637,6 +2637,11 @@ export const judgeUsage = sqliteTable(
     fetches: integer("fetches").notNull().default(0),
     /** 判定器's check() and 试一试 (docs/judge-square-design.md §3, §6). */
     tries: integer("tries").notNull().default(0),
+    /**
+     * check() and explain() as a sender fills the form (§3.3, 填表试算): not
+     * the sender's runs a day, kept apart for the 站长.
+     */
+    fills: integer("fills").notNull().default(0),
     firstAt: integer("first_at").notNull(),
     lastAt: integer("last_at").notNull(),
   },

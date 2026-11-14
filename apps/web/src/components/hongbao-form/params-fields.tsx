@@ -2,18 +2,36 @@ import {
   type AmountUnit,
   amountToMinor,
   formatUnitAmount,
+  type JudgeExplanation,
   type JudgeNetworkEntry,
   type JudgeParam,
   LDC_UNIT,
   parseUnitAmount,
 } from "@hb/contracts";
-import { Plus, X } from "lucide-react";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import { Plus, TriangleAlert, X } from "lucide-react";
+import {
+  AnimatePresence,
+  type AnimationPlaybackControls,
+  animate,
+  motion,
+} from "motion/react";
+import {
+  createContext,
+  type ReactNode,
+  type Ref,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { readAddress } from "../../../../../kit/runtime/network.mjs";
+import { shownParams } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
+import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { addressLabel, ParamTags } from "../judges/judge-bits";
 import { Button } from "../ui/button";
 import { Field, Segmented, Switch, TextArea, TextInput } from "../ui/field";
+import { Reveal } from "../ui/reveal";
 
 // 判定器的参数 (docs/judge-square-design.md §3, §14.4): the form its code
 // declares, drawn by the site. Values are kept as the code gets them —
@@ -476,7 +494,7 @@ function KeyField({
       ? item.to
       : `你填的${addressLabel(params, item.to.param)}`;
   return (
-    <div className="grid min-w-0 gap-1.5 @min-[30rem]/params:col-span-2">
+    <div className="grid min-w-0 gap-1.5">
       <Field
         label={
           <span className="inline-flex items-center gap-1.5">
@@ -554,6 +572,8 @@ export function ParamsFields({
   network = null,
   ownId,
   idPrefix = "hb-param-",
+  explanation = null,
+  explaining = false,
 }: {
   params: JudgeParam[];
   values: Values;
@@ -583,130 +603,286 @@ export function ParamsFields({
    * change.
    */
   idPrefix?: string;
+  /**
+   * What explain() last said of these params (§3.3, 填表试算): a line under
+   * an item in place of its hint, a warning there, a summary under all;
+   * null while it has said nothing (or has no explain).
+   */
+  explanation?: JudgeExplanation | null;
+  /** The params are being asked about: what it said sweeps till it answers. */
+  explaining?: boolean;
 }) {
   const short = (item: JudgeParam) =>
     item.type === "integer" ||
     item.type === "money" ||
     (item.type === "text" && (item.maxLength ?? 200) <= 40);
+  // 看情况显示 (§3.2): the items shown for these values.
+  const shown = shownParams(params, values);
+  const visible = params.filter(
+    (item) => shown.has(item.key) && (item.type !== "key" || keys),
+  );
+  const which = visible.map((item) => item.key).join(" ");
+  const grid = useHeightTween(which);
+  // explain()'s line for an item, else what it wrote: a warning (amber,
+  // shown, stopping no one) before a computed line.
+  const lineOf = (item: JudgeParam, written: ReactNode) => {
+    const warning = explanation?.warnings[item.key];
+    const computed = explanation?.hints[item.key];
+    if (warning)
+      return (
+        <span
+          className={cn("block text-warning", explaining && "loading-sheen")}
+        >
+          <TriangleAlert
+            aria-hidden="true"
+            className="mr-1 inline size-3.5 align-[-0.15em]"
+          />
+          {warning}
+        </span>
+      );
+    if (computed)
+      return (
+        <span className={cn("block", explaining && "loading-sheen")}>
+          {computed}
+        </span>
+      );
+    return written;
+  };
+  const summary = explanation?.summary ?? [];
   return (
-    <div className="@container/params">
-      <div className="grid gap-4 @min-[30rem]/params:grid-cols-2">
-        {params.map((item) => {
-          const error = errorOf(item.key);
-          if (item.type === "key")
-            return keys ? (
-              <KeyField
-                key={item.key}
-                item={item}
-                params={params}
-                id={`${idPrefix}${item.key}`}
-                error={error}
-                filled={keys.filled.includes(item.key)}
-                typed={keys.typed[item.key]}
-                onType={keys.onType}
-              />
-            ) : null;
-          const label = (
-            <span className="inline-flex items-center gap-1.5">
-              {item.label}
-              {item.required === false && (
-                <span className="text-ink-3">（选填）</span>
-              )}
-              <ParamTags item={item} params={params} />
-            </span>
-          );
-          // 地址 (docs/judge-address-design.md §4): what it is asked for,
-          // that it is shown, and who the sender is to a service they deploy.
-          const more =
-            item.type === "url"
-              ? [
-                  `${
-                    (network ?? []).some(
-                      (entry) =>
-                        typeof entry !== "string" &&
-                        "param" in entry &&
-                        entry.param === item.key,
-                    )
-                      ? "判定器会请求这个地址，"
-                      : ""
-                  }领的人看得到它。开放后不能改。`,
-                  ownId &&
-                    `你的 LINUX DO 数字 ID 是 ${ownId}，部署说明要你填时用它。`,
-                ]
-              : [];
-          if (item.type === "switch")
+    <div className="@container/params flex flex-col gap-4">
+      <div
+        ref={grid}
+        className="relative grid gap-4 @min-[30rem]/params:grid-cols-2"
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          {visible.map((item) => {
+            const error = errorOf(item.key);
+            const wide = item.type === "switch" || !short(item);
             return (
-              <div
+              <ParamCell
                 key={item.key}
-                id={`${idPrefix}${item.key}`}
-                tabIndex={-1}
-                className="outline-none @min-[30rem]/params:col-span-2"
-              >
-                <Switch
-                  label={label}
-                  description={
-                    error ??
-                    hintLines(item.hint, item.guide && <Guide item={item} />)
-                  }
-                  checked={values[item.key] === true}
-                  disabled={locked}
-                  onChange={(checked) => onChange(item.key, checked)}
-                />
-              </div>
-            );
-          // 选项联动 (judge-square §3): the chosen option's own hint, and
-          // the params it sets, set as it is chosen.
-          const chosen =
-            item.type === "choice"
-              ? item.options.find((option) => option.value === values[item.key])
-              : undefined;
-          return (
-            <div
-              key={item.key}
-              className={cn(
-                "grid min-w-0 gap-1.5",
-                !short(item) && "@min-[30rem]/params:col-span-2",
-              )}
-            >
-              <ColumnNames item={item} />
-              <Field
-                label={label}
-                htmlFor={
-                  item.type === "list" || item.type === "table"
-                    ? undefined
-                    : `${idPrefix}${item.key}`
-                }
-                hint={hintLines(
-                  chosen?.hint ?? item.hint,
-                  ...more,
-                  item.guide && <Guide item={item} />,
+                which={which}
+                className={cn(
+                  "min-w-0",
+                  wide && "@min-[30rem]/params:col-span-2",
                 )}
-                error={error}
               >
-                <ParamControl
-                  item={item}
-                  id={`${idPrefix}${item.key}`}
-                  value={values[item.key]}
-                  disabled={locked}
-                  invalid={Boolean(error)}
-                  onChange={(value) => {
-                    onChange(item.key, value);
-                    if (item.type !== "choice") return;
-                    const set = item.options.find(
-                      (option) => option.value === value,
-                    )?.set;
-                    for (const [key, next] of Object.entries(set ?? {}))
-                      if (params.some((other) => other.key === key))
-                        onChange(key, next);
-                  }}
-                />
-              </Field>
-            </div>
-          );
-        })}
+                {(() => {
+                  if (item.type === "key")
+                    return keys ? (
+                      <KeyField
+                        item={item}
+                        params={params}
+                        id={`${idPrefix}${item.key}`}
+                        error={error}
+                        filled={keys.filled.includes(item.key)}
+                        typed={keys.typed[item.key]}
+                        onType={keys.onType}
+                      />
+                    ) : null;
+                  const label = (
+                    <span className="inline-flex items-center gap-1.5">
+                      {item.label}
+                      {item.required === false && (
+                        <span className="text-ink-3">（选填）</span>
+                      )}
+                      <ParamTags item={item} params={params} />
+                    </span>
+                  );
+                  // 地址 (docs/judge-address-design.md §4): what it is asked for,
+                  // that it is shown, and who the sender is to a service they deploy.
+                  const more =
+                    item.type === "url"
+                      ? [
+                          `${
+                            (network ?? []).some(
+                              (entry) =>
+                                typeof entry !== "string" &&
+                                "param" in entry &&
+                                entry.param === item.key,
+                            )
+                              ? "判定器会请求这个地址，"
+                              : ""
+                          }领的人看得到它。开放后不能改。`,
+                          ownId &&
+                            `你的 LINUX DO 数字 ID 是 ${ownId}，部署说明要你填时用它。`,
+                        ]
+                      : [];
+                  if (item.type === "switch")
+                    return (
+                      <div
+                        id={`${idPrefix}${item.key}`}
+                        tabIndex={-1}
+                        className="outline-none"
+                      >
+                        <Switch
+                          label={label}
+                          description={
+                            error ??
+                            hintLines(
+                              lineOf(item, item.hint),
+                              item.guide && <Guide item={item} />,
+                            )
+                          }
+                          checked={values[item.key] === true}
+                          disabled={locked}
+                          onChange={(checked) => onChange(item.key, checked)}
+                        />
+                      </div>
+                    );
+                  // 选项联动 (judge-square §3): the chosen option's own hint, and
+                  // the params it sets, set as it is chosen.
+                  const chosen =
+                    item.type === "choice"
+                      ? item.options.find(
+                          (option) => option.value === values[item.key],
+                        )
+                      : undefined;
+                  return (
+                    <div className="grid min-w-0 gap-1.5">
+                      <ColumnNames item={item} />
+                      <Field
+                        label={label}
+                        htmlFor={
+                          item.type === "list" || item.type === "table"
+                            ? undefined
+                            : `${idPrefix}${item.key}`
+                        }
+                        hint={hintLines(
+                          lineOf(item, chosen?.hint ?? item.hint),
+                          ...more,
+                          item.guide && <Guide item={item} />,
+                        )}
+                        error={error}
+                      >
+                        <ParamControl
+                          item={item}
+                          id={`${idPrefix}${item.key}`}
+                          value={values[item.key]}
+                          disabled={locked}
+                          invalid={Boolean(error)}
+                          onChange={(value) => {
+                            onChange(item.key, value);
+                            if (item.type !== "choice") return;
+                            const set = item.options.find(
+                              (option) => option.value === value,
+                            )?.set;
+                            for (const [key, next] of Object.entries(set ?? {}))
+                              if (params.some((other) => other.key === key))
+                                onChange(key, next);
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  );
+                })()}
+              </ParamCell>
+            );
+          })}
+        </AnimatePresence>
       </div>
+      <Reveal show={summary.length > 0}>
+        <div
+          className={cn(
+            "rounded-lg bg-fill px-3 py-2 text-sm text-ink-2",
+            explaining && "loading-sheen",
+          )}
+        >
+          {summary.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      </Reveal>
     </div>
   );
+}
+
+/**
+ * One item of the params grid: as items show and hide (§3.2) it fades in
+ * or out in its place, and the others slide to theirs — measured only when
+ * the items shown change, not as values are typed.
+ */
+function ParamCell({
+  ref,
+  which,
+  className,
+  children,
+}: {
+  ref?: Ref<HTMLDivElement>;
+  which: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const reduced = useReducedMotionPref();
+  return (
+    <motion.div
+      ref={ref}
+      layout={reduced ? false : "position"}
+      layoutDependency={which}
+      className={className}
+      initial={{ opacity: 0 }}
+      animate={{
+        opacity: 1,
+        transition: { duration: durations.crossFade, ease },
+      }}
+      exit={{
+        opacity: 0,
+        transition: { duration: durations.crossFade, ease },
+      }}
+      transition={{ layout: { duration: durations.reveal, ease } }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/**
+ * The params grid's height eases to the new one as items show and hide
+ * (Swap's way, without remounting what is in it): `which` names the items.
+ */
+function useHeightTween(which: string) {
+  const reduced = useReducedMotionPref();
+  const surface = useRef<HTMLDivElement>(null);
+  const height = useRef<number | null>(null);
+  const shownWhich = useRef(which);
+  const running = useRef<AnimationPlaybackControls | null>(null);
+  useLayoutEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    height.current = element.offsetHeight;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.borderBoxSize?.[0];
+      height.current = box ? box.blockSize : element.offsetHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const element = surface.current;
+    if (!element || shownWhich.current === which) return;
+    shownWhich.current = which;
+    const from = height.current ?? element.offsetHeight;
+    running.current?.stop();
+    element.style.height = "";
+    const to = element.offsetHeight;
+    if (reduced || Math.abs(from - to) < 1) return;
+    element.style.height = `${from}px`;
+    element.style.overflow = "clip";
+    running.current = animate(
+      element,
+      { height: [`${from}px`, `${to}px`] },
+      {
+        duration: durations.reveal,
+        ease,
+        onComplete: () => {
+          element.style.height = "";
+          element.style.overflow = "";
+        },
+      },
+    );
+  }, [which, reduced]);
+  return surface;
 }
 
 /**

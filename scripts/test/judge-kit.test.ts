@@ -2126,6 +2126,200 @@ describe("选项联动", () => {
   });
 });
 
+// 看情况显示 and explain() (docs/judge-square-design.md §3.2, §3.3): an item
+// shown only while an earlier choice or switch is one of its values, null
+// for the code while hidden; and lines a sender sees as they fill the form.
+describe("看情况显示和 explain()", () => {
+  const mode = {
+    key: "mode",
+    label: "怎么定",
+    type: "choice",
+    options: [
+      { value: "auto", label: "自动" },
+      { value: "fixed", label: "自己定" },
+    ],
+    default: "auto",
+  };
+  const each = {
+    key: "each",
+    label: "每人",
+    type: "money",
+    min: 1,
+    when: { param: "mode", is: ["fixed"] },
+  };
+
+  it("hides an item while what it follows is not one of its values", async () => {
+    const { readParams, paramValues, shownParams, paramLine } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([mode, each]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    // Hidden: not required, and null whatever the form still holds.
+    expect(paramValues(read.list, { each: 5 })).toEqual({
+      values: { mode: "auto", each: null },
+    });
+    expect(paramValues(read.list, { mode: "fixed" })).toEqual({
+      problems: [{ key: "each", message: "请填写每人" }],
+    });
+    expect(paramValues(read.list, { mode: "fixed", each: 5 })).toEqual({
+      values: { mode: "fixed", each: 5 },
+    });
+    expect([...shownParams(read.list, {})]).toEqual(["mode"]);
+    expect([...shownParams(read.list, { mode: "fixed" })]).toEqual([
+      "mode",
+      "each",
+    ]);
+    const [, money] = read.list;
+    if (!money) throw new Error("NO_ITEM");
+    expect(paramLine(money, { params: read.list })).toBe(
+      "每人（金额，至少 0.01 LDC，怎么定选自己定时才有）",
+    );
+  });
+
+  it("follows only an earlier choice or switch, by its values", async () => {
+    const { readParams } = await import("../../kit/runtime/index.mjs");
+    const following = (when: unknown) =>
+      readParams([
+        mode,
+        { key: "on", label: "开关", type: "switch" },
+        { key: "x", label: "X", type: "integer", when },
+      ]);
+    expect(following({ param: "mode", is: ["nope"] })).toEqual({
+      problems: ["params（x）的 when：怎么定没有“nope”这个选项"],
+    });
+    expect(following({ param: "on", is: ["auto"] })).toEqual({
+      problems: ["params（x）的 when：开关是开关，is 写 true 或 false"],
+    });
+    expect(following({ param: "gone", is: ["auto"] })).toEqual({
+      problems: ["params（x）的 when：没有参数 gone"],
+    });
+    expect("list" in following({ param: "on", is: true })).toBe(true);
+    // One value may be written alone; it is kept as a list.
+    const one = following({ param: "mode", is: "fixed" });
+    expect("list" in one && one.list[2]?.when).toEqual({
+      param: "mode",
+      is: ["fixed"],
+    });
+    expect(
+      readParams([{ ...each, when: { param: "mode", is: ["fixed"] } }, mode]),
+    ).toEqual({ problems: ["params（each）的 when：mode 要写在这一项前面"] });
+    expect(
+      readParams([
+        mode,
+        {
+          key: "k",
+          label: "密钥",
+          type: "key",
+          to: "https://api.example.com/",
+          when: { param: "mode", is: ["fixed"] },
+        },
+      ]),
+    ).toEqual({
+      problems: ["params 第 2 项（k）：密钥不能看情况显示，不能写 when"],
+    });
+  });
+
+  it("reads explain()'s lines by declared key, short, a summary of three", async () => {
+    const { readExplainAnswer, readParams } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([mode, each]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    expect(readExplainAnswer(null, read.list)).toEqual({
+      hints: {},
+      warnings: {},
+      summary: [],
+    });
+    expect(
+      readExplainAnswer(
+        {
+          hints: { each: " 够 10 人 " },
+          warnings: { mode: "很快结束" },
+          summary: ["一局"],
+        },
+        read.list,
+      ),
+    ).toEqual({
+      hints: { each: "够 10 人" },
+      warnings: { mode: "很快结束" },
+      summary: ["一局"],
+    });
+    expect(readExplainAnswer({ hints: { nope: "x" } }, read.list)).toEqual({
+      invalid: "explain 的 hints 里的 key（nope）不是声明过的参数",
+    });
+    expect(
+      readExplainAnswer({ hints: { each: "字".repeat(61) } }, read.list),
+    ).toEqual({ invalid: "explain 的 hints.each 要是 1–60 个字" });
+    expect(
+      readExplainAnswer({ summary: ["1", "2", "3", "4"] }, read.list),
+    ).toEqual({ invalid: "explain 的 summary 最多 3 行" });
+    expect(readExplainAnswer({ more: 1 }, read.list)).toEqual({
+      invalid: "explain 返回的值不认识 more",
+    });
+  });
+
+  it("npm run check shows explain() on the default params and skips hidden ones in tests", async () => {
+    const dir = kit({
+      "judge.js": `export const params = ${JSON.stringify([mode, each])};
+export function check(params) {
+  return params.mode === "fixed" && params.each > 500 ? [{ key: "each", message: "太多" }] : [];
+}
+export function explain(params, hongbao) {
+  return params.mode === "auto"
+    ? { hints: { mode: "按奖池分，每人约 " + hongbao.total / 10 + " 分" }, summary: ["单位 " + hongbao.unit] }
+    : { warnings: { each: "很快结束" } };
+}
+export function judge() {
+  return { ok: true, amount: 1 };
+}
+`,
+      "tests.json": JSON.stringify({
+        tests: [
+          {
+            name: "自动，藏起来的不管",
+            params: { each: 999 },
+            input: "x",
+            expect: { ok: true },
+          },
+          {
+            name: "自己定",
+            params: { mode: "fixed", each: 100 },
+            input: "x",
+            expect: { ok: true },
+          },
+        ],
+      }),
+    });
+    const { exitCode, lines } = await run(checkCommand, { dir });
+    expect(lines).toContain("✓ explain()：默认参数时表单上写的");
+    expect(lines).toContain("  怎么定：按奖池分，每人约 1000 分");
+    expect(lines).toContain("  单位 LDC");
+    expect(lines).toContainEqual(expect.stringMatching(/^✓ 测试 2 \/ 2 通过$/));
+    expect(exitCode).toBe(0);
+  }, 20_000);
+
+  it("npm run check fails on what explain() may not return", async () => {
+    const dir = kit({
+      "judge.js": `export function explain() {
+  return { hints: { gone: "x" } };
+}
+export function judge() {
+  return { ok: true, amount: 1 };
+}
+`,
+      "tests.json": JSON.stringify({
+        tests: [{ name: "一条", input: "x", expect: { ok: true } }],
+      }),
+    });
+    const { exitCode, lines } = await run(checkCommand, { dir });
+    expect(lines).toContain("✗ explain() 返回的不对");
+    expect(lines).toContain(
+      "  explain 的 hints 里的 key（gone）不是声明过的参数",
+    );
+    expect(exitCode).not.toBe(0);
+  }, 20_000);
+});
+
 // npm run page --shot (docs/kit-simulator-design.md §4): the simulator in a
 // browser no one sees, three shots and what went wrong in the page. Only
 // where a browser can be started (Chrome, Edge or Playwright's Chromium).

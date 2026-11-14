@@ -19,7 +19,9 @@ import {
   readTests,
   runTest,
   secretsInView,
+  TEST_DEFAULTS,
   uncountedShares,
+  unitFieldsOf,
 } from "../../runtime/index.mjs";
 import { bytesOf, fingerprintOf, readProjectFile, sizeText } from "./files.mjs";
 import { openSandbox, SLOW_MS } from "./sandbox.mjs";
@@ -55,6 +57,8 @@ async function runAll(code, tests) {
   /** 协议第四版: secret params a test's view showed, by key. */
   const leaked = new Set();
   let loadProblem = null;
+  /** explain() on the default params, when it has one. */
+  let explained = null;
   const { network, declarations } = sandbox;
   // 协议第三版: each test's params, held to what is declared and to check().
   const options = {
@@ -90,11 +94,28 @@ async function runAll(code, tests) {
           ))
             leaked.add(key);
     }
+    // explain() (§3.3): what a sender sees under the form as it starts,
+    // the default params on the tests' default 红包.
+    if (!loadProblem && declarations.explain) {
+      const read = paramValues(declarations.params, {});
+      const { title, total, count, minEach } = TEST_DEFAULTS.hongbao;
+      explained =
+        "values" in read
+          ? await sandbox.explain(read.values, {
+              title,
+              total,
+              count,
+              minEach,
+              ...unitFieldsOf(null),
+            })
+          : { skipped: read.problems[0]?.message ?? "" };
+    }
   } finally {
     await sandbox.close();
   }
   const loadNote = loadProblem ? null : slowLoadNote(sandbox.loadMs);
   return {
+    explained,
     results,
     unstable,
     leaked: [...leaked],
@@ -193,7 +214,7 @@ export async function checkCommand({ dir, print = console.log }) {
         ...networkParamProblems(declared.params, network),
         ...keyNetworkProblems(declared.params, network),
       ];
-      const declaredOk = declaredProblems.length === 0;
+      let declaredOk = declaredProblems.length === 0;
       if (!declaredOk) {
         print(row(false, "参数声明写得不对"));
         for (const problem of declaredProblems) print(`  ${problem}`);
@@ -226,6 +247,37 @@ export async function checkCommand({ dir, print = console.log }) {
             for (const line of optionLines(item, declared.params))
               print(`    ${line}`);
           }
+        }
+        // explain() (§3.3): what the form says as it starts.
+        const explained = all.explained;
+        if (explained && "skipped" in explained)
+          print(
+            row(
+              true,
+              `explain()：默认参数没填全（${explained.skipped}），没跑`,
+            ),
+          );
+        else if (explained && "failure" in explained) {
+          print(row(false, "explain() 出错"));
+          say(
+            print,
+            `  ${failureText(explained.failure, explained.detail)}`,
+            "    ",
+          );
+          declaredOk = false;
+        } else if (explained && "invalid" in explained) {
+          print(row(false, "explain() 返回的不对"));
+          print(`  ${explained.invalid}`);
+          declaredOk = false;
+        } else if (explained) {
+          print(row(true, "explain()：默认参数时表单上写的"));
+          for (const item of declared.params) {
+            const warning = explained.warnings[item.key];
+            const hint = explained.hints[item.key];
+            if (warning) print(`  ${item.label}：⚠ ${warning}`);
+            else if (hint) print(`  ${item.label}：${hint}`);
+          }
+          for (const line of explained.summary) print(`  ${line}`);
         }
       }
       const good = all.results.filter((result) => result.passed).length;

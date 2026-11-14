@@ -424,6 +424,10 @@ export type AdminJudgeUsageCounts = {
   switches: number;
   /** 联网: requests judgments sent out (§9.7). */
   fetches: number;
+  /** check() and 试一试 a sender asked for (docs/judge-square-design.md §3, §6). */
+  tries: number;
+  /** check() and explain() as senders filled the form (§3.3, 填表试算). */
+  fills: number;
 };
 
 /**
