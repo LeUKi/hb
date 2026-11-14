@@ -22,6 +22,7 @@ import {
   safeRelativeReturnTo,
   secureCookiesForOrigin,
 } from "../security/http";
+import { getOptionalActor } from "./personal-token";
 import {
   createSession,
   getOptionalSession,
@@ -69,11 +70,15 @@ export const authRoutes = new Hono<ApiContext>()
     return c.json({ ok: true });
   })
   .get("/session", async (c) => {
-    const session = await getOptionalSession(c);
+    // A 个人令牌 reads who it stands for here too (docs/personal-token-design.md
+    // §3): no cookie session behind it, so no CSRF token and no image cookie.
+    const session = await getOptionalActor(c);
     if (!session) {
       return c.json({ user: null, csrfToken: null, attemptCooldown: null });
     }
-    if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
+    const byToken = session.personalTokenId !== undefined;
+    if (!byToken && isFirstPartySessionRead(c))
+      await setImageSessionCookie(c, session);
 
     const [access, transfer, stuck, points] = await Promise.all([
       balanceAccessFor(c.env, session.user.id, session.user.isAdmin),
@@ -96,7 +101,7 @@ export const authRoutes = new Hono<ApiContext>()
          */
         pointsAttention: points,
       },
-      csrfToken: session.csrfToken,
+      csrfToken: byToken ? null : session.csrfToken,
       attemptCooldown: session.attemptCooldown,
     });
   })

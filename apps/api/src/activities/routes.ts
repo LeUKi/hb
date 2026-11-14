@@ -23,8 +23,12 @@ import {
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import {
+  getOptionalActor,
+  requireActor,
+  requireActorMutation,
+} from "../auth/personal-token";
+import {
   type AuthenticatedSession,
-  getOptionalSession,
   requireAuth,
   requireProtectedMutation,
 } from "../auth/session";
@@ -200,7 +204,9 @@ async function claimantAndActivity(
 ): Promise<{ session: AuthenticatedSession; activity: ActivityRow }> {
   const reading = requireLdcActivity(c.env, id);
   reading.catch(() => {});
-  const session = await requireProtectedMutation(c);
+  // 个人令牌 may 领取 (docs/personal-token-design.md §3); the cookie
+  // session still needs the exact Origin and CSRF.
+  const session = await requireActorMutation(c);
   return { session, activity: await reading };
 }
 
@@ -270,7 +276,7 @@ export const activityRoutes = new Hono<ApiContext>()
     );
   })
   .get("/me/participations", historyQuery, async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     const query = c.req.valid("query");
     return c.json(
       await listParticipations(c.env, session.user.id, query.cursor, query),
@@ -478,7 +484,7 @@ export const activityRoutes = new Hono<ApiContext>()
     },
   )
   .get("/activities/:id", async (c) => {
-    const session = await getOptionalSession(c);
+    const session = await getOptionalActor(c);
     return c.json({
       activity: await getPublicActivity(
         c.env,
@@ -581,19 +587,19 @@ export const activityRoutes = new Hono<ApiContext>()
     );
   })
   .get("/activities/:id/claim", async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     return c.json({
       claim: await getCurrentClaim(c.env, c.req.param("id"), session.user.id),
     });
   })
   .get("/me/claims", cursorQuery, async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     return c.json(
       await listUserClaims(c.env, session.user.id, c.req.valid("query").cursor),
     );
   })
   .get("/me/claims/:id", async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     return c.json({
       claim: await getClaimDetail(c.env, c.req.param("id"), session.user.id),
     });

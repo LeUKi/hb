@@ -3319,3 +3319,43 @@ export const noticeSettings = sqliteTable(
   },
   (table) => [check("notice_settings_singleton", sql`${table.id} = 'global'`)],
 );
+
+/**
+ * 个人令牌 (docs/personal-token-design.md): someone's own token for scripts
+ * and clients, standing for that one account. Only its digest is kept; it
+ * runs out at expires_at, and a stop (its owner's, or an admin's with a
+ * reason) is final. Its last use rides on each request, at most once a minute.
+ */
+export const personalTokens = sqliteTable(
+  "personal_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    /** The token's last 4 characters, to tell tokens apart in the list. */
+    lastFour: text("last_four").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+    lastUsedIp: text("last_used_ip"),
+    useCount: integer("use_count").notNull().default(0),
+    revokedAt: integer("revoked_at"),
+    /** An admin's stop: who, and why (the owner's own leaves both empty). */
+    revokedByUserId: text("revoked_by_user_id").references(() => users.id),
+    revokeReason: text("revoke_reason"),
+  },
+  (table) => [
+    uniqueIndex("personal_tokens_token_unique").on(table.tokenHash),
+    index("personal_tokens_user_idx").on(table.userId, table.createdAt),
+    check(
+      "personal_tokens_valid",
+      sql`length(${table.name}) BETWEEN 1 AND 20 AND length(${table.lastFour}) = 4
+        AND ${table.expiresAt} > ${table.createdAt} AND ${table.useCount} >= 0
+        AND (${table.revokedAt} IS NOT NULL OR (${table.revokedByUserId} IS NULL AND ${table.revokeReason} IS NULL))
+        AND (${table.revokedByUserId} IS NULL OR length(${table.revokeReason}) BETWEEN 1 AND 200)`,
+    ),
+  ],
+);

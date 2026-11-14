@@ -47,7 +47,52 @@ export type AuthenticatedSession = {
   expiresAt: Date;
   user: AuthenticatedUser;
   attemptCooldown: AttemptCooldown;
+  /**
+   * Set when the request came with a 个人令牌 instead of the cookie
+   * (docs/personal-token-design.md): its id. There is then no cookie
+   * session behind it: no CSRF token, nothing to log out.
+   */
+  personalTokenId?: string;
 };
+
+/** What a signed-in account reads as, from its row and its cooldown. */
+export type AccountRow = {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  trustLevel: number | null;
+  profileSeenAt: Date | null;
+  provider: string;
+  externalId: string;
+  cooldownRevision: number | null;
+  nextAllowedAt: number | null;
+  serverTime: number;
+};
+
+/** The same account and cooldown, for the cookie and for a 个人令牌. */
+export function accountOf(
+  c: Context<ApiContext>,
+  row: AccountRow,
+): Pick<AuthenticatedSession, "user" | "attemptCooldown"> {
+  return {
+    user: {
+      id: row.userId,
+      username: row.username,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+      isAdmin: isAdministrator(c.env, row.provider, row.externalId),
+      trustLevel: row.trustLevel,
+      profileSeenAt: row.profileSeenAt ? row.profileSeenAt.getTime() : null,
+      linuxDoId: String(row.externalId),
+    },
+    attemptCooldown: {
+      revision: row.cooldownRevision ?? 0,
+      serverTime: row.serverTime,
+      nextAllowedAt: row.nextAllowedAt ?? 0,
+    },
+  };
+}
 
 export async function createSession(c: Context<ApiContext>, userId: string) {
   const appOrigin = requireAppOrigin(c.env);
@@ -224,21 +269,7 @@ export async function getOptionalSession(c: Context<ApiContext>) {
     tokenHash: row.tokenHash,
     csrfToken: row.csrfToken,
     expiresAt: row.expiresAt,
-    user: {
-      id: row.userId,
-      username: row.username,
-      displayName: row.displayName,
-      avatarUrl: row.avatarUrl,
-      isAdmin: isAdministrator(c.env, row.provider, row.externalId),
-      trustLevel: row.trustLevel,
-      profileSeenAt: row.profileSeenAt ? row.profileSeenAt.getTime() : null,
-      linuxDoId: String(row.externalId),
-    },
-    attemptCooldown: {
-      revision: row.cooldownRevision ?? 0,
-      serverTime: row.serverTime,
-      nextAllowedAt: row.nextAllowedAt ?? 0,
-    },
+    ...accountOf(c, row),
   } satisfies AuthenticatedSession;
 }
 

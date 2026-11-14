@@ -17,6 +17,7 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 
 import { ActivityError } from "../activities/errors";
+import { requireActor } from "../auth/personal-token";
 import {
   getOptionalSession,
   requireAuth,
@@ -123,7 +124,7 @@ export const balanceRoutes = new Hono<ApiContext>()
     await next();
   })
   .get("/me/balance", recordsQuery, async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     const access = await requireBalanceEntry(
       c.env,
       session.user.id,

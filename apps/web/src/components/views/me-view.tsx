@@ -24,6 +24,7 @@ import {
 } from "../../lib/session";
 import { authErrorAtom } from "../../lib/store";
 import { useMyTips } from "../../lib/tips";
+import { PersonalTokensSection } from "../account/personal-tokens";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import {
   Callout,
@@ -227,6 +228,8 @@ function Me({ user }: { user: SessionUser }) {
         {/* Its own read: the page does not wait for it, and without it
             the section stays away. */}
         <MeRank user={user} />
+
+        <PersonalTokensSection user={user} />
 
         <PageSection title="资料" id="me-profile">
           <InfoList

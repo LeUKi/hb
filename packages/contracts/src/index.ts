@@ -42,6 +42,7 @@ export * from "./mini-app";
 export * from "./notices";
 export * from "./page-url";
 export * from "./payments";
+export * from "./personal-tokens";
 export * from "./points";
 export * from "./profile";
 export * from "./random";

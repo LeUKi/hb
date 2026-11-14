@@ -11,10 +11,11 @@ import { validator } from "hono/validator";
 import { ActivityError } from "../activities/errors";
 import { ActivityValidationError } from "../activities/routes";
 import {
-  getOptionalSession,
-  requireAuth,
-  requireProtectedMutation,
-} from "../auth/session";
+  getOptionalActor,
+  requireActor,
+  requireActorMutation,
+} from "../auth/personal-token";
+import { getOptionalSession, requireAuth } from "../auth/session";
 import type { ApiContext } from "../env";
 import { globalRedemptionObject } from "../runtime/objects";
 import { listSquare, listTopic } from "./service";
@@ -70,7 +71,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
       return checked.data;
     }),
     async (c) => {
-      const session = await requireProtectedMutation(c);
+      const session = await requireActorMutation(c);
       const stub = globalRedemptionObject(c.env, session.user.id);
       const response = await stub.fetch(
         "https://activity.internal/internal/redemptions/discover",
@@ -112,7 +113,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
       return checked.data;
     }),
     async (c) => {
-      const session = await requireProtectedMutation(c);
+      const session = await requireActorMutation(c);
       const stub = globalRedemptionObject(c.env, session.user.id);
       const response = await stub.fetch(
         "https://activity.internal/internal/redemptions/submit",
@@ -131,7 +132,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
     },
   )
   .get("/redemptions/:id", cursorQuery, async (c) => {
-    const session = await requireAuth(c);
+    const session = await requireActor(c);
     const stub = globalRedemptionObject(c.env, session.user.id);
     const response = await stub.fetch(
       "https://activity.internal/internal/redemptions/refresh",
@@ -177,7 +178,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
       },
     ),
     async (c) => {
-      const session = await getOptionalSession(c);
+      const session = await getOptionalActor(c);
       const query = c.req.valid("query");
       return c.json(
         await listSquare(
