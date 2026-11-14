@@ -1,4 +1,8 @@
-import type { JudgeParamProblem, ManagedActivity } from "@hb/contracts";
+import {
+  formatUnitAmount,
+  type JudgeParamProblem,
+  type ManagedActivity,
+} from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, CalendarX2, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -26,7 +30,7 @@ import { Button } from "../ui/button";
 import { Reveal, Swap } from "../ui/reveal";
 import { ActionBar, SaveButtons } from "./action-bar";
 import { CancelScheduleDialog } from "./cancel-schedule-dialog";
-import { CodeStep } from "./code-step";
+import { CodeStep, CodeTry, ParamsStep } from "./code-step";
 import { DeleteDraftDialog } from "./delete-draft-dialog";
 import {
   type ErrorOf,
@@ -52,7 +56,12 @@ import {
   withKeysKept,
   withMode,
 } from "./form-state";
-import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
+import {
+  declaredParams,
+  judgeIssuesOf,
+  paramsLineOf,
+  triedHongbao,
+} from "./judge-issues";
 import { useFormPoints, useFormUnit } from "./points-funding";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
@@ -97,8 +106,10 @@ const quietLineOf: Partial<Record<SettingsGroup, string>> = {
 };
 
 /**
- * 发红包 (/new) and 📝 编辑: four steps — 玩法, 发多少, 怎么领, 起个标题 —
- * as a stack of cards, the rarely changed settings in a 更多设置 panel.
+ * 发红包 (/new) and 📝 编辑: four steps — 玩法, 发多少, 怎么领, 起个标题;
+ * 代码判定's 玩法, 判定器, 发多少, 参数, 起个标题 (no 参数 for a 判定器 that
+ * declares none) — as a stack of cards, the rarely changed settings in a
+ * 更多设置 panel.
  * On /new the steps are answered in order, one card open, the answered
  * ones collapsed into strips above it that open again when pressed; on
  * 📝 every step is a strip, opened one at a time. Before a 红包 opens
@@ -292,11 +303,13 @@ export function HongbaoForm({
     ? declaredParams(declarations, form.judge.params)
     : form.judge.params;
   const checkKey = JSON.stringify([sentParams, tried]);
-  // 填表试算 (§3.3): check() and explain() asked as the params are filled.
+  // 填表试算 (§3.3): check() and explain() asked as the params are filled,
+  // from their step on (after 发多少: the pool they hang on is known).
+  const [paramsReached, setParamsReached] = useState(editing);
   const fill = useParamsFill({
     judgeId: form.judge.judgeId,
     n: usedN,
-    declarations: coded ? declarations : null,
+    declarations: coded && paramsReached ? declarations : null,
     params: declarations ? sentParams : {},
     hongbao: tried,
     checkKey,
@@ -317,6 +330,31 @@ export function HongbaoForm({
     )?.message;
 
   const formUnit = useFormUnit(form);
+  // 发多少 as the 判定器 suggests (§4), in its 三方积分's 最小单位 (meta.
+  // points): its default counts 最小单位, so 10000 is 100.00 LDC and, at
+  // 10 D币 each, 100000 D币. Left as it came, it follows the unit picked;
+  // typed over, it stays (the user, 2026-11-14).
+  const suggested =
+    coded &&
+    declarations?.hongbao?.total?.default !== undefined &&
+    formUnit.unit !== "…"
+      ? formatUnitAmount(
+          declarations.hongbao.total.default * formUnit.step,
+          formUnit.step,
+        )
+      : undefined;
+  const followedTotal = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (suggested === undefined) return;
+    const before = followedTotal.current;
+    followedTotal.current = suggested;
+    if (before === undefined || before === suggested || fixed) return;
+    update((current) =>
+      current.judge.total.trim() === before
+        ? { ...current, judge: { ...current.judge, total: suggested } }
+        : current,
+    );
+  });
   const issues = [
     ...issuesOf(withDefaultTitle(form), undefined, formUnit),
     ...judgeIssues,
@@ -340,21 +378,27 @@ export function HongbaoForm({
   const [announced, setAnnounced] = useState<{ at: number; text: string }>();
   const say = (text: string) => setAnnounced({ at: Date.now(), text });
 
-  // The steps in this 玩法's order (代码判定 picks its 判定器 second).
-  const order = stepsOf(form.mode);
+  // The steps in this 玩法's order (代码判定 picks its 判定器 second, its
+  // params after 发多少; none for a 判定器 that declares none).
+  const hasParams = (declarations?.params.length ?? 0) > 0;
+  const order = stepsOf(form.mode, hasParams);
   const placeOf = (step: StepId) => order.findIndex((item) => item.id === step);
   // The furthest step /new may show: every step before it is answered.
   const firstInvalid = order.findIndex(
     (step) => stepIssues(issues, step.id).length > 0,
   );
   const openable = firstInvalid === -1 ? order.length : firstInvalid + 1;
-  const linear = useLinearSteps(openable, !editing);
+  const linear = useLinearSteps(openable, !editing, order.length);
   const [openStep, setOpenStep] = useState<StepId | null>(null);
   const currentIndex = editing
     ? openStep
       ? placeOf(openStep)
       : -1
     : linear.current - 1;
+  const onParams = order[currentIndex]?.id === "params";
+  useEffect(() => {
+    if (onParams) setParamsReached(true);
+  }, [onParams]);
 
   // 更多设置: a history entry of its own; remounted per opening, so it
   // starts at the group (and field) it was opened for.
@@ -430,7 +474,8 @@ export function HongbaoForm({
   // param. As a starting point, not an unsaved change.
   const started = useRef(false);
   const [starting, setStarting] = useState(!editing && Boolean(startJudge));
-  const [startParam, setStartParam] = useState<string | null>(null);
+  // Picked so: a line over its card says what comes next, till 下一步.
+  const [startHint, setStartHint] = useState(false);
   useEffect(() => {
     if (editing || !startJudge || started.current) return;
     started.current = true;
@@ -450,33 +495,12 @@ export function HongbaoForm({
             setBaseline(kept);
             setForm(kept);
           },
-          done: (firstParam: string | null) => {
+          done: (picked: boolean) => {
             setStarting(false);
-            setStartParam(firstParam);
+            setStartHint(picked);
           },
         }
       : undefined;
-  useEffect(() => {
-    if (startParam === null || currentIndex !== placeOf("claim")) return;
-    // One's own waits for its code to be placed; another's is in already.
-    if (!borrowed && !judge.known) return;
-    const key = startParam;
-    setStartParam(null);
-    const field = `hb-param-${key}`;
-    // After the step's title took focus, as a new step's does; once more
-    // if the page took it back meanwhile (its title, the page itself),
-    // never from something the person chose.
-    window.setTimeout(() => jumpTo(field), 400);
-    window.setTimeout(() => {
-      const now = document.activeElement;
-      if (
-        now?.id !== field &&
-        (now === document.body || now?.id === "view" || now === heading.current)
-      )
-        jumpTo(field);
-    }, 1200);
-  });
-
   /**
    * The params asked of the version's check() (§3 校验), when it has one:
    * what it says shows under each; false when it found something.
@@ -539,9 +563,14 @@ export function HongbaoForm({
       showIssue(first.field);
       return;
     }
-    // Its params past check() too (§3 校验), before going on.
-    if (step === "claim" && !(await paramsPassCheck())) return;
+    // Its params past check() too (§3 校验), before going on: on their
+    // step, or on 发多少 for a 判定器 that declares none.
+    const checksParams =
+      step === "params" ||
+      (step === "amount" && form.mode === "code" && !hasParams);
+    if (checksParams && !(await paramsPassCheck())) return;
     setAnnounced(undefined);
+    if (step === "claim") setStartHint(false);
     linear.next();
   };
 
@@ -677,6 +706,36 @@ export function HongbaoForm({
             errorOf={errorOf}
             locked={locked}
             openSheet={(group) => openSheet(group)}
+            after={
+              // 试一试 after the pool, for a 判定器 with no params step.
+              form.mode === "code" && !hasParams ? (
+                <CodeTry
+                  form={form}
+                  locked={locked}
+                  frozen={locks}
+                  tried={tried}
+                  usedN={usedN}
+                />
+              ) : undefined
+            }
+          />
+        );
+      case "params":
+        return (
+          <ParamsStep
+            form={form}
+            update={update}
+            locked={locked}
+            frozen={locks}
+            declarations={declarations}
+            paramErrorOf={(key) =>
+              errorOf(`hb-param-${key}`) ?? liveParamError(key)
+            }
+            explanation={fill.explanation}
+            explaining={fill.pending}
+            network={borrowed ? borrowed.network : judge.network}
+            tried={tried}
+            usedN={usedN}
           />
         );
       case "claim":
@@ -696,15 +755,15 @@ export function HongbaoForm({
               timeLine={timingLine(form)}
               scopeLine={scopeLine(form)}
               userId={user.id}
-              declarations={declarations}
-              paramErrorOf={(key) =>
-                errorOf(`hb-param-${key}`) ?? liveParamError(key)
-              }
-              explanation={fill.explanation}
-              explaining={fill.pending}
-              tried={tried}
               borrow={borrow}
               start={start}
+              hint={
+                startHint && !editing
+                  ? hasParams
+                    ? "判定器已经替你选好了。接下来先填发多少，再填参数。"
+                    : "判定器已经替你选好了。接下来填发多少。"
+                  : undefined
+              }
             />
           );
         return (
@@ -894,6 +953,7 @@ export function HongbaoForm({
                   <StepCard
                     key={step.id}
                     index={index}
+                    count={order.length}
                     title={stepTitle(step.id, form)}
                     summary={summaryOf(
                       step.id,
@@ -909,6 +969,9 @@ export function HongbaoForm({
                             : judge.name
                           : undefined,
                       formUnit,
+                      declarations
+                        ? paramsLineOf(declarations, form.judge.params)
+                        : undefined,
                     )}
                     open={open}
                     current={!editing && open}

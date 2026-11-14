@@ -36,6 +36,8 @@ export type StepCardProps = {
   locked?: boolean;
   /** Problems on this step, once it was checked. */
   problems?: number;
+  /** How many steps this form takes (代码判定 may take five). */
+  count?: number;
   headingRef?: Ref<HTMLElement>;
   children?: ReactNode;
 };
@@ -59,6 +61,7 @@ export function StepCard({
   collapsible = false,
   locked = false,
   problems = 0,
+  count = steps.length,
   headingRef,
   children,
 }: StepCardProps) {
@@ -204,7 +207,7 @@ export function StepCard({
                   className={headClass}
                 >
                   <span className="sr-only">
-                    第 {index + 1} 步，共 {steps.length} 步：
+                    第 {index + 1} 步，共 {count} 步：
                   </span>
                   {head}
                 </span>

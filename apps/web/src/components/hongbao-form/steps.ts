@@ -9,11 +9,11 @@ import {
   timingLine,
 } from "./form-state";
 
-// The 发红包 flow's four steps, and where each field and its problems live:
+// The 发红包 flow's steps (four; 代码判定's five), and where each field and its problems live:
 // on a step, or in the 更多设置 panel (the second level, for what is rarely
 // changed). Field ids are the controls' DOM ids, as issuesOf reports them.
 
-export type StepId = "mode" | "amount" | "claim" | "title";
+export type StepId = "mode" | "amount" | "claim" | "params" | "title";
 
 export const steps: { id: StepId; title: string }[] = [
   { id: "mode", title: "玩法" },
@@ -22,17 +22,30 @@ export const steps: { id: StepId; title: string }[] = [
   { id: "title", title: "起个标题" },
 ];
 
+/** 代码判定's params, a step of their own after 发多少 (judge-square §6). */
+const paramsStep: { id: StepId; title: string } = {
+  id: "params",
+  title: "参数",
+};
+
 /**
  * The steps in the order a form takes them: 代码判定 picks its 判定器
- * second, before 发多少, whose defaults and ranges it sets
- * (docs/judge-square-design.md §6).
+ * second, before 发多少, whose defaults and ranges it sets; its params
+ * come after 发多少, as what they mean and check() and explain() say of
+ * them hang on the pool and its unit (docs/judge-square-design.md §6;
+ * the user, 2026-11-14: 不先确定好金额，前面的计算就没有意义). A 判定器
+ * that declares none has no such step.
  */
-export function stepsOf(mode: FormState["mode"]) {
+export function stepsOf(mode: FormState["mode"], withParams = true) {
   if (mode !== "code") return steps;
   const [first, amount, claim, title] = steps;
-  return [first, claim, amount, title].filter(
-    (step): step is (typeof steps)[number] => step !== undefined,
-  );
+  return [
+    first,
+    claim,
+    amount,
+    withParams ? paramsStep : undefined,
+    title,
+  ].filter((step): step is (typeof steps)[number] => step !== undefined);
 }
 
 export const stepIndex = (step: StepId, mode?: FormState["mode"]) =>
@@ -51,11 +64,13 @@ export type SettingsGroup =
 /** A step's title: 代码判定's second step is 判定器, in place of 怎么领. */
 export function stepTitle(step: StepId, form: FormState) {
   if (step === "claim" && form.mode === "code") return "判定器";
+  if (step === "params") return paramsStep.title;
   return steps.find((item) => item.id === step)?.title ?? "";
 }
 
 /** The step a field belongs to (fields in the panel count for theirs). */
 export function stepOfField(field: string): StepId {
+  if (field.startsWith("hb-param-")) return "params";
   if (
     field.startsWith("hb-password-") ||
     field.startsWith("hb-timing-") ||
@@ -64,7 +79,6 @@ export function stepOfField(field: string): StepId {
     field === "hb-code-code" ||
     field === "hb-judge-name" ||
     field === "hb-judge-description" ||
-    field.startsWith("hb-param-") ||
     field === "hb-code-tests" ||
     field === "hb-code-check"
   )
@@ -131,13 +145,17 @@ export function summaryOf(
   judgeName?: string,
   /** LDC, or the chosen 三方积分's. */
   money: AmountUnit = LDC_UNIT,
+  /** 代码判定's params as chosen (标准 · 按奖池分 · 普通), once known. */
+  paramsLine?: string,
 ) {
   switch (step) {
     case "mode":
       return modeLabels[form.mode];
     case "amount": {
       const { total, shares, unit } = plan(form);
-      if (total === null || shares === null) return "还没填";
+      // 代码判定 (protocol 5) has no shares, only the pool.
+      if (total === null || (shares === null && form.mode !== "code"))
+        return "还没填";
       const from =
         form.funding === "balance"
           ? " · 从🐟额发"
@@ -153,7 +171,7 @@ export function summaryOf(
         case "timed_draw":
           return `奖池 ${shown(total)} · ${shares} 个名额${from}`;
         case "code":
-          return `总奖池 ${shown(total)} · ${shares} 份${from}`;
+          return `总奖池 ${shown(total)}${from}`;
         default:
           return `总额 ${shown(total)} · ${shares} 份${from}`;
       }
@@ -169,6 +187,8 @@ export function summaryOf(
       const count = form.passwords.filter((item) => item.trim()).length;
       return `${count > 0 ? `口令 ${count} 个` : "口令还没填"} · ${time}`;
     }
+    case "params":
+      return paramsLine || "已填好";
     case "title":
       return form.title.trim() || defaultTitle(form);
   }

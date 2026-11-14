@@ -39,6 +39,31 @@ export function declaredParams(
 }
 
 /**
+ * 参数's strip (judge-square §6): the shown choices, switches and whole
+ * numbers as filled — “标准 · 按奖池分 · 预计人数 20 · 普通”.
+ */
+export function paramsLineOf(
+  declarations: JudgeDeclarations,
+  params: Record<string, unknown>,
+) {
+  const shown = shownParams(declarations.params, params);
+  return declarations.params
+    .filter((item) => shown.has(item.key))
+    .map((item) => {
+      const value = params[item.key];
+      if (item.type === "choice")
+        return item.options.find((option) => option.value === value)?.label;
+      if (item.type === "switch" && typeof value === "boolean")
+        return `${item.label}${value ? "开" : "关"}`;
+      if (item.type === "integer" && typeof value === "number")
+        return `${item.label} ${value}`;
+      return undefined;
+    })
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
+/**
  * The 判定器's problems with the form: each param's (its declared rules,
  * then what check() said of these very params), and 发多少 outside its
  * ranges (§4: “这个判定器要求 1–10 份”).
@@ -100,7 +125,10 @@ export function triedHongbao(
     title: withDefaultTitle(form).title,
     total:
       cents(form.judge.total) ??
-      rules?.total?.default ??
+      // The 判定器's default counts 最小单位 (meta.points); here 分.
+      (rules?.total?.default !== undefined
+        ? rules.total.default * (points?.step ?? 1)
+        : undefined) ??
       Math.max(100, points?.step ?? 0),
     ...(points ? { points } : {}),
   };

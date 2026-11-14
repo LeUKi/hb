@@ -8,7 +8,13 @@ import {
   type MyJudgeVersion,
   type SquareJudge,
 } from "../packages/contracts/src";
-import { type MockUser, mockSession, openApp, viewer } from "./support/app";
+import {
+  type MockUser,
+  mockSession,
+  openApp,
+  toParams,
+  viewer,
+} from "./support/app";
 
 // 判定器广场 (docs/judge-square-design.md §8, §15) on the web, against a
 // mocked API: 站长精选 and 大家做的, another's 判定器页, 复制一份来改 and
@@ -875,7 +881,6 @@ test.describe("判定器广场", () => {
     await card.getByRole("button", { name: "用这个" }).click();
     await expect(square).toBeHidden();
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
-    await expect(page.locator("#hb-param-max")).toHaveValue("100");
     await page.getByRole("button", { name: "查看代码" }).click();
     const code = page.getByRole("dialog", { name: "代码" });
     await expect(code).toContainText("判定器「猜数字」· @maker · 第 2 版");
@@ -884,11 +889,14 @@ test.describe("判定器广场", () => {
     );
     await code.getByRole("button", { name: "关闭" }).click();
     await expect(code).toBeHidden();
-    await page.locator("#hb-param-answer").fill("42");
-    await expect(page.locator("#hb-param-answer")).toHaveValue("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
     // Its default pool for 发多少 (§4); 份数 and 每份至少 no longer count.
     await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
+    // Then its params (§6).
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    await page.locator("#hb-param-answer").fill("42");
+    await expect(page.locator("#hb-param-answer")).toHaveValue("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
@@ -944,6 +952,7 @@ test.describe("判定器广场", () => {
       .getByRole("button", { name: "用这个" })
       .click();
     await expect(square).toBeHidden();
+    await toParams(page);
     const box = page.locator("#hb-param-ai");
     await expect(box).toHaveAttribute("type", "password");
     await expect(
@@ -965,7 +974,6 @@ test.describe("判定器广场", () => {
       page.getByText("还没填AI 密钥", { exact: true }),
     ).toBeVisible();
     await box.fill("sk-test");
-    await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
@@ -1029,13 +1037,17 @@ test.describe("判定器广场", () => {
     });
   });
 
-  test("用它发红包（别人的）：/new?judge= 到第 2 步，挑好它，焦点在第一项参数", async ({
+  test("用它发红包（别人的）：/new?judge= 到第 2 步，挑好它，上面写接下来先填发多少再填参数", async ({
     page,
   }) => {
     await mockSquare(page, member);
     await openApp(page, `/new?judge=${GUESS}`);
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
-    await expect(page.locator("#hb-param-max")).toBeFocused();
+    await expect(page.locator("#hb-judge-hint")).toHaveText(
+      "判定器已经替你选好了。接下来先填发多少，再填参数。",
+    );
+    await toParams(page);
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
   });
 
   // 选项联动 (judge-square §3): an option sets other params and says more.
@@ -1078,6 +1090,7 @@ test.describe("判定器广场", () => {
     );
     await openApp(page, `/new?judge=${GUESS}`);
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    await toParams(page);
     const max = page.locator("#hb-param-max");
     // As it came: the defaults; the chosen option's hint.
     await expect(max).toHaveValue("100");
@@ -1211,8 +1224,8 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
   async function pickGuess(page: Page) {
     await openApp(page, `/new?judge=${GUESS}`);
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    await toParams(page);
     await page.locator("#hb-param-answer").fill("42");
-    await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "下一步" }).first().click();
   }
 

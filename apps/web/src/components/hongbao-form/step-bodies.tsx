@@ -212,12 +212,15 @@ export function AmountStep({
   errorOf,
   locked,
   openSheet,
+  after,
 }: {
   form: FormState;
   update: Update;
   errorOf: ErrorOf;
   locked: boolean;
   openSheet: OpenSheet;
+  /** Under it all: 代码判定's 试一试 when its 判定器 has no params step. */
+  after?: ReactNode;
 }) {
   const split = splitLine(form);
   return (
@@ -240,6 +243,7 @@ export function AmountStep({
           />
         ))}
       {locked && <LockedNote />}
+      {after}
     </div>
   );
 }

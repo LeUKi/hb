@@ -46,6 +46,20 @@ export async function openApp(page: Page, path = "/") {
   );
 }
 
+/**
+ * 代码判定 on /new: from ② 判定器, picked, on through ③ 发多少 to ④ 参数
+ * (docs/judge-square-design.md §6: the params after the pool).
+ */
+export async function toParams(page: Page) {
+  const next = page.getByRole("button", { name: "下一步" }).first();
+  await next.click();
+  await expect(page.locator("#hb-code-total")).toBeVisible();
+  await next.click();
+  await expect(
+    page.getByRole("heading", { name: /^第 4 步，共 5 步/ }),
+  ).toBeVisible();
+}
+
 /** Answers /api/session for a guest or one account. */
 export async function mockSession(
   page: Page,

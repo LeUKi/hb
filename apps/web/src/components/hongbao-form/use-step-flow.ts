@@ -20,7 +20,12 @@ declare module "@tanstack/history" {
  * starts fresh with the page, so step entries a visit left behind (after a
  * reload, or back from the new 红包) are walked back on arrival.
  */
-export function useLinearSteps(openable: number, enabled: boolean) {
+export function useLinearSteps(
+  openable: number,
+  enabled: boolean,
+  /** How many steps this form takes (代码判定 may take five). */
+  count: number = steps.length,
+) {
   const router = useRouter();
   const inState = useLocation({
     select: (location) => location.state.formStep ?? 1,
@@ -114,7 +119,7 @@ export function useLinearSteps(openable: number, enabled: boolean) {
     if (pending.current) return;
     const { state, rest } = strip();
     const at = state.formStep ?? 1;
-    if (at >= steps.length) return;
+    if (at >= count) return;
     setReached((value) => Math.max(value, at + 1));
     const { href } = router.history.location;
     router.history.push(href, {
@@ -122,7 +127,7 @@ export function useLinearSteps(openable: number, enabled: boolean) {
       formStep: at + 1,
       formStepBase: state.formStepBase ?? state.__TSR_index,
     });
-  }, [router, strip]);
+  }, [router, strip, count]);
 
   return {
     current,

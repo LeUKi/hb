@@ -824,13 +824,9 @@ export function CodeStep({
   timeLine,
   scopeLine,
   userId,
-  declarations,
-  paramErrorOf,
-  explanation,
-  explaining,
-  tried,
   borrow,
   start,
+  hint,
 }: {
   form: FormState;
   update: Update;
@@ -846,16 +842,6 @@ export function CodeStep({
   timeLine: string;
   scopeLine: string;
   userId: string;
-  /** What the version the code is declares (§3, §4); null before it is known. */
-  declarations: JudgeDeclarations | null;
-  /** A param's problem: its declaration's rules, then the code's check(). */
-  paramErrorOf: (key: string) => string | undefined;
-  /** What explain() last said as the params were filled (§3.3). */
-  explanation: JudgeExplanation | null;
-  /** The params are being asked about now. */
-  explaining: boolean;
-  /** The 红包 试一试 judges on, as filled in so far, in 分. */
-  tried: JudgeTryInput["hongbao"];
   /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
   borrow: BorrowJudge;
   /**
@@ -866,10 +852,14 @@ export function CodeStep({
   start?: {
     judgeId: string;
     commit: Update;
-    done: (firstParam: string | null) => void;
+    done: (picked: boolean) => void;
   };
+  /**
+   * 用它发红包 (§6): said over the card once it is picked, till the
+   * sender goes on — what comes next, as the params are no longer here.
+   */
+  hint?: string;
 }) {
-  const formUnit = useFormUnit(form);
   const navigate = useNavigate();
   const set = (key: "prompt") => (value: string) =>
     update((current) => ({
@@ -877,7 +867,6 @@ export function CodeStep({
       judge: { ...current.judge, [key]: value },
     }));
   const borrowed = form.judge.borrowed;
-  const sessionUser = useSessionUser();
   const usedN = borrowed?.n ?? judge.version?.n;
   const named = usedN !== undefined ? `判定器 第 ${usedN} 版 ` : "判定器";
   // 我的判定器, for a newer version of the one picked (有第 4 版).
@@ -924,10 +913,10 @@ export function CodeStep({
 
   /**
    * Its newest usable version, put in: code, tests, params and defaults.
-   * The first param's key once it is in.
+   * Whether it is in.
    */
   const pick = async (picked: MyJudge, commit: Update = update) => {
-    if (!picked.usable) return null;
+    if (!picked.usable) return false;
     setPicking(true);
     setLoading({ name: picked.name });
     setPickError(null);
@@ -964,14 +953,14 @@ export function CodeStep({
         ),
       );
       setSwapping(false);
-      return version.declarations?.params[0]?.key ?? null;
+      return true;
     } catch (failure) {
       setPickError(
         refused(failure)
           ? failure.message
           : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
       );
-      return null;
+      return false;
     } finally {
       setPicking(false);
       setLoading(null);
@@ -999,7 +988,7 @@ export function CodeStep({
       });
       if ("picked" in outcome) {
         setSwapping(false);
-        return outcome.picked.version?.declarations?.params[0]?.key ?? null;
+        return true;
       }
       if ("own" in outcome) {
         const own =
@@ -1007,7 +996,7 @@ export function CodeStep({
           (await fetchMyJudge(judgeId).catch(() => null));
         if (own) return await pick(own, commit);
       }
-      return null;
+      return false;
     } finally {
       setLoading(null);
     }
@@ -1021,15 +1010,15 @@ export function CodeStep({
     if (!start || begun.current) return;
     begun.current = true;
     void (async () => {
-      let first: string | null = null;
+      let picked = false;
       try {
         const own = await fetchMyJudge(start.judgeId);
         queryClient.setQueryData(myJudgeKey(userId, own.id), own);
-        if (own.usable) first = await pick(own, start.commit);
+        if (own.usable) picked = await pick(own, start.commit);
         else setPickError("这个判定器还没有测试全过的版本。");
       } catch (failure) {
         if (failure instanceof ActivityRequestError && failure.status === 404)
-          first = await pickOther(start.judgeId, start.commit);
+          picked = await pickOther(start.judgeId, start.commit);
         else
           setPickError(
             refused(failure)
@@ -1038,17 +1027,22 @@ export function CodeStep({
           );
       } finally {
         setLoading(null);
-        start.done(first);
+        start.done(picked);
       }
     })();
   });
-  const params = declarations?.params ?? [];
   const picked = shown === "card";
   return (
     // A grid of one shrinkable column: the long lines of the code stay in
     // their editors and never widen the step. Its children are no Reveals;
     // the columns inside that hold one are flex.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
+      {/* 用它发红包 (§6): what comes next, over the picked card. */}
+      <Reveal show={Boolean(hint) && picked} className="min-w-0">
+        <Callout icon={Info}>
+          <p id="hb-judge-hint">{hint}</p>
+        </Callout>
+      </Reveal>
       <Swap id={shown}>
         {shown === "loading" ? (
           <LoadingJudge
@@ -1149,81 +1143,23 @@ export function CodeStep({
       )}
       {/* Under the 判定器, once it is in: opening with it, not before. */}
       <Reveal show={picked} className="min-w-0">
-        <div className="flex min-w-0 flex-col gap-5">
-          <Reveal show={params.length > 0} className="min-w-0">
-            {/* 三方积分: money params in its 最小单位 (third-party-points §10). */}
-            <ParamsUnitContext.Provider value={formUnit}>
-              <ParamsFields
-                params={params}
-                values={form.judge.params}
-                errorOf={paramErrorOf}
-                explanation={explanation}
-                explaining={explaining}
-                locked={locked}
-                network={borrowed ? borrowed.network : judge.network}
-                ownId={sessionUser?.linuxDoId}
-                keys={{
-                  filled: form.judge.keysFilled,
-                  typed: form.judge.keys,
-                  onType: (key, value) =>
-                    update((current) => {
-                      const { [key]: _left, ...rest } = current.judge.keys;
-                      return {
-                        ...current,
-                        judge: {
-                          ...current.judge,
-                          keys:
-                            value === null ? rest : { ...rest, [key]: value },
-                        },
-                      };
-                    }),
-                }}
-                onChange={(key, value) =>
-                  update((current) => ({
-                    ...current,
-                    judge: {
-                      ...current.judge,
-                      params: { ...current.judge.params, [key]: value },
-                    },
-                  }))
-                }
-              />
-            </ParamsUnitContext.Provider>
-          </Reveal>
-          <Field
-            label="领取时的提示"
-            htmlFor="hb-code-prompt"
-            hint="显示在领取的人的输入框上方。"
-            error={errorOf("hb-code-prompt")}
-            aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
-          >
-            <TextInput
-              id="hb-code-prompt"
-              value={form.judge.prompt}
-              placeholder="例如：输入你解出的 flag"
-              disabled={locked}
-              invalid={Boolean(errorOf("hb-code-prompt"))}
-              autoComplete="off"
-              onChange={(event) => set("prompt")(event.target.value)}
-            />
-          </Field>
-          <Reveal
-            show={Boolean(!locked && form.judge.judgeId && usedN !== undefined)}
-            className="min-w-0"
-          >
-            {form.judge.judgeId && usedN !== undefined && (
-              <TryJudge
-                judgeId={form.judge.judgeId}
-                n={usedN}
-                params={form.judge.params}
-                hongbao={tried}
-                prompt={form.judge.prompt}
-                disabled={frozen}
-                unit={formUnit}
-              />
-            )}
-          </Reveal>
-        </div>
+        <Field
+          label="领取时的提示"
+          htmlFor="hb-code-prompt"
+          hint="显示在领取的人的输入框上方。"
+          error={errorOf("hb-code-prompt")}
+          aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
+        >
+          <TextInput
+            id="hb-code-prompt"
+            value={form.judge.prompt}
+            placeholder="例如：输入你解出的 flag"
+            disabled={locked}
+            invalid={Boolean(errorOf("hb-code-prompt"))}
+            autoComplete="off"
+            onChange={(event) => set("prompt")(event.target.value)}
+          />
+        </Field>
       </Reveal>
       {locked ? (
         <>
@@ -1251,5 +1187,137 @@ export function CodeStep({
         {named}判定每次提交，不能再换；结束后所有人都能看到代码。
       </p>
     </div>
+  );
+}
+
+/**
+ * 代码判定's params (judge-square §3, §6), a step after 发多少: what they
+ * mean, check() and explain() hang on the pool and its unit, known by now.
+ * 试一试 under them judges on both.
+ */
+export function ParamsStep({
+  form,
+  update,
+  locked,
+  frozen,
+  declarations,
+  paramErrorOf,
+  explanation,
+  explaining,
+  network,
+  tried,
+  usedN,
+}: {
+  form: FormState;
+  update: Update;
+  locked: boolean;
+  /** Saving, or waiting on 重试原提交 (the form's fieldset lock). */
+  frozen: boolean;
+  /** What the version the code is declares (§3, §4); null before it is known. */
+  declarations: JudgeDeclarations | null;
+  /** A param's problem: its declaration's rules, then the code's check(). */
+  paramErrorOf: (key: string) => string | undefined;
+  /** What explain() last said as the params were filled (§3.3). */
+  explanation: JudgeExplanation | null;
+  /** The params are being asked about now. */
+  explaining: boolean;
+  /** Where the version may go (联网), for its 地址参数 and 密钥. */
+  network: readonly JudgeNetworkEntry[] | null;
+  /** The 红包 试一试 judges on, as filled in so far, in 分. */
+  tried: JudgeTryInput["hongbao"];
+  /** The version opened with. */
+  usedN: number | undefined;
+}) {
+  const formUnit = useFormUnit(form);
+  const sessionUser = useSessionUser();
+  const params = declarations?.params ?? [];
+  return (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
+      <Reveal show={params.length > 0} className="min-w-0">
+        {/* 三方积分: money params in its 最小单位 (third-party-points §10). */}
+        <ParamsUnitContext.Provider value={formUnit}>
+          <ParamsFields
+            params={params}
+            values={form.judge.params}
+            errorOf={paramErrorOf}
+            explanation={explanation}
+            explaining={explaining}
+            locked={locked}
+            network={network}
+            ownId={sessionUser?.linuxDoId}
+            keys={{
+              filled: form.judge.keysFilled,
+              typed: form.judge.keys,
+              onType: (key, value) =>
+                update((current) => {
+                  const { [key]: _left, ...rest } = current.judge.keys;
+                  return {
+                    ...current,
+                    judge: {
+                      ...current.judge,
+                      keys: value === null ? rest : { ...rest, [key]: value },
+                    },
+                  };
+                }),
+            }}
+            onChange={(key, value) =>
+              update((current) => ({
+                ...current,
+                judge: {
+                  ...current.judge,
+                  params: { ...current.judge.params, [key]: value },
+                },
+              }))
+            }
+          />
+        </ParamsUnitContext.Provider>
+      </Reveal>
+      <CodeTry
+        form={form}
+        locked={locked}
+        frozen={frozen}
+        tried={tried}
+        usedN={usedN}
+      />
+    </div>
+  );
+}
+
+/**
+ * 试一试 (§6): after the pool and the params, which it judges on — under
+ * the params, or under 发多少 for a 判定器 that declares none.
+ */
+export function CodeTry({
+  form,
+  locked,
+  frozen,
+  tried,
+  usedN,
+}: {
+  form: FormState;
+  locked: boolean;
+  frozen: boolean;
+  tried: JudgeTryInput["hongbao"];
+  usedN: number | undefined;
+}) {
+  const formUnit = useFormUnit(form);
+  const judgeId = form.judge.judgeId;
+  return (
+    <Reveal
+      show={Boolean(!locked && judgeId && usedN !== undefined)}
+      className="min-w-0"
+    >
+      {judgeId && usedN !== undefined && (
+        <TryJudge
+          judgeId={judgeId}
+          n={usedN}
+          params={form.judge.params}
+          hongbao={tried}
+          prompt={form.judge.prompt}
+          disabled={frozen}
+          unit={formUnit}
+        />
+      )}
+    </Reveal>
   );
 }

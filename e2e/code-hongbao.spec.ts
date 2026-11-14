@@ -34,6 +34,7 @@ import {
   omniboxInput,
   openApp,
   shown,
+  toParams,
   viewer,
 } from "./support/app";
 
@@ -2357,7 +2358,6 @@ test.describe("发红包 · 代码判定", () => {
     await expect(pick).not.toContainText("PLUS");
     // 判定器 first (judge-square §6), then 发多少.
     await pickMine(page);
-    await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
     await expect(page.locator("#hb-code-total")).toBeVisible();
     await expect(
@@ -2962,7 +2962,8 @@ test.describe("发红包 · 代码判定", () => {
       judgeKeys: ["ai"],
     });
     await openApp(page, `${path}/📝`);
-    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    // Its params: a step after 发多少 (judge-square §6).
+    await page.getByRole("button", { name: /^第 4 步 参数/ }).click();
     const kept = page.locator("#hb-param-ai");
     await expect(kept).toContainText("已填写");
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
@@ -3023,7 +3024,7 @@ test.describe("发红包 · 代码判定", () => {
       passed: true,
     });
     await openApp(page, `${path}/📝`);
-    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    await page.getByRole("button", { name: /^第 4 步 参数/ }).click();
     const box = page.locator("#hb-param-server");
     await box.fill("https://A.workers.dev");
     await box.blur();
@@ -3625,6 +3626,13 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
     await pickMine(page);
     await expect(page.getByRole("button", { name: "查看代码" })).toBeVisible();
+    // Its params wait for the pool (§6): not on this step.
+    await expect(page.locator("#hb-param-max")).toHaveCount(0);
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    // 发多少: its default pool; no 份数 any more (multi-prize §4.2).
+    await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
+    await expect(page.locator("#hb-code-count")).toHaveCount(0);
+    await page.getByRole("button", { name: "下一步" }).first().click();
     await expect(page.locator("#hb-param-max")).toHaveValue("100");
     const tag = page.getByRole("button", { name: "结束后公开" });
     await expect(tag).toHaveAccessibleDescription(
@@ -3641,11 +3649,8 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
     await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
-    // 发多少: its default pool; no 份数 any more (multi-prize §4.2).
-    await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
-    await expect(page.locator("#hb-code-count")).toHaveCount(0);
+    await expect(page.locator("#hb-title")).toBeVisible();
     expect(asked.checks.at(-1)?.params).toEqual({ max: 100, answer: 42 });
-    await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
     expect(asked.saved[0]?.activity.judge).toMatchObject({
@@ -3665,6 +3670,7 @@ test.describe("发红包 · 代码判定", () => {
     await mockDeploys(page);
     const asked = await mockMyJudges(page);
     await pickMine(page);
+    await toParams(page);
     await page.locator("#hb-param-answer").fill("42");
     const toggle = page.getByRole("button", { name: /^试一试/ });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -3697,14 +3703,19 @@ test.describe("发红包 · 代码判定", () => {
     await mockDeploys(page);
     await mockMyJudges(page);
     await pickMine(page);
+    await toParams(page);
     await page.locator("#hb-param-answer").fill("42");
+    // Back on ② 判定器: 换一个, then 不换了 keeps what was filled.
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
     await page.getByRole("button", { name: "换一个" }).click();
     await expect(
       page.getByRole("button", { name: /^去判定器广场挑一个/ }),
     ).toBeVisible();
     await page.getByRole("button", { name: "不换了" }).click();
     await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await toParams(page);
     await expect(page.locator("#hb-param-answer")).toHaveValue("42");
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
     await page.getByRole("button", { name: "换一个" }).click();
     await page.getByRole("link", { name: /^自己写一个/ }).click();
     // What was filled in is not saved: asked first, as any link is.
@@ -3731,7 +3742,7 @@ test.describe("发红包 · 代码判定", () => {
   });
 
   // 我的判定器 and 判定器页 (docs/judge-square-design.md §8, §14.4).
-  test("我的判定器：一行写名字、说明、第几版和部署日期、开放过几个；点进判定器页，用它发红包回到第 2 步，焦点在第一项参数", async ({
+  test("我的判定器：一行写名字、说明、第几版和部署日期、开放过几个；点进判定器页，用它发红包回到第 2 步，上面写接下来先填发多少再填参数", async ({
     page,
   }) => {
     await mockDeploys(page);
@@ -3755,15 +3766,17 @@ test.describe("发红包 · 代码判定", () => {
     await page.getByRole("link", { name: "用它发红包" }).click();
     await expect(page).toHaveURL(new RegExp(`/new\\?judge=${GUESS_ID}$`));
     await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
-    await expect(page.locator("#hb-param-max")).toBeFocused();
-    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    // What comes next, over the card (§6); its params after 发多少.
+    await expect(page.locator("#hb-judge-hint")).toHaveText(
+      "判定器已经替你选好了。接下来先填发多少，再填参数。",
+    );
     // A starting point, not a change: leaving asks nothing.
     await page.goBack();
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
   });
 
-  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前那张卡写正在读取…；没有测试全过的版本，就在第 2 步说出来，下面照常是两条挑法", async ({
+  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前那张卡写正在读取…，挑好后上面写接下来做什么，下一步以后不再写；没有测试全过的版本，就在第 2 步说出来，下面照常是两条挑法", async ({
     page,
   }) => {
     await mockDeploys(page);
@@ -3789,7 +3802,14 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
     release();
     await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
-    await expect(page.locator("#hb-param-max")).toBeFocused();
+    const hint = page.locator("#hb-judge-hint");
+    await expect(hint).toBeVisible();
+    // Its params after 发多少 (§6), as it says; said once, gone after.
+    await toParams(page);
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await expect(hint).toHaveCount(0);
 
     const NONE = "33333333-4444-4555-8666-777777777777";
     await page.route(`**/api/me/judges/${NONE}`, (route) =>
