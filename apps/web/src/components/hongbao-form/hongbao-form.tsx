@@ -286,13 +286,18 @@ export function HongbaoForm({
   } | null>(null);
   const formPoints = useFormPoints(form);
   const tried = triedHongbao(form, declarations?.hongbao, formPoints);
-  const checkKey = JSON.stringify([form.judge.params, tried]);
+  // What the code sees: hidden params (§3.2) are not in it, so a value
+  // typed into one while it showed does not make these params new.
+  const sentParams = declarations
+    ? declaredParams(declarations, form.judge.params)
+    : form.judge.params;
+  const checkKey = JSON.stringify([sentParams, tried]);
   // 填表试算 (§3.3): check() and explain() asked as the params are filled.
   const fill = useParamsFill({
     judgeId: form.judge.judgeId,
     n: usedN,
     declarations: coded ? declarations : null,
-    params: declarations ? declaredParams(declarations, form.judge.params) : {},
+    params: declarations ? sentParams : {},
     hongbao: tried,
     checkKey,
   });
@@ -495,7 +500,7 @@ export function HongbaoForm({
       const answer = await paramsCheck.mutateAsync({
         judgeId,
         n,
-        params: declaredParams(declarations, form.judge.params),
+        params: sentParams,
         hongbao: tried,
       });
       const problems =
