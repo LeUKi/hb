@@ -833,7 +833,7 @@ test.describe("发红包", () => {
     await field.press("Enter");
     await field.fill("newcomer");
     await expect(scope).toContainText("这个人还没来过本站，按用户名认。");
-    await scope.getByRole("button", { name: "添加" }).click();
+    await scope.getByRole("button", { name: "添加", exact: true }).click();
     await expect(scope.getByRole("button", { name: /^去掉 @/ })).toHaveCount(2);
     await expect(scope).toContainText(
       "Lv2 及以上的人，或指定的 2 位，都能领。",
@@ -846,6 +846,70 @@ test.describe("发红包", () => {
       users: [
         { username: "XiaoMan", linuxDoId: null },
         { username: "newcomer", linuxDoId: null },
+      ],
+    });
+  });
+
+  test("领取范围：批量添加，粘贴一串用户名一次查、一次加", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    const asked: string[][] = [];
+    await page.route("**/api/people/batch?**", (route) => {
+      const names = new URL(route.request().url()).searchParams.getAll(
+        "username",
+      );
+      asked.push(names);
+      return route.fulfill({
+        json: {
+          people: names.includes("xiaoman")
+            ? [
+                {
+                  linuxDoId: "730001",
+                  username: "XiaoMan",
+                  displayName: "小满",
+                  avatarUrl: null,
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const scope = sheet.getByRole("region", { name: "领取范围" });
+    await scope.getByRole("button", { name: /^限定/ }).click();
+    await scope.getByRole("button", { name: "批量添加" }).click();
+    const batch = page.getByRole("dialog", { name: "批量添加指定的人" });
+    await batch
+      .getByLabel("用户名")
+      .fill(
+        "@XiaoMan, newcomer\nhttps://linux.do/u/third/summary 张三 xiaoman",
+      );
+    await expect(batch).toContainText("灰色的 2 人还没来过本站，按用户名认。");
+    await expect(batch).toContainText("这些不是用户名，不会加：张三");
+    // All of them in one request.
+    expect(asked).toEqual([["newcomer", "third", "xiaoman"]]);
+    await batch.getByRole("button", { name: "添加 3 人" }).click();
+    await expect(batch).toBeHidden();
+    await expect(scope.getByRole("button", { name: /^去掉 @/ })).toHaveCount(3);
+    await expect(scope).toContainText("只有指定的 3 位能领。");
+    // Pasted again, nobody is added twice.
+    await scope.getByRole("button", { name: "批量添加" }).click();
+    await batch.getByLabel("用户名").fill("NEWCOMER");
+    await expect(batch).toContainText("已经加过的 1 人不再加。");
+    await batch.getByRole("button", { name: "返回" }).click();
+    await expect(batch).toBeHidden();
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expectDraftSaved(page);
+    expect(sent[0]?.activity.scope).toEqual({
+      users: [
+        { username: "XiaoMan", linuxDoId: null },
+        { username: "newcomer", linuxDoId: null },
+        { username: "third", linuxDoId: null },
       ],
     });
   });

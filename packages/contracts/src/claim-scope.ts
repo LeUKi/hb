@@ -17,6 +17,37 @@ export const TRUST_LEVEL_NAMES = [
 ] as const;
 export const CLAIM_SCOPE_LIMITS = { users: 100 } as const;
 
+/** A LINUX DO username as 指定的人 takes it, without its @. */
+const usernamePattern = /^[A-Za-z0-9_.-]{1,60}$/;
+/** A LINUX DO profile link, linux.do/u/名字 and anything after it. */
+const profileLink = /^(?:https?:\/\/)?(?:www\.)?linux\.do\/u\/([^/?#]+)/i;
+
+/**
+ * 指定的人 pasted all at once (docs/claim-scope-design.md §5): names apart
+ * by line breaks, spaces, commas of either width, 顿号 or semicolons, each
+ * with or without its @, or as a profile link. Each name once, whatever
+ * its case, in the order first seen; what is not a name comes back as it
+ * was pasted, to be shown.
+ */
+export function readUsernameList(text: string) {
+  const names: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  for (const piece of text.split(/[\s,，、;；]+/)) {
+    if (!piece) continue;
+    const name = (profileLink.exec(piece)?.[1] ?? piece).replace(/^@+/, "");
+    if (!usernamePattern.test(name)) {
+      if (!invalid.includes(piece)) invalid.push(piece);
+      continue;
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return { names, invalid };
+}
+
 const levelSchema = z.number().int().min(TRUST_LEVEL_MIN).max(TRUST_LEVEL_MAX);
 const levelCount = TRUST_LEVEL_MAX - TRUST_LEVEL_MIN + 1;
 

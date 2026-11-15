@@ -318,5 +318,44 @@ describe("领取范围", () => {
     expect(await (await ask("nobody")).json()).toEqual({ person: null });
     expect((await ask("bad name")).status).toBe(400);
     expect((await ask("findable", false)).status).toBe(401);
+
+    // 批量添加: many at once, those here as the form shows them; a name
+    // two accounts have had is the latest to sign in.
+    await person("Second", "810", null);
+    const older = await person("second", "811", 1);
+    await env.DB.prepare("UPDATE users SET last_login_at = 1 WHERE id = ?")
+      .bind(older)
+      .run();
+    const many = (names: string[], signed = true) =>
+      app.request(
+        `${origin}/api/people/batch?${names.map((name) => `username=${encodeURIComponent(name)}`).join("&")}`,
+        signed ? { headers: { Cookie: `hb_session=${token}` } } : {},
+        bindings,
+      );
+    const found = (await (
+      await many(["@FINDABLE", "nobody", "second"])
+    ).json()) as { people: { linuxDoId: string }[] };
+    expect(
+      found.people.sort((a, b) => a.linuxDoId.localeCompare(b.linuxDoId)),
+    ).toEqual([
+      {
+        linuxDoId: "809",
+        username: "Findable",
+        displayName: "昵称Findable",
+        avatarUrl: null,
+      },
+      {
+        linuxDoId: "810",
+        username: "Second",
+        displayName: "昵称Second",
+        avatarUrl: null,
+      },
+    ]);
+    expect(await (await many([])).json()).toEqual({ people: [] });
+    expect((await many(["ok", "bad name"])).status).toBe(400);
+    const tooMany = Array.from({ length: 101 }, (_, index) => `p${index}`);
+    expect((await many(tooMany)).status).toBe(400);
+    expect((await many(tooMany.slice(0, 100))).status).toBe(200);
+    expect((await many(["findable"], false)).status).toBe(401);
   });
 });

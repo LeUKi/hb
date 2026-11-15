@@ -141,7 +141,6 @@ export type FormState = {
   scope: ScopeForm;
 };
 
-/** Someone added to 指定的人: their face once found (the server notes their ID). */
 /**
  * 判定器带的附带网页 for these params (judge-page §4): `meta.page`, or under
  * the 地址参数 it names as that reads so far (docs/judge-address-design.md
@@ -174,6 +173,7 @@ export type BorrowedJudge = {
   networkAck: string[] | null;
 };
 
+/** Someone added to 指定的人: their face once found (the server notes their ID). */
 export type ScopePerson = {
   username: string;
   displayName?: string;

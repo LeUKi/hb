@@ -30,3 +30,29 @@ export function usePerson(username: string) {
     placeholderData: (previous) => previous,
   });
 }
+
+/**
+ * 批量添加: of the names pasted, those who have been here, in one request
+ * (GET /api/people/batch, at most CLAIM_SCOPE_LIMITS.users names).
+ */
+export function usePeople(usernames: string[]) {
+  const names = [
+    ...new Set(usernames.map((name) => name.toLowerCase())),
+  ].sort();
+  return useQuery({
+    queryKey: ["people", "batch", names],
+    enabled: names.length > 0,
+    queryFn: async ({ signal }) =>
+      (
+        await readResponse<{ people: Person[] }>(
+          await api.api.people.batch.$get(
+            { query: { username: names } },
+            { init: { signal, cache: "no-store" } },
+          ),
+        )
+      ).people,
+    retry: false,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
+}

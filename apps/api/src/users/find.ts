@@ -27,3 +27,36 @@ export function findUserByUsername(
     .bind(username.replace(/^@/, "").toLowerCase())
     .first<SiteUser>();
 }
+
+/**
+ * Many by name in one read (领取范围's 批量添加), each name by its own
+ * index; as findUserByUsername, a name taken over by another account is
+ * the latest to sign in. Those not here are left out.
+ */
+export async function findUsersByUsernames(
+  env: ApiBindings,
+  usernames: string[],
+) {
+  if (usernames.length === 0) return [];
+  const { results } = await env.DB.prepare(
+    `SELECT id,external_id,username,display_name,avatar_url,last_login_at FROM users
+    WHERE provider='linux_do' AND active=1
+      AND lower(username) IN (SELECT value FROM json_each(?))`,
+  )
+    .bind(
+      JSON.stringify(
+        usernames.map((name) => name.replace(/^@/, "").toLowerCase()),
+      ),
+    )
+    .all<SiteUser & { last_login_at: number | null }>();
+  const latest = new Map<string, (typeof results)[number]>();
+  for (const row of results) {
+    const key = row.username.toLowerCase();
+    const kept = latest.get(key);
+    if (!kept || (row.last_login_at ?? 0) > (kept.last_login_at ?? 0))
+      latest.set(key, row);
+  }
+  return [...latest.values()].map(
+    ({ last_login_at: _, ...user }): SiteUser => user,
+  );
+}

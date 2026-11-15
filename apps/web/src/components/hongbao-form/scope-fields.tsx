@@ -1,17 +1,27 @@
 import {
   CLAIM_SCOPE_LIMITS,
   levelsText,
+  readUsernameList,
   scopeSentence,
   TRUST_LEVEL_MIN,
   TRUST_LEVEL_NAMES,
 } from "@hb/contracts";
 import { Plus, UserCheck, Users, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
-import { usePerson } from "../../lib/people";
+import { usePeople, usePerson } from "../../lib/people";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { ChoiceCards, Field, TextInput, ToggleCards } from "../ui/field";
+import {
+  ChoiceCards,
+  Field,
+  TextArea,
+  TextInput,
+  ToggleCards,
+} from "../ui/field";
+import { MorphLabel } from "../ui/morph-label";
 import { PersonLine } from "../ui/person-line";
 import { Reveal } from "../ui/reveal";
 import type { ErrorOf, Update } from "./fields";
@@ -41,18 +51,24 @@ export function scopeLine(form: FormState) {
     : `${name}：限定（还没选）`;
 }
 
-/** One person added: face (when found), @用户名, and a way to take them off. */
+/**
+ * One person added: face (when found), @用户名, and a way to take them off
+ * (none while they are only about to be added).
+ */
 function PersonChip({
   person,
   onRemove,
 }: {
   person: ScopePerson;
-  onRemove: () => void;
+  onRemove?: () => void;
 }) {
   const unknown = person.known === false;
   return (
     <span
-      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-fill pr-1 pl-1.5 text-sm"
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full bg-fill pl-1.5 text-sm",
+        onRemove ? "pr-1" : "pr-3",
+      )}
       title={unknown ? "还没来过本站，按用户名认" : undefined}
     >
       <Avatar
@@ -63,16 +79,165 @@ function PersonChip({
       <span className={unknown ? "text-ink-3" : "text-ink"}>
         @{person.username}
       </span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onRemove}
-        aria-label={`去掉 @${person.username}`}
-        className="text-ink-3"
-      >
-        <X />
-      </Button>
+      {onRemove && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          aria-label={`去掉 @${person.username}`}
+          className="text-ink-3"
+        >
+          <X />
+        </Button>
+      )}
     </span>
+  );
+}
+
+/** Pasted names shown before “等 N 个”. */
+const namedAtMost = 8;
+
+/**
+ * 批量添加 (docs/claim-scope-design.md §5): names pasted all at once, each
+ * looked up as the single 添加 does (in one request), seen with their
+ * faces, then added together.
+ */
+function BatchPeopleDialog({
+  open,
+  onClose,
+  scope,
+  set,
+}: {
+  open: boolean;
+  onClose: () => void;
+  scope: ScopeForm;
+  set: (change: Partial<ScopeForm>) => void;
+}) {
+  const textId = useId();
+  const [text, setText] = useState("");
+  // Typing settles before the names are looked up; a paste comes whole.
+  const [read, setRead] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRead(text), 300);
+    return () => window.clearTimeout(timer);
+  }, [text]);
+  const { names, invalid } = useMemo(() => readUsernameList(read), [read]);
+  const added = new Set(scope.users.map((user) => user.username.toLowerCase()));
+  const fresh = names.filter((name) => !added.has(name.toLowerCase()));
+  const room = Math.max(0, CLAIM_SCOPE_LIMITS.users - scope.users.length);
+  const taken = fresh.slice(0, room);
+  const lookup = usePeople(taken);
+  const settled =
+    read === text && lookup.isSuccess && !lookup.isPlaceholderData;
+  const found = new Map(
+    (lookup.data ?? []).map((person) => [
+      person.username.toLowerCase(),
+      person,
+    ]),
+  );
+  const people: ScopePerson[] = taken.map((name) => {
+    const person = found.get(name.toLowerCase());
+    return person
+      ? {
+          username: person.username,
+          displayName: person.displayName,
+          avatarUrl: person.avatarUrl,
+          known: true,
+        }
+      : { username: name, known: settled ? false : undefined };
+  });
+  const unknown = people.filter((person) => person.known === false).length;
+  const ready = settled && people.length > 0;
+  const add = () => {
+    if (!ready) return;
+    haptic("selection");
+    set({ users: [...scope.users, ...people] });
+    onClose();
+  };
+  const already = names.length - fresh.length;
+  const over = fresh.length - taken.length;
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={onClose}
+      onClosed={() => {
+        setText("");
+        setRead("");
+      }}
+      title="批量添加指定的人"
+      text="粘贴 LINUX DO 用户名，换行、空格、逗号隔开都行；带 @ 或贴主页链接也认得。"
+      error={
+        lookup.isError && !lookup.isFetching
+          ? "没查到这些用户名是谁，稍后再试。"
+          : null
+      }
+      actions={
+        <>
+          <Button onClick={onClose}>返回</Button>
+          <Button
+            variant="primary"
+            onClick={add}
+            aria-disabled={!ready || undefined}
+            data-disabled={!ready || undefined}
+          >
+            <MorphLabel>
+              {people.length > 0 ? `添加 ${people.length} 人` : "添加"}
+            </MorphLabel>
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        <TextArea
+          id={textId}
+          aria-label="用户名"
+          rows={5}
+          value={text}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={"@alice\nbob, carol\nhttps://linux.do/u/dave"}
+          onChange={(event) => setText(event.target.value)}
+        />
+        {/* Looked up as they arrive: the sheen until all are known. */}
+        <Reveal show={people.length > 0}>
+          <div
+            className={cn(
+              "flex max-h-48 flex-wrap gap-1.5 overflow-y-auto rounded-lg",
+              !settled && "loading-sheen",
+            )}
+          >
+            {people.map((person) => (
+              <PersonChip key={person.username.toLowerCase()} person={person} />
+            ))}
+          </div>
+        </Reveal>
+        <div className="grid gap-1 text-xs">
+          <Reveal show={unknown > 0}>
+            <p className="text-ink-3">
+              灰色的 {unknown} 人还没来过本站，按用户名认。
+            </p>
+          </Reveal>
+          <Reveal show={already > 0}>
+            <p className="text-ink-3">已经加过的 {already} 人不再加。</p>
+          </Reveal>
+          <Reveal show={over > 0}>
+            <p className="text-danger">
+              {room > 0
+                ? `最多指定 ${CLAIM_SCOPE_LIMITS.users} 人，只能再加 ${room} 人，后面 ${over} 人加不进去。`
+                : `已经指定了 ${CLAIM_SCOPE_LIMITS.users} 人，加不了更多。`}
+            </p>
+          </Reveal>
+          <Reveal show={invalid.length > 0}>
+            <p className="text-danger [overflow-wrap:anywhere]">
+              这些不是用户名，不会加：
+              {invalid.slice(0, namedAtMost).join("、")}
+              {invalid.length > namedAtMost && ` 等 ${invalid.length} 个`}
+            </p>
+          </Reveal>
+        </div>
+      </div>
+    </ConfirmDialog>
   );
 }
 
@@ -87,6 +252,7 @@ function ScopePeople({
   error?: string;
 }) {
   const [typed, setTyped] = useState("");
+  const [batch, setBatch] = useState(false);
   const name = typed.trim().replace(/^@/, "");
   const lookup = usePerson(name);
   const valid = /^[A-Za-z0-9_.-]{1,60}$/.test(name);
@@ -123,6 +289,15 @@ function ScopePeople({
         htmlFor="hb-scope-user"
         hint={`填 LINUX DO 用户名，最多 ${CLAIM_SCOPE_LIMITS.users} 人。`}
         error={error}
+        aside={
+          <button
+            type="button"
+            className="-my-1 px-1 py-1 text-accent-ink hover:underline"
+            onClick={() => setBatch(true)}
+          >
+            批量添加
+          </button>
+        }
       >
         <div className="flex gap-2">
           {/* No width of its own: on a narrow window it gives way to 添加. */}
@@ -189,6 +364,12 @@ function ScopePeople({
           ))}
         </div>
       </Reveal>
+      <BatchPeopleDialog
+        open={batch}
+        onClose={() => setBatch(false)}
+        scope={scope}
+        set={set}
+      />
     </div>
   );
 }

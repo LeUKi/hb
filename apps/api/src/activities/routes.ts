@@ -2,6 +2,7 @@ import {
   ACTIVITY_LIMITS,
   type ActivityHistoryFilters,
   activityRewardFilterSchema,
+  CLAIM_SCOPE_LIMITS,
   type ClaimResult,
   type CreateActivityInput,
   claimActivitySchema,
@@ -50,7 +51,7 @@ import {
   listPublicRecipients,
   listUserClaims,
 } from "./claim-queries";
-import { findPerson } from "./claim-scope";
+import { findPeople, findPerson } from "./claim-scope";
 import { ActivityError, activityNotFound } from "./errors";
 import { humanCheckOf, passesHumanCheck } from "./human-check";
 import { LIVE_USER_HEADER } from "./live";
@@ -567,6 +568,31 @@ export const activityRoutes = new Hono<ApiContext>()
       );
     c.header("Cache-Control", "no-store");
     return c.json({ person: await findPerson(c.env, parsed.data) });
+  })
+  // 批量添加 (docs/claim-scope-design.md §5): as many names as 指定的人
+  // holds, ?username=…&username=…; those who have been here come back.
+  .get("/people/batch", async (c) => {
+    await requireAuth(c);
+    const names = c.req.queries("username") ?? [];
+    if (names.length > CLAIM_SCOPE_LIMITS.users)
+      throw new ActivityError(
+        400,
+        "TOO_MANY_USERNAMES",
+        `一次最多查 ${CLAIM_SCOPE_LIMITS.users} 个用户名`,
+      );
+    const usernames: string[] = [];
+    for (const name of names) {
+      const parsed = inviteUsernameSchema.safeParse(name);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_USERNAME",
+          parsed.error.issues[0]?.message ?? "用户名无效",
+        );
+      usernames.push(parsed.data);
+    }
+    c.header("Cache-Control", "no-store");
+    return c.json({ people: await findPeople(c.env, usernames) });
   })
   // 开奖证明 (docs/draw-proof-design.md): what a v2 红包's random parts came
   // from, for the 🎲 page and anyone checking it. Public, like its roster.

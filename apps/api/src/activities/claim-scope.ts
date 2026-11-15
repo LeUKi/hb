@@ -6,7 +6,11 @@ import {
   scopeAllows,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
-import { findUserByUsername } from "../users/find";
+import {
+  findUserByUsername,
+  findUsersByUsernames,
+  type SiteUser,
+} from "../users/find";
 import { ActivityError } from "./errors";
 import type { ActivityRow } from "./storage";
 
@@ -184,17 +188,25 @@ export async function publicScopeWithPeople(
   };
 }
 
+/** Someone who has been here, as the form shows them. */
+function formPerson(person: SiteUser) {
+  return {
+    linuxDoId: person.external_id,
+    username: person.username,
+    displayName: person.display_name,
+    avatarUrl: person.avatar_url,
+  };
+}
+
 /** 领取范围's 指定的人: someone by name, as the form adds them. */
 export async function findPerson(env: ApiBindings, username: string) {
   const person = await findUserByUsername(env, username);
-  return person
-    ? {
-        linuxDoId: person.external_id,
-        username: person.username,
-        displayName: person.display_name,
-        avatarUrl: person.avatar_url,
-      }
-    : null;
+  return person ? formPerson(person) : null;
+}
+
+/** 批量添加: those of the names pasted who have been here, in one read. */
+export async function findPeople(env: ApiBindings, usernames: string[]) {
+  return (await findUsersByUsernames(env, usernames)).map(formPerson);
 }
 
 /** The same 领取范围, whatever case the names were typed in. */

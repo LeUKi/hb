@@ -3,6 +3,7 @@ import {
   claimScopeSchema,
   levelsText,
   readClaimScope,
+  readUsernameList,
   scopeAllows,
   scopeSentence,
   scopeTag,
@@ -122,5 +123,34 @@ describe("领取范围", () => {
     expect(scopeSentence({ ...both, levels: [1, 3] }, "领")).toBe(
       "Lv1、Lv3 的人，或指定的 3 位，都能领。",
     );
+  });
+
+  it("reads names pasted all at once, each once, and gives back the rest", () => {
+    expect(
+      readUsernameList(`@Alice bob,carol，dave、eve;frank；grace
+https://linux.do/u/Heidi/summary
+linux.do/u/ivan  @@judy\talice ALICE
+张三 a/b https://example.com/u/x`),
+    ).toEqual({
+      names: [
+        "Alice",
+        "bob",
+        "carol",
+        "dave",
+        "eve",
+        "frank",
+        "grace",
+        "Heidi",
+        "ivan",
+        "judy",
+      ],
+      invalid: ["张三", "a/b", "https://example.com/u/x"],
+    });
+    expect(readUsernameList("  \n ")).toEqual({ names: [], invalid: [] });
+    // Too long for a name, and the same bad piece shown once.
+    expect(readUsernameList(`${"x".repeat(61)} @ @`)).toEqual({
+      names: [],
+      invalid: ["x".repeat(61), "@"],
+    });
   });
 });
