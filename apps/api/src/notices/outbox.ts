@@ -38,6 +38,11 @@ const STALE_MS = 10 * 60_000;
 /** Bodies are cleared after this; rows stay for their keys. */
 const BODY_KEPT_MS = 30 * 86_400_000;
 const RELAY_DOMAIN = "@privaterelay.linux.do";
+/**
+ * The HTML part sent beside the text. With none, the 社区 makes one of the
+ * text and shows the body twice (Stage, 2026-11-15); an empty one is tried.
+ */
+const NOTICE_HTML = "";
 
 function adminIds(env: ApiBindings) {
   return JSON.stringify(
@@ -182,7 +187,13 @@ async function decide(env: ApiBindings, row: Row): Promise<Decision> {
     return { id: row.id, skip: "not_relay" };
   return {
     id: row.id,
-    send: { id: row.id, to, subject: row.subject, text: row.body },
+    send: {
+      id: row.id,
+      to,
+      subject: row.subject,
+      text: row.body,
+      html: NOTICE_HTML,
+    },
   };
 }
 

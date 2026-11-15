@@ -66,13 +66,19 @@ export type NoticeLink = { label: string; url: string };
  * off (none for a notice without a switch).
  */
 export function bodyOf(
-  paragraphs: string[],
+  /** A paragraph, or its lines (a quote under what it is said of). */
+  paragraphs: (string | string[])[],
   link: NoticeLink,
   off: string | null,
 ) {
   const blocks = paragraphs
-    .filter((paragraph) => paragraph.trim())
-    .map((paragraph) => wrapParagraph(paragraph).join("\n"));
+    .map((paragraph) =>
+      (Array.isArray(paragraph) ? paragraph : [paragraph])
+        .filter((line) => line.trim())
+        .flatMap((line) => wrapParagraph(line))
+        .join("\n"),
+    )
+    .filter(Boolean);
   blocks.push(`${link.label}：\n${link.url}`);
   if (off) blocks.push(`不想收这类通知，在这里关：\n${off}`);
   return `${blocks.join("\n\n")}\n`;

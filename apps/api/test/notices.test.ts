@@ -291,6 +291,22 @@ describe("SMTP to the 社区's mail server", () => {
       expect(line.length).toBeLessThanOrEqual(78);
     expect(message.endsWith("\r\n.\r\n")).toBe(true);
   });
+
+  it("adds an HTML part beside the text when given one, an empty one too", () => {
+    const message = messageOf(
+      account,
+      { ...mail("m2", "a@privaterelay.linux.do"), html: "" },
+      new Date(0),
+    );
+    expect(message).toContain(
+      'Content-Type: multipart/alternative; boundary="hb_m2"',
+    );
+    const parts = message.split("--hb_m2");
+    expect(parts).toHaveLength(4);
+    expect(parts[1]).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(parts[2]).toContain("Content-Type: text/html; charset=UTF-8");
+    expect(parts[3]?.startsWith("--\r\n.\r\n")).toBe(true);
+  });
 });
 
 function batchOf(ids: string[]) {

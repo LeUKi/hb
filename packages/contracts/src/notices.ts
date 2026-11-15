@@ -29,7 +29,7 @@ export type NoticeGroup = "claim" | "send" | "money" | "judge" | "points";
 export const NOTICE_GROUPS: { id: NoticeGroup; title: string }[] = [
   { id: "claim", title: "领红包" },
   { id: "send", title: "发红包" },
-  { id: "money", title: "钱" },
+  { id: "money", title: "打赏和转账" },
   { id: "judge", title: "判定器" },
   { id: "points", title: "三方积分" },
 ];
@@ -50,8 +50,8 @@ export const NOTICE_SWITCHES: {
   {
     id: "payout_stuck",
     group: "send",
-    title: "红包付不出钱",
-    hint: "有人领了，但你的 Credit 余额不够或今天的限额用完了。一个红包只提醒一次。",
+    title: "红包分发暂停",
+    hint: "有人领了，但你的 Credit 余额不够或今天的额度用完了，分发暂停。一个红包只提醒一次。",
   },
   {
     id: "schedule_failed",
@@ -105,7 +105,7 @@ export const NOTICE_SWITCHES: {
     id: "points_breaker",
     group: "points",
     title: "接口连不上",
-    hint: "你添加的积分的接口连续没有回复，发放暂停了。一次故障只提醒一次。",
+    hint: "你添加的积分的接口连续没有回复，积分分发暂停了。一次故障只提醒一次。",
   },
 ];
 

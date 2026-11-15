@@ -15,7 +15,17 @@ export type SmtpAccount = {
   fromName: string;
 };
 
-export type Mail = { id: string; to: string; subject: string; text: string };
+export type Mail = {
+  id: string;
+  to: string;
+  subject: string;
+  text: string;
+  /**
+   * An HTML part beside the text, when given. The 社区 shows a mail's HTML
+   * as source; with none it makes one of the text, showing it twice.
+   */
+  html?: string;
+};
 
 export type MailOutcome =
   | { id: string; ok: true }
@@ -141,23 +151,44 @@ function address(value: string) {
   return value;
 }
 
+/** Base64 of UTF-8 text in lines of 76, CRLF line ends first. */
+function base64Lines(text: string) {
+  return (
+    base64(encoder.encode(text.replace(/\r?\n/g, "\r\n")))
+      .match(/.{1,76}/g)
+      ?.join("\r\n") ?? ""
+  );
+}
+
 /** The message as sent after DATA, ending with the lone dot. */
 export function messageOf(account: SmtpAccount, mail: Mail, at = new Date()) {
-  const body = base64(encoder.encode(mail.text.replace(/\r?\n/g, "\r\n")))
-    .match(/.{1,76}/g)
-    ?.join("\r\n");
-  return [
+  const headers = [
     `From: ${encodedWords(account.fromName)} <${address(account.user)}>`,
     `To: <${address(mail.to)}>`,
     `Subject: ${encodedWords(mail.subject)}`,
     `Date: ${at.toUTCString()}`,
     `Message-ID: <${mail.id}@${account.domain}>`,
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
     "Auto-Submitted: auto-generated",
+  ];
+  const part = (type: string, text: string) => [
+    `Content-Type: ${type}; charset=UTF-8`,
+    "Content-Transfer-Encoding: base64",
     "",
-    body ?? "",
+    base64Lines(text),
+  ];
+  if (mail.html === undefined)
+    return [...headers, ...part("text/plain", mail.text), ".", ""].join("\r\n");
+  const boundary = `hb_${mail.id.replace(/[^A-Za-z0-9]/g, "")}`;
+  return [
+    ...headers,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    ...part("text/plain", mail.text),
+    `--${boundary}`,
+    ...part("text/html", mail.html),
+    `--${boundary}--`,
     ".",
     "",
   ].join("\r\n");

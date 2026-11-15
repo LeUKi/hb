@@ -93,7 +93,7 @@ export function noticeDrawWon(
 }
 
 /**
- * 红包付不出钱: a claim's payment on the sender's own 商户 stopped for want
+ * 红包分发暂停: a claim's payment on the sender's own 商户 stopped for want
  * of funds or by the day's limit. Once a 红包, whichever came first.
  */
 export function noticePayoutStuck(env: ApiBindings, taskId: string) {

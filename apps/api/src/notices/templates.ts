@@ -35,8 +35,8 @@ export function drawWon(
     input.funding === "balance"
       ? "已经存进你的🐟额。"
       : input.funding === "points"
-        ? "会发到你在对方网站的账户。"
-        : "会付到你的 Credit。";
+        ? "会分发到你在对方网站的账户。"
+        : "会分发到你的 Credit。";
   return {
     subject: subjectOf(`你在${nameOf(input.title)}中了 ${input.amount}`),
     body: bodyOf(
@@ -47,7 +47,7 @@ export function drawWon(
   };
 }
 
-/** 红包付不出钱: once a 红包, the reason it stopped first. */
+/** 红包分发暂停: once a 红包, the reason it stopped first. */
 export function payoutStuck(
   env: ApiBindings,
   input: {
@@ -62,20 +62,20 @@ export function payoutStuck(
     input.waiting > 1 ? `有 ${input.waiting} 个人领了` : "有人领了";
   return input.reason === "funds"
     ? {
-        subject: subjectOf(`${name}付不出钱，Credit 余额不够`),
+        subject: subjectOf(`${name}分发暂停：Credit 余额不够`),
         body: bodyOf(
           [
-            `${name}${people}，还没付出去：你的 Credit 余额不够。补上以后会自动接着付。这个红包只提醒这一次。`,
+            `${name}${people}，还没分发：你的 Credit 余额不够。补上以后会自动接着分发。这个红包只提醒这一次。`,
           ],
           { label: "去看看", url: hongbaoUrl(env, input.activityId) },
           off(env),
         ),
       }
     : {
-        subject: subjectOf(`${name}付不出钱，今天的限额用完了`),
+        subject: subjectOf(`${name}分发暂停：今天的额度用完了`),
         body: bodyOf(
           [
-            `${name}${people}，还没付出去：你的 Credit 今天能付出的额度用完了。明天 0 点过后会自动接着付。这个红包只提醒这一次。`,
+            `${name}${people}，还没分发：你的 Credit 今天能分发的额度用完了。明天 0 点过后会自动接着分发。这个红包只提醒这一次。`,
           ],
           { label: "去看看", url: hongbaoUrl(env, input.activityId) },
           off(env),
@@ -111,7 +111,7 @@ export function hongbaoStopped(
     subject: subjectOf(`${name}被站长停用了`),
     body: bodyOf(
       [
-        `你的${name}被站长停用，不能再领了。${input.refunds ? "没发出去的🐟会退回你的🐟额。" : ""}`,
+        `你的${name}被站长停用，不能再领了。${input.refunds ? "没分发的🐟会退回你的🐟额。" : ""}`,
       ],
       { label: "去看看", url: hongbaoUrl(env, input.activityId) },
       off(env),
@@ -151,7 +151,7 @@ export function pointsHongbaoEnded(
       [
         input.beforeDraw
           ? `${name}开奖前查了一次，${why}，所以没有开奖，红包结束了。`
-          : `${name}提前结束了：${why}。已经发出去的照常，剩下的不再发。`,
+          : `${name}提前结束了：${why}。已经分发的照常，剩下的不再分发。`,
       ],
       { label: "去看看", url: hongbaoUrl(env, input.activityId) },
       off(env),
@@ -170,8 +170,10 @@ export function tipReceived(
     subject: subjectOf(`${who} 打赏了你 ${input.amount}`),
     body: bodyOf(
       [
-        `${who} 通过你的打赏卡打赏了你 ${input.amount}${message ? "：" : "。"}`,
-        message ? `“${message}”` : "",
+        [
+          `${who} 通过你的打赏卡打赏了你 ${input.amount}${message ? "：" : "。"}`,
+          message ? `“${message}”` : "",
+        ],
       ],
       { label: "去看打赏", url: `${originOf(env)}/tips` },
       off(env),
@@ -189,8 +191,10 @@ export function transferReceived(
     subject: subjectOf(`@${input.sender} 转给你 ${input.amount}`),
     body: bodyOf(
       [
-        `@${input.sender} 用🐟额转给你 ${input.amount}${remark ? "：" : "。"}`,
-        remark ? `“${remark}”` : "",
+        [
+          `@${input.sender} 用🐟额转给你 ${input.amount}${remark ? "：" : "。"}`,
+          remark ? `“${remark}”` : "",
+        ],
       ],
       { label: "去看🐟额", url: `${originOf(env)}/balance` },
       off(env),
@@ -273,7 +277,7 @@ export function pointsStatus(
   const said = {
     pause: {
       subject: `${name}被站长暂停了`,
-      text: `站长暂停了你添加的${name}。暂停期间发不了新红包，也发不出积分。`,
+      text: `站长暂停了你添加的${name}。暂停期间不能用它发新红包，积分也暂停分发。`,
     },
     resume: {
       subject: `${name}恢复了`,
@@ -304,10 +308,10 @@ export function pointsBreaker(
 ): Notice {
   const name = points(input.name);
   return {
-    subject: subjectOf(`${name}的接口连不上，发放暂停了`),
+    subject: subjectOf(`${name}的接口连不上，积分分发暂停了`),
     body: bodyOf(
       [
-        `你添加的${name}的接口连续 5 次没有回复，发放暂停 10 分钟，之后会再试。接口恢复前不再提醒。`,
+        `你添加的${name}的接口连续 5 次没有回复，积分分发暂停 10 分钟，之后会再试。接口恢复前不再提醒。`,
       ],
       {
         label: "去看看",
