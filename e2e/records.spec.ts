@@ -555,6 +555,7 @@ test.describe("账号资料", () => {
       "打赏",
       "LDC 商户",
       "排行榜",
+      "个人令牌",
       "资料",
     ]);
     const tips = page.getByRole("region", { name: "打赏" });

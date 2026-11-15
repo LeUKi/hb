@@ -477,6 +477,13 @@
       "when": 1794715921634,
       "tag": "0067_notice_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1794718438296,
+      "tag": "0068_personal_tokens",
+      "breakpoints": true
     }
   ]
 }

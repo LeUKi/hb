@@ -9,6 +9,7 @@ import { ActivityValidationError, activityRoutes } from "./activities/routes";
 import { activityImageRoutes } from "./activity-images/routes";
 import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
+import { personalTokenRoutes } from "./auth/personal-token-routes";
 import { balanceAdminRoutes } from "./balance/admin-routes";
 import { RateLimitedError, RequestIssuesError } from "./balance/errors";
 import { openRoutes } from "./balance/open-routes";
@@ -155,3 +156,5 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", pointsRoutes);
 // 私信通知 (docs/notification-design.md §4).
 (app as unknown as Hono<ApiContext>).route("/api", noticeRoutes);
+// 个人令牌 (docs/personal-token-design.md §5), the same way.
+(app as unknown as Hono<ApiContext>).route("/api", personalTokenRoutes);

@@ -11,7 +11,7 @@ import {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
-import { requireProtectedMutation } from "../auth/session";
+import { requireActorMutation } from "../auth/personal-token";
 import type { ApiBindings, ApiContext } from "../env";
 import { base64UrlEncode } from "../security/crypto";
 import { attachedPagesOn } from "./attached-page";
@@ -236,7 +236,8 @@ export const pageIdentityRoutes = new Hono<ApiContext>()
       return parsed.data;
     }),
     async (c) => {
-      const session = await requireProtectedMutation(c);
+      // 个人令牌 may ask too (docs/personal-token-design.md §3).
+      const session = await requireActorMutation(c);
       c.header("Cache-Control", "no-store");
       return c.json(
         await signPageIdentity(c.env, {
