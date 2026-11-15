@@ -10,6 +10,7 @@ import {
   isNoticeCategory,
   type NoticeAdminStats,
   type NoticeKind,
+  type NoticePace,
 } from "@hb/contracts";
 import { emailAssociatedData } from "../auth/oauth";
 import type { ApiBindings } from "../env";
@@ -142,18 +143,43 @@ export function smtpAccountOf(env: ApiBindings): SmtpAccount | null {
   };
 }
 
-/**
- * Between two mails: the 社区 turned only the first of a burst into a
- * private message (Stage, 2026-11-15), so they go one at a time.
- */
-const SPACING_SECONDS = 20;
+/** Before 网站管理 has set it (migration 0067 sets these too). */
+const DEFAULT_PACE = { anyGapSeconds: 3, samePersonGapSeconds: 20 };
 
-function spacingOf(env: ApiBindings) {
-  const seconds = Number(env.NOTICE_SPACING_SECONDS);
-  return (
-    (Number.isFinite(seconds) && seconds >= 0 ? seconds : SPACING_SECONDS) *
-    1000
-  );
+/** How far apart mails go, as the 站长 set it in 网站管理 → 设置. */
+export async function readNoticePace(env: ApiBindings): Promise<NoticePace> {
+  const row = await env.DB.prepare(
+    "SELECT version, any_gap_seconds, same_person_gap_seconds, updated_at FROM notice_settings WHERE id='global'",
+  ).first<{
+    version: number;
+    any_gap_seconds: number;
+    same_person_gap_seconds: number;
+    updated_at: number;
+  }>();
+  return row
+    ? {
+        version: row.version,
+        anyGapSeconds: row.any_gap_seconds,
+        samePersonGapSeconds: row.same_person_gap_seconds,
+        updatedAt: new Date(row.updated_at).toISOString(),
+      }
+    : { version: 0, ...DEFAULT_PACE, updatedAt: new Date(0).toISOString() };
+}
+
+/**
+ * The order a batch goes in: everyone's first mail, then their second, so
+ * no one waits behind another's; oldest first within each round.
+ */
+export function paced<T extends { userId: string }>(items: T[]) {
+  const round = new Map<string, number>();
+  return items
+    .map((item, index) => {
+      const turn = round.get(item.userId) ?? 0;
+      round.set(item.userId, turn + 1);
+      return { item, turn, index };
+    })
+    .sort((a, b) => a.turn - b.turn || a.index - b.index)
+    .map(({ item }) => item);
 }
 
 /** Stage sends only to these LINUX DO ids; unset elsewhere means everyone. */
@@ -165,6 +191,7 @@ function allowedIds(env: ApiBindings) {
 
 type Row = {
   id: string;
+  user_id: string;
   kind: string;
   subject: string;
   body: string;
@@ -245,10 +272,11 @@ export async function handleNoticeBatch(
   try {
     rows = (
       await env.DB.prepare(
-        `SELECT n.id,n.kind,n.subject,n.body,n.attempts,u.provider,u.external_id,u.email_ciphertext,s.enabled
+        `SELECT n.id,n.user_id,n.kind,n.subject,n.body,n.attempts,u.provider,u.external_id,u.email_ciphertext,s.enabled
          FROM notifications n JOIN users u ON u.id=n.user_id
          LEFT JOIN notification_settings s ON s.user_id=n.user_id AND s.category=n.kind
-         WHERE n.id IN (SELECT value FROM json_each(?)) AND n.status='queued'`,
+         WHERE n.id IN (SELECT value FROM json_each(?)) AND n.status='queued'
+         ORDER BY n.created_at`,
       )
         .bind(JSON.stringify(ids))
         .all<Row>()
@@ -266,14 +294,20 @@ export async function handleNoticeBatch(
   const decisions = await Promise.all(rows.map((row) => decide(env, row)));
   const account = smtpAccountOf(env);
   const local = env.APP_ENV === "local" || env.APP_ENV === "test";
-  const mails = decisions.flatMap((decision) =>
-    "send" in decision ? [decision.send] : [],
+  const userOf = new Map(rows.map((row) => [row.id, row.user_id]));
+  const mails = paced(
+    decisions.flatMap((decision) =>
+      "send" in decision
+        ? [{ ...decision.send, userId: userOf.get(decision.id) ?? "" }]
+        : [],
+    ),
   );
   const statements: D1PreparedStatement[] = [];
   const finish = (
     id: string,
     status: "sent" | "skipped" | "failed",
     reason: string | null,
+    at = now,
   ) =>
     statements.push(
       env.DB.prepare(
@@ -282,8 +316,8 @@ export async function handleNoticeBatch(
         status,
         reason,
         status === "skipped" ? 0 : 1,
-        now,
-        status === "sent" ? now : null,
+        at,
+        status === "sent" ? at : null,
         id,
       ),
     );
@@ -301,14 +335,29 @@ export async function handleNoticeBatch(
     }
   } else if (mails.length && account) {
     const attempts = new Map(rows.map((row) => [row.id, row.attempts]));
-    for (const outcome of await send(
-      account,
-      mails,
-      undefined,
-      spacingOf(env),
-    )) {
+    const pace = await readNoticePace(env).catch(() => ({ ...DEFAULT_PACE }));
+    // When each of them last got one (an earlier batch).
+    const last = await env.DB.prepare(
+      `SELECT user_id, MAX(sent_at) AS at FROM notifications
+       WHERE user_id IN (SELECT value FROM json_each(?)) AND status='sent' GROUP BY user_id`,
+    )
+      .bind(JSON.stringify([...new Set(mails.map((mail) => mail.userId))]))
+      .all<{ user_id: string; at: number }>()
+      .then((result) => result.results)
+      .catch(() => []);
+    const lastAt = new Map(last.map((row) => [row.user_id, row.at]));
+    const lastSent = new Map<string, number>();
+    for (const mail of mails) {
+      const at = lastAt.get(mail.userId);
+      if (at !== undefined) lastSent.set(mail.to, at);
+    }
+    for (const outcome of await send(account, mails, undefined, {
+      anyGapMs: pace.anyGapSeconds * 1000,
+      samePersonGapMs: pace.samePersonGapSeconds * 1000,
+      lastSent,
+    })) {
       if (outcome.ok) {
-        finish(outcome.id, "sent", null);
+        finish(outcome.id, "sent", null, outcome.at);
         continue;
       }
       const tried = (attempts.get(outcome.id) ?? 0) + 1;

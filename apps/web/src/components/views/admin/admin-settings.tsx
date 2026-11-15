@@ -23,6 +23,7 @@ import {
   PlatformAppSection,
 } from "./admin-balance-settings";
 import { AdminFrame, DetailPart } from "./admin-frame";
+import { NoticePaceSection } from "./admin-notice-pace";
 
 const valid = (value: string) =>
   /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 3600;
@@ -277,6 +278,8 @@ export function AdminSettings() {
       {query.data && (
         <AdminFrame>
           <SettingsForm data={query.data} />
+          {/* 私信通知's pace reads on its own, like 🐟额. */}
+          <NoticePaceSection />
           {/* 🐟额 reads on its own: its failing never holds the intervals. */}
           <DetailPart query={balance} lines={3}>
             {(data) => (

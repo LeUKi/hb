@@ -4,9 +4,11 @@
 import type {
   NoticeAdminStats,
   NoticeCategory,
+  NoticePace,
   NoticeSettingsView,
   OpeningWatchView,
   SquareWatchView,
+  UpdateNoticePaceInput,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readResponse } from "./activities";
@@ -36,6 +38,7 @@ export const noticeKeys = {
   square: (userId: string | null) =>
     ["notices", userId ?? "guest", "square"] as const,
   admin: ["notices", "admin"] as const,
+  pace: ["notices", "admin", "pace"] as const,
 };
 
 async function get<T>(path: string, signal?: AbortSignal) {
@@ -48,12 +51,12 @@ async function get<T>(path: string, signal?: AbortSignal) {
   );
 }
 
-function usePut() {
+function usePut(method: "PUT" | "PATCH" = "PUT") {
   const { csrfToken } = useIdentity();
   return async <T>(path: string, body: unknown) =>
     readResponse<T>(
       await fetch(`/api/${path}`, {
-        method: "PUT",
+        method,
         credentials: "same-origin",
         headers: {
           "X-CSRF-Token": csrfToken ?? "",
@@ -184,5 +187,27 @@ export function useNoticeAdmin(enabled: boolean) {
     enabled,
     queryFn: ({ signal }) =>
       get<NoticeAdminStats>("admin/notifications", signal),
+  });
+}
+
+/** 私信通知's pace (网站管理 → 设置): how far apart mails go. */
+export function useNoticePace() {
+  return useQuery({
+    queryKey: noticeKeys.pace,
+    queryFn: ({ signal }) =>
+      get<{ pace: NoticePace }>("admin/notifications/pace", signal),
+  });
+}
+
+export function useSaveNoticePace() {
+  const patch = usePut("PATCH");
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateNoticePaceInput) =>
+      patch<{ pace: NoticePace }>("admin/notifications/pace", input),
+    onSuccess: (view) => queryClient.setQueryData(noticeKeys.pace, view),
+    // Someone saved first: read what is saved now.
+    onError: () =>
+      void queryClient.invalidateQueries({ queryKey: noticeKeys.pace }),
   });
 }

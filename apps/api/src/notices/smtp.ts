@@ -28,7 +28,7 @@ export type Mail = {
 };
 
 export type MailOutcome =
-  | { id: string; ok: true }
+  | { id: string; ok: true; at: number }
   | { id: string; ok: false; permanent: boolean; reason: string };
 
 export type SmtpConnection = {
@@ -205,6 +205,17 @@ async function openTls(account: SmtpAccount): Promise<SmtpConnection> {
 }
 
 /**
+ * How far apart mails go (the 社区 drops mail that comes too close
+ * together, Stage 2026-11-15): any two, two to one address, and when each
+ * address last got one before this session.
+ */
+export type MailPace = {
+  anyGapMs: number;
+  samePersonGapMs: number;
+  lastSent?: ReadonlyMap<string, number>;
+};
+
+/**
  * Sends each mail in one session. A mail the server turns down for good
  * (5xx) is permanent; anything else that stops a mail, including a session
  * that cannot start or breaks off, leaves it to be tried again.
@@ -213,8 +224,7 @@ export async function sendMails(
   account: SmtpAccount,
   mails: Mail[],
   open: (account: SmtpAccount) => Promise<SmtpConnection> = openTls,
-  /** Waited between two mails (the 社区 drops a burst, Stage 2026-11-15). */
-  spacingMs = 0,
+  pace: MailPace = { anyGapMs: 0, samePersonGapMs: 0 },
 ): Promise<MailOutcome[]> {
   const outcomes = new Map<string, MailOutcome>();
   const failRest = (reason: string, permanent = false) => {
@@ -232,16 +242,25 @@ export async function sendMails(
       encoder.encode(`\0${account.user}\0${account.password}`),
     );
     await session.send(`AUTH PLAIN ${credentials}`, [235]);
-    for (const [index, mail] of mails.entries()) {
-      if (index > 0 && spacingMs > 0)
-        await new Promise((resolve) => setTimeout(resolve, spacingMs));
+    const lastTo = new Map(pace.lastSent ?? []);
+    let last = Number.NEGATIVE_INFINITY;
+    for (const mail of mails) {
+      const due = Math.max(
+        last + pace.anyGapMs,
+        (lastTo.get(mail.to) ?? Number.NEGATIVE_INFINITY) +
+          pace.samePersonGapMs,
+      );
+      const wait = due - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       try {
         await session.send(`MAIL FROM:<${address(account.user)}>`, [250]);
         await session.send(`RCPT TO:<${address(mail.to)}>`, [250, 251]);
         await session.send("DATA", [354]);
         await session.write(messageOf(account, mail));
         await session.expect([250]);
-        outcomes.set(mail.id, { id: mail.id, ok: true });
+        last = Date.now();
+        lastTo.set(mail.to, last);
+        outcomes.set(mail.id, { id: mail.id, ok: true, at: last });
       } catch (error) {
         if (!(error instanceof SmtpError) || error.code === 0) throw error;
         outcomes.set(mail.id, {

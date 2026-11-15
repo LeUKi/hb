@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 // 私信通知 (docs/notification-design.md): mail to a user's 社区 隐私邮箱,
 // which the 社区 turns into a private message from the 站长's account.
 // Each kind below can be turned off on /notifications; 等的红包开放了 has no
@@ -166,3 +168,23 @@ export type SquareWatchView = {
   squareWatch: { watching: boolean } | null;
   waiting: number;
 };
+
+/**
+ * 私信通知's pace (§2.3), set in 网站管理 → 设置: the 社区 drops mail that
+ * comes too close together.
+ */
+export type NoticePace = {
+  version: number;
+  /** Any two mails, whoever they go to. */
+  anyGapSeconds: number;
+  /** Two mails to one person. */
+  samePersonGapSeconds: number;
+  updatedAt: string;
+};
+
+export const updateNoticePaceSchema = z.strictObject({
+  expectedVersion: z.number().int().positive().safe(),
+  anyGapSeconds: z.number().int().min(0).max(600),
+  samePersonGapSeconds: z.number().int().min(0).max(3600),
+});
+export type UpdateNoticePaceInput = z.infer<typeof updateNoticePaceSchema>;

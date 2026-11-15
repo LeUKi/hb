@@ -3301,3 +3301,21 @@ export const squareWatchers = sqliteTable("square_watchers", {
     .references(() => users.id, { onDelete: "cascade" }),
   createdAt: integer("created_at").notNull(),
 });
+
+/**
+ * 私信通知's pace (docs/notification-design.md §2.3), set by the 站长 in
+ * 网站管理: the 社区 drops mail that comes too close together, so any two
+ * wait `any_gap_seconds` and two to one person `same_person_gap_seconds`.
+ */
+export const noticeSettings = sqliteTable(
+  "notice_settings",
+  {
+    id: text("id").primaryKey(),
+    anyGapSeconds: integer("any_gap_seconds").notNull(),
+    samePersonGapSeconds: integer("same_person_gap_seconds").notNull(),
+    version: integer("version").notNull().default(1),
+    updatedBy: text("updated_by").references(() => users.id),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [check("notice_settings_singleton", sql`${table.id} = 'global'`)],
+);

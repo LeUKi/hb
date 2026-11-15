@@ -11,7 +11,7 @@ import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
 import { emailAssociatedData } from "../src/auth/oauth";
 import type { ApiBindings } from "../src/env";
-import { handleNoticeBatch, notify } from "../src/notices/outbox";
+import { handleNoticeBatch, notify, paced } from "../src/notices/outbox";
 import {
   type Mail,
   messageOf,
@@ -239,14 +239,14 @@ describe("SMTP to the 社区's mail server", () => {
       async () => server,
     );
     expect(outcomes).toEqual([
-      { id: "a", ok: true },
+      { id: "a", ok: true, at: expect.any(Number) },
       {
         id: "b",
         ok: false,
         permanent: true,
         reason: expect.stringContaining("550"),
       },
-      { id: "c", ok: true },
+      { id: "c", ok: true, at: expect.any(Number) },
     ]);
     expect(server.commands.filter((c) => c.startsWith("AUTH"))).toHaveLength(1);
     expect(atob(server.commands[1]?.slice("AUTH PLAIN ".length) ?? "")).toBe(
@@ -255,17 +255,27 @@ describe("SMTP to the 社区's mail server", () => {
     expect(server.data).toHaveLength(2);
   });
 
-  it("waits between two mails when told to", async () => {
+  it("keeps any two mails apart, and two to one person further apart", async () => {
     const server = fakeServer();
     const started = Date.now();
     const outcomes = await sendMails(
       account,
-      ["a", "b", "c"].map((id) => mail(id, `${id}@privaterelay.linux.do`)),
+      [
+        mail("a", "a@privaterelay.linux.do"),
+        mail("b", "b@privaterelay.linux.do"),
+        mail("c", "a@privaterelay.linux.do"),
+      ],
       async () => server,
-      60,
+      { anyGapMs: 30, samePersonGapMs: 150 },
     );
-    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(110);
+    const at = (id: string) => {
+      const outcome = outcomes.find((each) => each.id === id);
+      return outcome?.ok ? outcome.at : Number.NaN;
+    };
+    expect(at("b") - at("a")).toBeGreaterThanOrEqual(29);
+    expect(at("b") - at("a")).toBeLessThan(140);
+    expect(at("c") - at("a")).toBeGreaterThanOrEqual(149);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(149);
   });
 
   it("leaves everything for later when the session breaks off", async () => {
@@ -364,6 +374,18 @@ async function noticesOf(userId: string) {
 const said = { subject: "红包站：测试", body: "测试\n" };
 
 describe("the outbox", () => {
+  it("sends everyone's first mail before anyone's second", () => {
+    expect(
+      paced([
+        { userId: "a", id: 1 },
+        { userId: "a", id: 2 },
+        { userId: "b", id: 3 },
+        { userId: "a", id: 4 },
+        { userId: "c", id: 5 },
+      ]).map((item) => item.id),
+    ).toEqual([1, 3, 5, 2, 4]);
+  });
+
   it("writes one row an event, and none for the 站长", async () => {
     const someone = await person();
     const owner = await person();
@@ -439,7 +461,7 @@ describe("the outbox", () => {
               permanent: false,
               reason: "smtp 421",
             }
-          : { id: each.id, ok: true as const },
+          : { id: each.id, ok: true as const, at: Date.now() },
       );
     });
     expect(sent.map((each) => each.id).sort()).toEqual([ids[0], ids[4]].sort());
@@ -466,6 +488,52 @@ describe("the outbox", () => {
     });
     expect(retried).toEqual([ids[4]]);
     expect(acked.sort()).toEqual(ids.slice(0, 4).sort());
+  });
+});
+
+describe("私信通知's pace in 网站管理", () => {
+  it("is the 站长's to read and change, one version at a time", async () => {
+    const owner = await person();
+    admins = [owner.externalId];
+    const someone = await person();
+    expect(
+      (await call("GET", "/admin/notifications/pace", someone)).status,
+    ).toBe(403);
+    const read = await call("GET", "/admin/notifications/pace", owner);
+    expect(read.json).toMatchObject({
+      pace: { anyGapSeconds: 3, samePersonGapSeconds: 20 },
+    });
+    const version = (read.json as { pace: { version: number } }).pace.version;
+    const saved = await call("PATCH", "/admin/notifications/pace", owner, {
+      expectedVersion: version,
+      anyGapSeconds: 5,
+      samePersonGapSeconds: 30,
+    });
+    expect(saved.json).toMatchObject({
+      pace: {
+        version: version + 1,
+        anyGapSeconds: 5,
+        samePersonGapSeconds: 30,
+      },
+    });
+    expect(
+      (
+        await call("PATCH", "/admin/notifications/pace", owner, {
+          expectedVersion: version,
+          anyGapSeconds: 1,
+          samePersonGapSeconds: 1,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await call("PATCH", "/admin/notifications/pace", owner, {
+          expectedVersion: version + 1,
+          anyGapSeconds: -1,
+          samePersonGapSeconds: 1,
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 

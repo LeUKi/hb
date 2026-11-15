@@ -10,6 +10,7 @@ import {
   type NoticeSettingsView,
   type OpeningWatchView,
   type SquareWatchView,
+  updateNoticePaceSchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
 import { ActivityError } from "../activities/errors";
@@ -18,11 +19,12 @@ import { isAdministrator } from "../admin/authorization";
 import {
   getOptionalSession,
   requireAdmin,
+  requireAdminMutation,
   requireAuth,
   requireProtectedMutation,
 } from "../auth/session";
 import type { ApiBindings, ApiContext } from "../env";
-import { noticeAdminStats } from "./outbox";
+import { noticeAdminStats, readNoticePace } from "./outbox";
 
 const RECENT_MS = 30 * 86_400_000;
 
@@ -255,4 +257,41 @@ export const noticeRoutes = new Hono<ApiContext>()
   .get("/admin/notifications", async (c) => {
     await requireAdmin(c);
     return c.json(await noticeAdminStats(c.env));
+  })
+  // How far apart mails go (§2.3), changed by the 站长 at any time.
+  .get("/admin/notifications/pace", async (c) => {
+    await requireAdmin(c);
+    return c.json({ pace: await readNoticePace(c.env) });
+  })
+  .patch("/admin/notifications/pace", async (c) => {
+    const session = await requireAdminMutation(c);
+    const input = updateNoticePaceSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!input.success)
+      throw new ActivityError(
+        400,
+        "INVALID_NOTICE_PACE",
+        "间隔要填 0 到 600 秒、0 到 3600 秒的整数",
+      );
+    const { expectedVersion, anyGapSeconds, samePersonGapSeconds } = input.data;
+    const saved = await c.env.DB.prepare(
+      `UPDATE notice_settings SET any_gap_seconds=?,same_person_gap_seconds=?,version=version+1,
+        updated_by=?,updated_at=? WHERE id='global' AND version=?`,
+    )
+      .bind(
+        anyGapSeconds,
+        samePersonGapSeconds,
+        session.user.id,
+        Date.now(),
+        expectedVersion,
+      )
+      .run();
+    if (saved.meta.changes === 0)
+      throw new ActivityError(
+        409,
+        "NOTICE_PACE_CHANGED",
+        "设置刚被改过，刷新后再改。",
+      );
+    return c.json({ pace: await readNoticePace(c.env) });
   });

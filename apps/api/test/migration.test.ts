@@ -27,6 +27,7 @@ async function resetLegacyDb(db: D1Database) {
     "notification_settings",
     "opening_watchers",
     "square_watchers",
+    "notice_settings",
     "merchant_config_changes",
     "payment_identity_corrections",
     "merchant_client_ids",

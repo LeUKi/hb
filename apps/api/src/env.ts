@@ -66,8 +66,6 @@ type ApiEnvVars = {
   NOTICE_SMTP_HOST?: string;
   NOTICE_SMTP_PORT?: string;
   NOTICE_ALLOWED_LINUX_DO_IDS?: string;
-  /** Seconds between two mails (default 20). */
-  NOTICE_SPACING_SECONDS?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;
