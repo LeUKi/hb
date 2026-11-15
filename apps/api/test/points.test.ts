@@ -16,7 +16,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
-import { removeKey, saveKey } from "../src/points/keys";
+import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
 import {
   resendPointsPayment,
   runPointsPayment,
@@ -545,6 +545,22 @@ describe("三方积分红包", () => {
       end_reason: "points",
       points_stop_reason: "key_removed",
     });
+  });
+
+  it("lists the keys one has pasted for 我的, never the key, gone once removed (§8)", async () => {
+    await online();
+    const listed = await listMyKeys(bindings, sender.id);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      system: { id: systemId, status: "online" },
+      key: { status: "ok", accountUsername: sender.username },
+    });
+    expect(JSON.stringify(listed)).not.toContain("sender-key");
+    expect(await listMyKeys(bindings, owner.id)).toEqual([]);
+    const anonymous = await app.request("/api/me/points-keys", {}, bindings);
+    expect(anonymous.status).toBe(401);
+    await removeKey(bindings, sender.id, systemId);
+    expect(await listMyKeys(bindings, sender.id)).toEqual([]);
   });
 
   it("splits 拼手气 in whole 最小单位", async () => {

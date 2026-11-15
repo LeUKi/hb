@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { useHashTarget } from "../../lib/hash-target";
 import {
   statusWords,
   usePointsDetail,
@@ -37,6 +38,8 @@ export function PointsDetailView({ id }: { id: string }) {
   const user = useSessionUser();
   const navigate = useNavigate();
   const query = usePointsDetail(id);
+  // 我的 → 三方积分密钥 links to #my-key (§8).
+  useHashTarget();
   const [keying, setKeying] = useState(false);
   const [removing, setRemoving] = useState(false);
   const data = query.data;
@@ -155,10 +158,17 @@ export function PointsDetailView({ id }: { id: string }) {
               ]}
             />
           </PageSection>
-          {user && system.status === "online" && (
+          {/* Off line, a key already pasted can still be removed: 我的 →
+              三方积分密钥 links here (§8). */}
+          {user && (system.status === "online" || data?.key) && (
             <PageSection
+              id="my-key"
               title="我的密钥"
-              description="用它发红包时，从这把密钥的账户扣。"
+              description={
+                system.status === "online"
+                  ? "用它发红包时，从这把密钥的账户扣。"
+                  : `这个积分${statusWords[system.status]}，现在换不了密钥；不用了可以删掉。`
+              }
             >
               <Panel className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-ink-2">
                 <span className="min-w-0">
@@ -169,14 +179,16 @@ export function PointsDetailView({ id }: { id: string }) {
                     : `还没填你在 ${system.host} 的密钥`}
                 </span>
                 <span className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setKeying(true)}
-                  >
-                    <KeyRound aria-hidden="true" />
-                    {data?.key ? "换密钥" : "填密钥"}
-                  </Button>
+                  {system.status === "online" && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setKeying(true)}
+                    >
+                      <KeyRound aria-hidden="true" />
+                      {data?.key ? "换密钥" : "填密钥"}
+                    </Button>
+                  )}
                   {data?.key && (
                     <Button
                       size="sm"

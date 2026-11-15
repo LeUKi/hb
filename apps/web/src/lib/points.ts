@@ -110,8 +110,12 @@ export const statusWords: Record<PointsSystemStatus, string> = {
   retired: "已下架",
 };
 
+/** 我的 → 三方积分密钥: a key one pasted, and the system it is for (§8). */
+export type MyPointsKey = { system: PublicPointsSystem; key: PointsKeyView };
+
 export const pointsKeys = {
   online: ["points", "online"] as const,
+  myKeys: (userId: string) => ["points", userId, "keys"] as const,
   detail: (id: string, userId: string | null) =>
     ["points", "detail", id, userId ?? "guest"] as const,
   mine: (userId: string) => ["points", userId, "mine"] as const,
@@ -174,6 +178,17 @@ export function usePointsDetail(id: string) {
       get<PointsDetail>(`points/${encodeURIComponent(id)}`, signal),
     enabled: id !== "",
     staleTime: 60_000,
+  });
+}
+
+/** The keys one has pasted, wherever (§8); read again with any change. */
+export function useMyPointsKeys(userId: string) {
+  return useQuery({
+    queryKey: pointsKeys.myKeys(userId),
+    queryFn: ({ signal }) =>
+      get<{ items: MyPointsKey[] }>("me/points-keys", signal),
+    enabled: userId !== "",
+    retry: false,
   });
 }
 
@@ -284,6 +299,7 @@ export function usePointsKeyActions(userId: string, systemId: string) {
     void queryClient.invalidateQueries({
       queryKey: ["points", "detail", systemId],
     });
+    void queryClient.invalidateQueries({ queryKey: pointsKeys.myKeys(userId) });
     void queryClient.invalidateQueries({
       queryKey: pointsKeys.balance(userId, systemId),
     });

@@ -59,6 +59,54 @@ export function keyView(row: PointsKeyRow | null) {
 }
 export type PointsKeyView = NonNullable<ReturnType<typeof keyView>>;
 
+/**
+ * 我的 → 三方积分密钥 (§8): every key one has pasted and not removed, with
+ * the system it is for, last changed first. Never the key itself.
+ */
+export async function listMyKeys(env: ApiBindings, userId: string) {
+  const rows = await env.DB.prepare(
+    `SELECT k.account_id, k.account_username, k.status, k.checked_at,
+       k.updated_at, s.id AS system_id, s.name, s.unit, s.step, s.issuer_name,
+       s.host, s.status AS system_status
+     FROM points_keys k JOIN points_systems s ON s.id = k.system_id
+     WHERE k.author_id = ? AND k.removed_at IS NULL
+     ORDER BY k.updated_at DESC`,
+  )
+    .bind(userId)
+    .all<{
+      account_id: string | null;
+      account_username: string | null;
+      status: "ok" | "invalid";
+      checked_at: number;
+      updated_at: number;
+      system_id: string;
+      name: string;
+      unit: string;
+      step: number;
+      issuer_name: string;
+      host: string;
+      system_status: PointsSystemRow["status"];
+    }>();
+  return rows.results.map((row) => ({
+    system: {
+      id: row.system_id,
+      name: row.name,
+      unit: row.unit,
+      step: row.step,
+      issuerName: row.issuer_name,
+      host: row.host,
+      status: row.system_status,
+    },
+    key: {
+      accountId: row.account_id,
+      accountUsername: row.account_username,
+      status: row.status,
+      checkedAt: row.checked_at,
+      updatedAt: row.updated_at,
+    } satisfies PointsKeyView,
+  }));
+}
+
 function usable(system: PointsSystemRow) {
   if (system.status !== "online")
     pointsError(409, "POINTS_NOT_ONLINE", "这个积分现在没有上线");

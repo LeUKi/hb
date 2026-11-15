@@ -26,7 +26,14 @@ import {
   markChangesSeen,
   requeryPayout,
 } from "./admin";
-import { availableNow, keyView, readKey, removeKey, saveKey } from "./keys";
+import {
+  availableNow,
+  keyView,
+  listMyKeys,
+  readKey,
+  removeKey,
+  saveKey,
+} from "./keys";
 import {
   attentionPayouts,
   listCallRecords,
@@ -172,6 +179,11 @@ export const pointsRoutes = new Hono<ApiContext>()
       },
       key: keyView(key),
     });
+  })
+  // 我的 → 三方积分密钥 (§8): the keys one has pasted, wherever.
+  .get("/me/points-keys", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({ items: await listMyKeys(c.env, session.user.id) });
   })
   // 我接入的三方积分 (§1).
   .get("/me/points", async (c) => {

@@ -13,6 +13,7 @@ import { useHistorySummary } from "../../lib/activities";
 import { getLoginHref } from "../../lib/auth";
 import { authErrorOf } from "../../lib/auth-errors";
 import { useBalancePages } from "../../lib/balance";
+import { useHashTarget } from "../../lib/hash-target";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { merchantPause } from "../../lib/payment-display";
 import { useRankVisibility, useSetRankVisibility } from "../../lib/rank";
@@ -25,6 +26,7 @@ import {
 import { authErrorAtom } from "../../lib/store";
 import { useMyTips } from "../../lib/tips";
 import { PersonalTokensSection } from "../account/personal-tokens";
+import { PointsKeysSection } from "../account/points-keys";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import {
   Callout,
@@ -102,6 +104,8 @@ export function MeView() {
 
 function Me({ user }: { user: SessionUser }) {
   const { goHome, leaveTo } = useOmniboxController();
+  // /help/token links to #me-personal-tokens.
+  useHashTarget();
   const profile = useAccountProfile(user);
   const summary = useHistorySummary(user.id);
   // The first page of 我发的 carries the counts (草稿 among them).
@@ -230,6 +234,9 @@ function Me({ user }: { user: SessionUser }) {
         <MeRank user={user} />
 
         <PersonalTokensSection user={user} />
+
+        {/* Its own read too: only for those who have pasted a key. */}
+        <PointsKeysSection user={user} />
 
         <PageSection title="资料" id="me-profile">
           <InfoList
