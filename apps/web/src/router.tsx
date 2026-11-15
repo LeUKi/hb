@@ -385,6 +385,12 @@ const helpPointsRoute = createRoute({
   path: "/help/points",
   staticData: { chrome: "docked", command: "help", subpage: "三方积分" },
 });
+// 个人令牌's 接口说明 (docs/personal-token-design.md §3): a subpage too.
+const helpTokenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/token",
+  staticData: { chrome: "docked", command: "help", subpage: "个人令牌" },
+});
 // Production's connection check: kept, with no entry (06 §5).
 const statusRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -457,6 +463,7 @@ const routeTree = rootRoute.addChildren([
   helpCodeRoute,
   helpPageRoute,
   helpPointsRoute,
+  helpTokenRoute,
   statusRoute,
   notFoundRoute,
 ]);

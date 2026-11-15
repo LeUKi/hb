@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Braces, ChevronRight, Compass, FolderCode, Globe } from "lucide-react";
+import {
+  Braces,
+  ChevronRight,
+  Compass,
+  FolderCode,
+  Globe,
+  KeyRound,
+} from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -247,6 +254,24 @@ export function HelpView() {
               <PointsMark className="size-[18px] shrink-0 text-ink-2" />
               <span className="min-w-0 flex-1 truncate text-ink">
                 三方积分 · 接入说明
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </Link>
+          </Squircle>
+        </li>
+        {/* 个人令牌 (docs/personal-token-design.md): for one's own scripts. */}
+        <li>
+          <Squircle radius={radius.row}>
+            <Link
+              to="/help/token"
+              className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+            >
+              <KeyRound className="size-[18px] shrink-0 text-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                个人令牌 · 接口说明
               </span>
               <ChevronRight
                 className="size-4 shrink-0 text-ink-3"

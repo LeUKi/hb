@@ -36,6 +36,7 @@ import { HelpCodeView } from "../views/help-code-view";
 import { HelpPageView } from "../views/help-page-view";
 import { HelpPointsView } from "../views/help-points-view";
 import { HelpStartView } from "../views/help-start-view";
+import { HelpTokenView } from "../views/help-token-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
@@ -275,6 +276,8 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return <HelpPageView />;
     case "/help/points":
       return <HelpPointsView />;
+    case "/help/token":
+      return <HelpTokenView />;
     default: {
       const command = leaf.staticData.command;
       const adminPage = adminPages[leaf.routeId];
