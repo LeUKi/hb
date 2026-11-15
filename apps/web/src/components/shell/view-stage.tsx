@@ -48,6 +48,7 @@ import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
 import { CommandPageView, MessageView } from "../views/message-view";
 import { NewView } from "../views/new-view";
+import { NotificationsView } from "../views/notifications-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
 import { PointsDetailView } from "../views/points-detail-view";
@@ -79,6 +80,7 @@ const commandPages: Record<
   history: <HistoryView />,
   balance: <BalanceView />,
   tips: <TipsView />,
+  notifications: <NotificationsView />,
   points: <PointsView />,
   me: <MeView />,
   merchant: <MerchantView />,

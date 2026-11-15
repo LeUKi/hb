@@ -2980,6 +2980,8 @@ export const pointsSystems = sqliteTable(
     /** 熔断 (§5): answers missed in a row, and until when it rests. */
     missedInRow: integer("missed_in_row").notNull().default(0),
     breakerUntil: integer("breaker_until"),
+    /** 私信通知: this outage was told (notification-design §3.3); cleared on the next answer. */
+    breakerNoticedAt: integer("breaker_noticed_at"),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -3220,5 +3222,82 @@ export const miniHops = sqliteTable("mini_hops", {
   linuxDoId: text("linux_do_id").primaryKey(),
   /** A path on 红包站, or a Credit 站 address (an 打赏's cashier). */
   target: text("target").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+/**
+ * 私信通知 (docs/notification-design.md §2.3): every notice made, one per
+ * event (dedupe_key), sent by the queue. The body is cleared after 30 days;
+ * the row stays, so an event is never told twice.
+ */
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    status: text("status", {
+      enum: ["queued", "sent", "skipped", "failed"],
+    }).notNull(),
+    /** Why skipped or failed. */
+    reason: text("reason"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    sentAt: integer("sent_at"),
+  },
+  (table) => [
+    uniqueIndex("notifications_dedupe_key_unique").on(table.dedupeKey),
+    index("notifications_user_created_idx").on(table.userId, table.createdAt),
+    index("notifications_status_updated_idx").on(table.status, table.updatedAt),
+    index("notifications_created_idx").on(table.createdAt),
+  ],
+);
+
+/** A 私信通知 kind someone turned off (or back on): no row is on. */
+export const notificationSettings = sqliteTable(
+  "notification_settings",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.category] })],
+);
+
+/** 开放时提醒我: who waits for a timed 红包 to open (§3.1). */
+export const openingWatchers = sqliteTable(
+  "opening_watchers",
+  {
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activityId, table.userId] }),
+    index("opening_watchers_user_idx").on(table.userId),
+  ],
+);
+
+/**
+ * 红包广场's 下一个红包开放时提醒我 (§3.1): one row a person, used up by
+ * the first 红包 in the 广场 that opens and that they may claim.
+ */
+export const squareWatchers = sqliteTable("square_watchers", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
   createdAt: integer("created_at").notNull(),
 });

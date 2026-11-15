@@ -39,6 +39,7 @@ export * from "./ecoji-v2";
 export * from "./forum-emoji";
 export * from "./judge";
 export * from "./mini-app";
+export * from "./notices";
 export * from "./page-url";
 export * from "./payments";
 export * from "./points";

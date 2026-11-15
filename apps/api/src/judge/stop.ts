@@ -7,6 +7,7 @@ import { databaseNow, refreshActivityLifecycle } from "../activities/lifecycle";
 import { activityStatus } from "../activities/service";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
+import { noticeStopped } from "../notices/events";
 import { findJudgeRow } from "./storage";
 
 export async function stopCodeActivity(
@@ -26,7 +27,7 @@ export async function stopCodeActivity(
   if (judge?.stoppedAt != null) return;
   if (activityStatus(activity) !== "active")
     throw new ActivityError(409, "ACTIVITY_NOT_ACTIVE", "红包已经结束了。");
-  await env.DB.batch([
+  const [stopped] = await env.DB.batch([
     env.DB.prepare(`UPDATE activity_code SET stopped_at = ${databaseNow}, stopped_by_user_id = ?, updated_at = ${databaseNow}
       WHERE activity_id = ? AND stopped_at IS NULL`).bind(adminId, activityId),
     env.DB.prepare(`UPDATE activities SET
@@ -36,4 +37,6 @@ export async function stopCodeActivity(
   ]);
   // What nobody took goes back, and a claim judged but not yet in ends.
   await refreshActivityLifecycle(env, activityId);
+  // 红包被站长停用 (docs/notification-design.md §3.1).
+  if ((stopped?.meta.changes ?? 0) > 0) await noticeStopped(env, activity);
 }

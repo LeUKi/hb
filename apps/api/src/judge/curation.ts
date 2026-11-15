@@ -12,6 +12,7 @@ import {
 import { ActivityError } from "../activities/errors";
 import { isAdministrator } from "../admin/authorization";
 import type { ApiBindings } from "../env";
+import { noticeJudgeWithdrawn } from "../notices/events";
 import { usableByOthers } from "./square";
 
 type Action =
@@ -101,6 +102,13 @@ export async function takeDownJudge(
       at: now,
     }),
   ]);
+  // 判定器被撤下 (docs/notification-design.md §3.1): its author.
+  await noticeJudgeWithdrawn(
+    env,
+    { id: judge.id, authorId: judge.author_id, name: judge.name },
+    input.reason,
+    now,
+  );
 }
 
 /** 恢复 (§15.5): back in the 广场, its drafts opening again. */

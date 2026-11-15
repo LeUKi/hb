@@ -110,7 +110,7 @@ async function main() {
     platform: "neutral",
     target: "es2022",
     conditions: ["workerd", "worker", "browser"],
-    external: ["cloudflare:workers"],
+    external: ["cloudflare:workers", "cloudflare:sockets"],
     logLevel: "silent",
   };
   await Promise.all([
@@ -129,7 +129,7 @@ async function main() {
     build({
       ...bundling,
       conditions: ["worker", "browser"],
-      external: ["cloudflare:workers", "node:*"],
+      external: ["cloudflare:workers", "cloudflare:sockets", "node:*"],
       alias: {
         esbuild: join(root, "apps/cap/src/absent.ts"),
         "javascript-obfuscator": join(root, "apps/cap/src/absent.ts"),
@@ -238,11 +238,20 @@ async function main() {
             ACTIVITY_DO: { className: "ActivityDO", useSQLite: true },
             MERCHANT_DO: { className: "MerchantDO", useSQLite: true },
           },
-          queueProducers: { PAYMENT_QUEUE: "hb-full-app-payments" },
+          queueProducers: {
+            PAYMENT_QUEUE: "hb-full-app-payments",
+            // 私信通知: sent nowhere here, only marked (notices/outbox.ts).
+            NOTICE_QUEUE: "hb-full-app-notices",
+          },
           queueConsumers: {
             "hb-full-app-payments": {
               maxBatchSize: 1,
               maxBatchTimeout: 0,
+              maxRetries: 2,
+            },
+            "hb-full-app-notices": {
+              maxBatchSize: 20,
+              maxBatchTimeout: 1,
               maxRetries: 2,
             },
           },

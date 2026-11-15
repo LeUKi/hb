@@ -22,6 +22,11 @@ async function resetLegacyDb(db: D1Database) {
     .all<{ type: "table" | "view" | "trigger"; name: string }>();
   await db.prepare("PRAGMA foreign_keys=OFF").run();
   const tableOrder = [
+    // 私信通知 (0066): before the people and 红包 they name.
+    "notifications",
+    "notification_settings",
+    "opening_watchers",
+    "square_watchers",
     "merchant_config_changes",
     "payment_identity_corrections",
     "merchant_client_ids",

@@ -256,12 +256,25 @@ function Me({ user }: { user: SessionUser }) {
                 action: <CopyButton value={user.id} label="本账号 ID" />,
               },
               {
-                label: "Connect 邮箱",
+                label: "隐私邮箱",
                 value: email ?? "未提供",
                 action: email ? (
-                  <CopyButton value={email} label="邮箱" />
+                  <CopyButton value={email} label="隐私邮箱" />
                 ) : undefined,
-                note: "由 LINUX DO Connect 提供，本站不能修改，也不会给你发邮件。",
+                // 私信通知 (docs/notification-design.md §4) go to it.
+                note: (
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>
+                      由 LINUX DO Connect 提供，发到这里的信会变成你的社区私信。
+                    </span>
+                    <MoreLink
+                      href="/notifications"
+                      onGo={() => void leaveTo({ to: "/notifications" })}
+                    >
+                      私信通知设置
+                    </MoreLink>
+                  </span>
+                ),
               },
             ]}
           />

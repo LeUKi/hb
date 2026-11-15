@@ -41,6 +41,10 @@
       {
         "binding": "PAYMENT_QUEUE",
         "queue": "hb-local-tasks"
+      },
+      {
+        "binding": "NOTICE_QUEUE",
+        "queue": "hb-local-notices"
       }
     ],
     "consumers": [
@@ -48,6 +52,13 @@
         "queue": "hb-local-tasks",
         "max_batch_size": 10,
         "max_batch_timeout": 5
+      },
+      {
+        "queue": "hb-local-notices",
+        "max_batch_size": 20,
+        "max_batch_timeout": 5,
+        "max_retries": 10,
+        "max_concurrency": 1
       }
     ]
   },

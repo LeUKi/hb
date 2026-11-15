@@ -74,6 +74,7 @@ import {
   saveJudgeStatements,
   sealSeedStatement,
 } from "../judge/storage";
+import { noticeOpened, noticeSquareOpened } from "../notices/events";
 import { ownedMerchant } from "../payments/merchants";
 import {
   PUBLICATION_VERIFICATION_MS,
@@ -1584,5 +1585,9 @@ export async function openActivity(
       invalidActivity("开奖时间超出有效范围");
     throw error;
   }
+  // 等的红包开放了 and 红包广场's 下一个红包 (docs/notification-design.md
+  // §3.1): however it opened.
+  await noticeOpened(env, id);
+  await noticeSquareOpened(env, id);
   return getManagedActivity(env, id, authorId);
 }

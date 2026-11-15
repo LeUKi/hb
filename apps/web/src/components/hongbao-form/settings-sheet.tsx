@@ -2,6 +2,7 @@ import { normalizePageUrl } from "@hb/contracts";
 import { BookOpen, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { useAttachedPageCheck } from "../../lib/activities";
+import { useSquareWatch, watchWords } from "../../lib/notices";
 import { openingLabel } from "../../lib/roster-time";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -203,6 +204,11 @@ export function SettingsSheet({
       : "开放后到结束前不能改。";
   // 首页领取 off keeps 红包广场 on (07 §6); 代码判定 is only on its page.
   const coded = form.mode === "code";
+  // 下一个红包开放时提醒我: how many will hear of it when this opens (its
+  // sender's own 红包 never tells its sender).
+  const square = useSquareWatch(!opened).data;
+  const squareWaiting =
+    (square?.waiting ?? 0) - (square?.squareWatch?.watching ? 1 : 0);
   const squareRequired =
     coded || (form.participation === "password" && form.pageOnly);
   const { total, shares } = plan(form);
@@ -649,15 +655,24 @@ export function SettingsSheet({
               <Switch
                 label="加入红包广场"
                 description={
-                  listedLocked
-                    ? "已加入红包广场，不能撤回。"
-                    : coded
-                      ? "代码判定红包只能在红包页领，自动加入红包广场。"
-                      : squareRequired
-                        ? "关闭首页领取的红包要加入红包广场，方便大家找到。"
-                        : opened
-                          ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
-                          : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"
+                  <>
+                    {listedLocked
+                      ? "已加入红包广场，不能撤回。"
+                      : coded
+                        ? "代码判定红包只能在红包页领，自动加入红包广场。"
+                        : squareRequired
+                          ? "关闭首页领取的红包要加入红包广场，方便大家找到。"
+                          : opened
+                            ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
+                            : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"}
+                    {/* Those who asked to hear of the next 红包 here
+                        (docs/notification-design.md §3.1). */}
+                    {!opened && squareWaiting > 0 && (
+                      <span className="mt-0.5 block">
+                        {watchWords.squareJoin(squareWaiting)}
+                      </span>
+                    )}
+                  </>
                 }
                 checked={form.listed || squareRequired}
                 disabled={listedLocked || squareRequired}

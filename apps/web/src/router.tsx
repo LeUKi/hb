@@ -152,6 +152,11 @@ const tipsRoute = createRoute({
   path: "/tips",
   staticData: { chrome: "docked", command: "tips" },
 });
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/notifications",
+  staticData: { chrome: "docked", command: "notifications" },
+});
 const pointsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/points",
@@ -422,6 +427,7 @@ const routeTree = rootRoute.addChildren([
   balanceWithdrawalRoute,
   balanceCheckoutRoute,
   tipsRoute,
+  notificationsRoute,
   pointsRoute,
   pointsNewRoute,
   pointsEditRoute,

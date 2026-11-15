@@ -1,4 +1,10 @@
+import { Bell, BellRing } from "lucide-react";
 import { useEffect } from "react";
+import {
+  useSetSquareWatch,
+  useSquareWatch,
+  watchWords,
+} from "../../lib/notices";
 import {
   type SquareFilter,
   squareRecordOf,
@@ -18,7 +24,10 @@ import {
   resultOf,
 } from "../page/page-state";
 import { useSearchChoice } from "../shell/use-search-choice";
+import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
+import { RollingNumber } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { radius } from "../ui/squircle";
 
 const filters: readonly SquareFilter[] = ["all", "upcoming", "active", "ended"];
@@ -99,6 +108,7 @@ function Square({ userId }: { userId: string | null }) {
             />
           }
         />
+        <SquareWatch />
         <ResultLoad
           id={`${filter}:${items.length === 0 ? "empty" : "cards"}`}
           load={resultOf(query)}
@@ -160,5 +170,54 @@ function CardsSkeleton() {
         <Bone key={card} className="h-56 w-full" radius={radius.card} />
       ))}
     </div>
+  );
+}
+
+/**
+ * 下一个红包开放时提醒我 (docs/notification-design.md §3.1): one 私信 when
+ * the next 红包 here opens, then pressed again for another. How many have
+ * it on is for everyone; the button only for whom a 私信 can reach.
+ */
+function SquareWatch() {
+  const watch = useSquareWatch();
+  const save = useSetSquareWatch();
+  const mine = watch.data?.squareWatch ?? null;
+  const waiting = watch.data?.waiting ?? 0;
+  return (
+    <Reveal show={mine !== null || waiting > 0}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
+        {mine &&
+          (mine.watching ? (
+            <span className="flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+                <BellRing aria-hidden="true" className="size-4 text-gold-ink" />
+                {watchWords.squareOn}
+              </span>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => save.mutate(false)}
+              >
+                {watchWords.cancel}
+              </Button>
+            </span>
+          ) : (
+            <Button size="sm" variant="quiet" onClick={() => save.mutate(true)}>
+              <Bell aria-hidden="true" />
+              {watchWords.square}
+            </Button>
+          ))}
+        {waiting > 0 && (
+          <span className="text-sm text-ink-3 tabular-nums">
+            <RollingNumber value={waiting} /> {watchWords.waiting}
+          </span>
+        )}
+        {save.isError && (
+          <span role="alert" className="text-sm text-danger">
+            {watchWords.failed}
+          </span>
+        )}
+      </div>
+    </Reveal>
   );
 }

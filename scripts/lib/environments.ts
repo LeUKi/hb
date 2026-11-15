@@ -147,17 +147,28 @@ export function validateEnvironment(
       fail("SQLite Durable Object export");
   }
   if (api.migrations) fail("exports cannot be combined with DO migrations");
-  const producer = api.queues?.producers?.find(
-    (value) => value.binding === "PAYMENT_QUEUE",
-  );
-  const consumer = api.queues?.consumers?.[0];
+  // Payments and 私信通知 each have their queue, read by this Worker; the
+  // Worker tells them apart by "notices" in the name (src/index.ts).
+  const queueOf = (binding: string) =>
+    api.queues?.producers?.find((value) => value.binding === binding)?.queue;
+  const payments = queueOf("PAYMENT_QUEUE");
+  const notices = queueOf("NOTICE_QUEUE");
+  const consumers = api.queues?.consumers ?? [];
   if (
-    !producer ||
-    !consumer ||
-    producer.queue !== consumer.queue ||
-    api.queues?.consumers?.length !== 1
+    !payments ||
+    !notices ||
+    payments.includes("notices") ||
+    !notices.includes("notices") ||
+    consumers.length !== 2 ||
+    !consumers.some((value) => value.queue === payments) ||
+    !consumers.some((value) => value.queue === notices)
   )
     throw new Error("RELEASE_CONFIG_INVALID: queue producer and consumer");
+  // Payments keep a dead-letter queue; notices need none (the cron puts a
+  // notice left queued on its queue again).
+  const consumer = consumers.find((value) => value.queue === payments) ?? {
+    queue: payments,
+  };
   if (
     api.observability?.redact_query_string !== true ||
     api.observability.traces?.enabled !== false ||
@@ -200,7 +211,8 @@ export function validateEnvironment(
     const resources = [
       database?.database_name ?? "",
       database?.database_id ?? "",
-      producer.queue,
+      payments,
+      notices,
       consumer.dead_letter_queue ?? "",
     ];
     if (!options.allowPlaceholders && resources.some(hasPlaceholder))
@@ -270,7 +282,8 @@ export function validateEnvironment(
       database_name: selectedDatabase.database_name,
       database_id: selectedDatabase.database_id,
     },
-    queue: producer.queue,
+    queue: payments,
+    noticeQueue: notices,
     deadLetterQueue: consumer.dead_letter_queue ?? null,
   };
 }

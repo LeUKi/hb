@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Bell,
   CircleHelp,
   Coffee,
   Fish,
@@ -41,6 +42,7 @@ export type CommandPath =
   | "/history"
   | "/balance"
   | "/tips"
+  | "/notifications"
   | "/points"
   | "/square"
   | "/rank"
@@ -57,6 +59,7 @@ export type CommandId =
   | "history"
   | "balance"
   | "tips"
+  | "notifications"
   | "points"
   | "square"
   | "rank"
@@ -181,6 +184,29 @@ export const commands: Command[] = [
       "dashang",
       "ds",
       "wodedashang",
+    ],
+  },
+  // 私信通知 (docs/notification-design.md §4): what the 社区's private
+  // messages tell you of, each kind turned on or off.
+  {
+    id: "notifications",
+    path: "/notifications",
+    name: "notifications",
+    title: "私信通知",
+    icon: Bell,
+    requires: "standard",
+    visibleTo: (role) => role !== "guest",
+    keys: [
+      "notifications",
+      "notice",
+      "私信通知",
+      "通知",
+      "私信",
+      "提醒",
+      "sixintongzhi",
+      "sxtz",
+      "tongzhi",
+      "tz",
     ],
   },
   // 三方积分 (docs/third-party-points-design.md §1): the systems one

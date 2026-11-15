@@ -3,6 +3,7 @@
 // any answer resets the count.
 import { POINTS_LIMITS, pointsRemark } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { noticePointsBreaker } from "../notices/events";
 import {
   type BalanceAnswer,
   callIssuer,
@@ -48,25 +49,38 @@ async function record(
   ];
   // Only payouts' calls move the breaker; a self-test or a sender's check
   // that misses says so to the person who asked.
+  // An answer ends an outage; the first trip of one is told to its owner
+  // once (私信通知, docs/notification-design.md §3.3).
   if (counts)
     statements.push(
       call.answered
         ? env.DB.prepare(
-            "UPDATE points_systems SET missed_in_row=0 WHERE id=? AND missed_in_row<>0",
+            `UPDATE points_systems SET missed_in_row=0,breaker_noticed_at=NULL
+             WHERE id=? AND (missed_in_row<>0 OR breaker_noticed_at IS NOT NULL)`,
           ).bind(target.id)
         : env.DB.prepare(
             `UPDATE points_systems SET
               missed_in_row=CASE WHEN missed_in_row+1>=?2 THEN 0 ELSE missed_in_row+1 END,
-              breaker_until=CASE WHEN missed_in_row+1>=?2 THEN ?3 ELSE breaker_until END
-             WHERE id=?1`,
+              breaker_until=CASE WHEN missed_in_row+1>=?2 THEN ?3 ELSE breaker_until END,
+              breaker_noticed_at=CASE WHEN missed_in_row+1>=?2 AND breaker_noticed_at IS NULL THEN ?4 ELSE breaker_noticed_at END
+             WHERE id=?1 RETURNING breaker_noticed_at`,
           ).bind(
             target.id,
             POINTS_LIMITS.breakerMisses,
             now + POINTS_LIMITS.breakerPauseMs,
+            now,
           ),
     );
   try {
-    await env.DB.batch(statements);
+    const results = await env.DB.batch(statements);
+    const breaker =
+      counts && !call.answered
+        ? (results.at(-1)?.results?.[0] as
+            | { breaker_noticed_at: number | null }
+            | undefined)
+        : undefined;
+    if (breaker?.breaker_noticed_at === now)
+      await noticePointsBreaker(env, target.id, now);
   } catch (error) {
     // The numbers are for the 站长; a payout's own record is what counts.
     console.error(

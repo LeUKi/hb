@@ -54,6 +54,18 @@ type ApiEnvVars = {
   STAGE_LOAD_TEST_KEY?: string;
   /** "true" on Stage for the load test's simulated merchants (runtime/controls.ts). */
   STAGE_SIMULATED_PAYMENTS?: string;
+  /**
+   * 私信通知 (docs/notification-design.md §2): their queue, and the 社区
+   * mailbox they are sent from with its Mailu 认证令牌 (both secrets). The
+   * server defaults to mail.linux.do:465. On Stage only the LINUX DO ids
+   * listed get mail.
+   */
+  NOTICE_QUEUE?: Queue;
+  NOTICE_SMTP_USER?: string;
+  NOTICE_SMTP_TOKEN?: string;
+  NOTICE_SMTP_HOST?: string;
+  NOTICE_SMTP_PORT?: string;
+  NOTICE_ALLOWED_LINUX_DO_IDS?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

@@ -20,6 +20,7 @@ import { readAccount } from "../balance/ledger";
 import { readBalanceSettings } from "../balance/settings";
 import { makeTransfer, transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
+import { noticeTip } from "../notices/events";
 import { loadMerchantSecret } from "../payments/credentials";
 import {
   queryTopupOrder,
@@ -472,6 +473,15 @@ async function createBalanceTip(
   );
   const row = await previousTip(env, tipper, input.requestId);
   if (!row) throw new Error("Tip missing after transfer");
+  // 收到打赏 (docs/notification-design.md §3.1); its key makes a repeat nothing.
+  await noticeTip(env, {
+    id: row.id,
+    ownerId: card.owner_id,
+    tipperId: tipper.id,
+    amountMinor: base.amountMinor,
+    method: "balance",
+    message: base.message,
+  });
   return resultOf(env, row.id, tipper.id, null);
 }
 
@@ -572,9 +582,17 @@ export async function checkTip(
     (await env.DB.prepare("SELECT * FROM tips WHERE id=?")
       .bind(claimed.id)
       .first<TipRow>()) ?? claimed;
-  if (after.status === "done" && claimed.status !== "done")
+  if (after.status === "done" && claimed.status !== "done") {
     console.info(JSON.stringify({ event: "tip_paid", tipId: claimed.id }));
-  else if (kind !== "paid" && kind !== "unpaid" && kind !== "not_found")
+    await noticeTip(env, {
+      id: after.id,
+      ownerId: after.owner_id,
+      tipperId: after.tipper_id,
+      amountMinor: after.amount_minor,
+      method: after.method,
+      message: after.message,
+    });
+  } else if (kind !== "paid" && kind !== "unpaid" && kind !== "not_found")
     console.warn(
       JSON.stringify({
         event: "tip_check_failed",

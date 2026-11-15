@@ -1,4 +1,5 @@
 import { pointsPrivacyLine } from "@hb/contracts";
+import { Bell, BellRing } from "lucide-react";
 import { AnimatePresence, motion, type Transition } from "motion/react";
 import {
   type CSSProperties,
@@ -14,6 +15,11 @@ import { useEmbedded } from "../../lib/embedded";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { ease, useReducedMotionPref } from "../../lib/motion";
+import {
+  useOpeningWatch,
+  useSetOpeningWatch,
+  watchWords,
+} from "../../lib/notices";
 import { isApple } from "../../lib/platform";
 import { amountText } from "../../lib/units";
 import { useCooldownSeconds } from "../omnibox/cooldown";
@@ -77,6 +83,47 @@ function CooldownText() {
     <>
       还需等待 <RollingNumber value={seconds} /> 秒
     </>
+  );
+}
+
+/** 开放时提醒我: one 私信 when this timed 红包 opens. */
+function OpeningWatch({ activityId }: { activityId: string }) {
+  const watch = useOpeningWatch(activityId, true);
+  const save = useSetOpeningWatch(activityId);
+  const mine = watch.data?.openingWatch ?? null;
+  return (
+    <Reveal show={mine !== null}>
+      <div
+        className="grid justify-items-center gap-1"
+        data-hb-part="opening-watch"
+      >
+        {mine?.watching ? (
+          <span className="flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5 text-sm text-ink-2">
+              <BellRing aria-hidden="true" className="size-4 text-gold-ink" />
+              {watchWords.openingOn}
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => save.mutate(false)}
+            >
+              {watchWords.cancel}
+            </Button>
+          </span>
+        ) : (
+          <Button size="sm" variant="quiet" onClick={() => save.mutate(true)}>
+            <Bell aria-hidden="true" />
+            {watchWords.opening}
+          </Button>
+        )}
+        <Reveal show={save.isError}>
+          <p role="alert" className="text-sm text-danger">
+            {watchWords.failed}
+          </p>
+        </Reveal>
+      </div>
+    </Reveal>
   );
 }
 
@@ -169,6 +216,13 @@ function ActionHint({
         activity.scheduledOpenAt !== undefined && (
           <OpensIn at={activity.scheduledOpenAt} />
         )}
+      {/* 开放时提醒我 (docs/notification-design.md §3.1): under the time,
+          for one a 私信 can reach (not its sender). */}
+      {hongbao.draft &&
+        !hongbao.author &&
+        activity.scheduledOpenAt !== undefined &&
+        !embedded &&
+        phase === "closed" && <OpeningWatch activityId={activity.id} />}
       {/* Said by the command box's own announcer (one for every result). */}
       {message && phase === "closed" && (
         <p

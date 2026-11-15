@@ -8,9 +8,11 @@ import { Link } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Clock } from "lucide-react";
 import { useAdminOverview } from "../../../lib/admin";
 import { cn } from "../../../lib/cn";
-import { clockLabel, clockSeconds } from "../../../lib/roster-time";
+import { useNoticeAdmin } from "../../../lib/notices";
+import { clockLabel, clockSeconds, fullTime } from "../../../lib/roster-time";
 import { Facts, PageSection, Panel } from "../../page/page";
 import { PageLoad, queryLoad } from "../../page/page-state";
+import { Reveal } from "../../ui/reveal";
 import { radius, Squircle } from "../../ui/squircle";
 import { StatusChip } from "../../ui/status-chip";
 import { AdminFrame } from "./admin-frame";
@@ -354,7 +356,57 @@ function OverviewPage({ overview }: { overview: Overview }) {
       <PageSection title="维护任务" description="定时任务最近一次的运行。">
         <Maintenance overview={overview} />
       </PageSection>
+
+      <NoticeStats />
     </AdminFrame>
+  );
+}
+
+/**
+ * 私信通知 (docs/notification-design.md §2.3): today's, and the last that
+ * never reached the 社区, with why. Read once, not with the 30 s poll.
+ */
+function NoticeStats() {
+  const stats = useNoticeAdmin(true).data;
+  return (
+    <Reveal show={Boolean(stats)}>
+      {stats && (
+        <PageSection
+          title="私信通知"
+          description={
+            stats.configured
+              ? "今天（北京时间）发给社区隐私邮箱的。跳过的是关了这一类、没有隐私邮箱的。"
+              : "还没配置发信：Worker 机密 NOTICE_SMTP_USER 和 NOTICE_SMTP_TOKEN。"
+          }
+        >
+          <Panel className="grid gap-4 p-5">
+            <Facts
+              items={[
+                { label: "发出", value: stats.today.sent },
+                { label: "正在发", value: stats.today.queued },
+                { label: "跳过", value: stats.today.skipped },
+                { label: "没发出去", value: stats.today.failed },
+              ]}
+            />
+            {stats.failures.length > 0 && (
+              <ul className="grid gap-2 border-t border-line pt-4 text-sm">
+                {stats.failures.map((failure) => (
+                  <li key={failure.id} className="grid gap-0.5">
+                    <span className="text-ink">
+                      {failure.subject.replace(/^红包站：/u, "")}
+                    </span>
+                    <span className="text-xs text-ink-3">
+                      {fullTime(Date.parse(failure.createdAt))} ·{" "}
+                      {failure.reason ?? "没有原因"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </PageSection>
+      )}
+    </Reveal>
   );
 }
 

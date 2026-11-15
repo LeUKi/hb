@@ -36,6 +36,7 @@ const cardCommands: CommandId[] = [
   "history",
   "balance",
   "tips",
+  "notifications",
   "merchant",
   "payments",
   "admin",

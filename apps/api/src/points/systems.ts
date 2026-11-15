@@ -14,6 +14,11 @@ import {
 import { ActivityError } from "../activities/errors";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
+import {
+  noticePointsEnded,
+  noticePointsReviewed,
+  noticePointsStatus,
+} from "../notices/events";
 
 export type PointsSystemRow = {
   id: string;
@@ -485,13 +490,31 @@ export async function retireSystem(
     : await requireOwnSystem(env, actorId, id);
   if (row.status === "retired") return ownerView(row);
   const now = Date.now();
-  await env.DB.batch([
+  // The 红包 this ends, to tell their senders (docs/notification-design.md §3.3).
+  const open = await env.DB.prepare(
+    `SELECT id,author_id FROM activities WHERE points_system_id=? AND funding='points'
+      AND opened_at IS NOT NULL AND ended_at IS NULL`,
+  )
+    .bind(id)
+    .all<{ id: string; author_id: string }>();
+  const [retired] = await env.DB.batch([
     env.DB.prepare(
       `UPDATE points_systems SET status='retired',retired_at=?1,paused_by=?2,
-        version=version+1,updated_at=?1 WHERE id=?3`,
+        version=version+1,updated_at=?1 WHERE id=?3 AND status<>'retired'`,
     ).bind(now, admin ? "admin" : "owner", id),
     endOpenStatements(env, id, "retired"),
   ]);
+  if ((retired?.meta.changes ?? 0) > 0) {
+    if (admin) await noticePointsStatus(env, row, "retire", now);
+    // Not the 红包 of whoever 下架 it just now.
+    await noticePointsEnded(
+      env,
+      open.results
+        .filter((activity) => activity.author_id !== actorId)
+        .map((activity) => activity.id),
+      "retired",
+    );
+  }
   return ownerView(await requireSystem(env, id));
 }
 
@@ -508,12 +531,14 @@ export async function pauseSystem(
   if (row.status !== "online")
     pointsError(409, "POINTS_NOT_ONLINE", "只有已上线的能暂停");
   const now = Date.now();
-  await env.DB.prepare(
+  const paused = await env.DB.prepare(
     `UPDATE points_systems SET status='paused',paused_by=?1,paused_at=?2,
       version=version+1,updated_at=?2 WHERE id=?3 AND status='online'`,
   )
     .bind(admin ? "admin" : "owner", now, id)
     .run();
+  if (admin && paused.meta.changes > 0)
+    await noticePointsStatus(env, row, "pause", now);
   return ownerView(await requireSystem(env, id));
 }
 
@@ -538,13 +563,15 @@ export async function resumeSystem(
   )
     pointsError(409, "POINTS_REVIEW_NEEDED", "接口改过了，要重新测试和审核");
   const now = Date.now();
-  await env.DB.prepare(
+  const resumed = await env.DB.prepare(
     `UPDATE points_systems SET status='online',paused_by=NULL,paused_at=NULL,
-      missed_in_row=0,breaker_until=NULL,version=version+1,updated_at=?1
+      missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,version=version+1,updated_at=?1
      WHERE id=?2 AND status='paused'`,
   )
     .bind(now, id)
     .run();
+  if (admin && resumed.meta.changes > 0)
+    await noticePointsStatus(env, row, "resume", now);
   return ownerView(await requireSystem(env, id));
 }
 
@@ -559,15 +586,24 @@ export async function reviewSystem(
   if (row.status !== "reviewing")
     pointsError(409, "POINTS_NOT_REVIEWING", "现在不是待审核");
   const now = Date.now();
-  await env.DB.prepare(
+  const reviewed = await env.DB.prepare(
     decision.approve
       ? `UPDATE points_systems SET status='online',reviewed_at=?1,reviewed_by=?2,review_note=?3,
-          online_at=COALESCE(online_at,?1),missed_in_row=0,breaker_until=NULL,
+          online_at=COALESCE(online_at,?1),missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,
           version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`
       : `UPDATE points_systems SET status='draft',reviewed_at=?1,reviewed_by=?2,review_note=?3,
           version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`,
   )
     .bind(now, adminId, decision.note || null, id)
     .run();
+  // 审核结果 (docs/notification-design.md §3.3): its owner.
+  if (reviewed.meta.changes > 0)
+    await noticePointsReviewed(
+      env,
+      row,
+      decision.approve,
+      decision.note || null,
+      now,
+    );
   return ownerView(await requireSystem(env, id));
 }

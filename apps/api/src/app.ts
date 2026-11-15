@@ -17,6 +17,7 @@ import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
 import { judgeRoutes } from "./judge/routes";
 import { miniCors, miniRoutes } from "./mini/routes";
+import { noticeRoutes } from "./notices/routes";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
 import { pointsRoutes } from "./points/routes";
@@ -152,3 +153,5 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", stageLoadTestRoutes);
 // 三方积分 (docs/third-party-points-design.md), the same way.
 (app as unknown as Hono<ApiContext>).route("/api", pointsRoutes);
+// 私信通知 (docs/notification-design.md §4).
+(app as unknown as Hono<ApiContext>).route("/api", noticeRoutes);

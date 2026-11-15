@@ -21,6 +21,7 @@ import type { ApiBindings } from "../env";
 import { codeOpeningBlocked } from "../judge/opening";
 import { paramsRejected, paramsRejectedError } from "../judge/params";
 import { findJudgeRow } from "../judge/storage";
+import { noticeScheduleFailed } from "../notices/events";
 import { ownedMerchant } from "../payments/merchants";
 import {
   publicationEligibility,
@@ -272,7 +273,7 @@ async function failSchedule(
   row: ActivityRow,
   reason: string,
 ) {
-  await env.DB.batch([
+  const [ended] = await env.DB.batch([
     env.DB.prepare(`UPDATE activities SET version = version + 1,
       scheduled_open_at = NULL, schedule_failed_at = ${databaseNow}, schedule_failure = ?, updated_at = ${databaseNow}
       WHERE id = ? AND opened_at IS NULL AND scheduled_open_at IS NOT NULL`).bind(
@@ -281,6 +282,9 @@ async function failSchedule(
     ),
     releaseStatement(env, row.id),
   ]);
+  // 定时开放没开成 (docs/notification-design.md §3.2): its sender, once.
+  if ((ended?.meta.changes ?? 0) > 0)
+    await noticeScheduleFailed(env, row, reason);
 }
 
 /** A few minutes before (§3): its merchant's credential, checked now. */

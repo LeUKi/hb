@@ -6,6 +6,7 @@ import {
 } from "@hb/contracts";
 import { drawStatements, refundStatement } from "../balance/hongbao";
 import type { ApiBindings } from "../env";
+import { noticeDrawWon, noticePointsEnded } from "../notices/events";
 import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
@@ -152,11 +153,14 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
       .reduce((sum, winner) => sum + winner.amountMinor, 0);
     const stop = await pointsDrawStop(env, activity, prizes);
     if (stop) {
-      await env.DB.prepare(`UPDATE activities SET draw_state='empty',draw_published_at=${databaseNow},
+      const ended =
+        await env.DB.prepare(`UPDATE activities SET draw_state='empty',draw_published_at=${databaseNow},
         end_reason='points',points_stop_reason=?,version=version+1,updated_at=${databaseNow}
         WHERE id=? AND funding='points' AND draw_state='settling' AND claimed_count=0`)
-        .bind(stop, activityId)
-        .run();
+          .bind(stop, activityId)
+          .run();
+      if (ended.meta.changes > 0)
+        await noticePointsEnded(env, [activityId], stop, true);
       return null;
     }
   }
@@ -422,6 +426,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     try {
       await env.DB.batch(statements);
       if (points) await wakeActivityPoints(env, activityId).catch(() => {});
+      await noticeDrawWon(env, activity, winners);
       return true;
     } catch (error) {
       const current = await findActivity(env, activityId);

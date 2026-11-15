@@ -63,6 +63,10 @@
       {
         "binding": "PAYMENT_QUEUE",
         "queue": "hb-payments-staging"
+      },
+      {
+        "binding": "NOTICE_QUEUE",
+        "queue": "hb-notices-staging"
       }
     ],
     "consumers": [
@@ -72,6 +76,13 @@
         "max_batch_timeout": 5,
         "max_retries": 5,
         "dead_letter_queue": "hb-payments-staging-dlq"
+      },
+      {
+        "queue": "hb-notices-staging",
+        "max_batch_size": 20,
+        "max_batch_timeout": 5,
+        "max_retries": 10,
+        "max_concurrency": 1
       }
     ]
   },

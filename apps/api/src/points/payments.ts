@@ -11,6 +11,7 @@ import {
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
+import { noticePointsEnded } from "../notices/events";
 import { activityObject } from "../runtime/objects";
 import { issuerQuery, issuerTransfer, pointsTradeNo } from "./issuer";
 import { keySecret, readKey } from "./keys";
@@ -388,6 +389,7 @@ async function finish(
   const lease = "id=? AND lease_token=?";
   const statements: D1PreparedStatement[] = [];
   let ended = false;
+  let stopAt: number | null = null;
   if (outcome.status === "confirmed")
     statements.push(
       env.DB.prepare(
@@ -403,6 +405,7 @@ async function finish(
       ).bind(outcome.reason, now, now, row.id, token),
     );
     if (outcome.stop) {
+      stopAt = statements.length;
       statements.push(
         ...stopStatements(env, row.activity_id, outcome.stop, now),
       );
@@ -443,7 +446,15 @@ async function finish(
           lease_until=NULL,updated_at=? WHERE ${lease}`,
       ).bind(now + outcome.delayMs, now, row.id, token),
     );
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
+  // 三方积分红包提前结束 (docs/notification-design.md §3.3): its sender, once.
+  if (
+    stopAt !== null &&
+    outcome.status === "failed" &&
+    outcome.stop &&
+    (results[stopAt]?.meta.changes ?? 0) > 0
+  )
+    await noticePointsEnded(env, [row.activity_id], outcome.stop);
   const waiting =
     outcome.status === "retry" ||
     outcome.status === "final" ||

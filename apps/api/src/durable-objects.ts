@@ -109,6 +109,7 @@ import {
   NetworkSession,
 } from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
+import { noticePayoutStuck } from "./notices/events";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
 import { isPointsPaymentId, wakePointsPayment } from "./points/payments";
 import {
@@ -1946,12 +1947,15 @@ export class MerchantDO extends DurableObject<ApiBindings> {
     const result = await runMerchantCycle(this.env, merchantId);
     const moved = result.moved;
     // A claim's page hears of it at once; nothing waits on that.
-    if (moved)
+    if (moved) {
       this.ctx.waitUntil(
         tellPaymentWatchers(this.env, moved).catch(() => {
           console.error("payment_live_notify_failed", { taskId: moved });
         }),
       );
+      // 红包付不出钱 (docs/notification-design.md §3.1): the sender, once.
+      this.ctx.waitUntil(noticePayoutStuck(this.env, moved));
+    }
     if (result.nextRunAt !== null) {
       const due = Math.max(Date.now() + 100, result.nextRunAt);
       await this.ctx.storage.transaction(async (txn) => {

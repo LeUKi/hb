@@ -5,6 +5,7 @@ import { migrateJudgesOf } from "./judge/judges";
 import { sweepKeys } from "./judge/keys";
 import { refreshJudgeStats } from "./judge/square";
 import { pruneJudgeUsage } from "./judge/usage";
+import { sweepNotices } from "./notices/outbox";
 import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
@@ -72,6 +73,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
     { name: "judge_keys", run: () => sweepKeys(env, scheduledAt) },
     // 打赏's 兜底检查 (docs/tip-design.md §5): links still waiting.
     { name: "tips", run: () => sweepTips(env) },
+    // 私信通知 (docs/notification-design.md §2.3): left queued, old bodies.
+    { name: "notices", run: () => sweepNotices(env, scheduledAt) },
   ]);
 }
 

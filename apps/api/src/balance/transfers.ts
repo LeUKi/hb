@@ -15,6 +15,7 @@ import {
   type WithdrawalFailure,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { noticeTransfer } from "../notices/events";
 import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
 import { findUserByUsername } from "../users/find";
@@ -518,6 +519,16 @@ export async function makeTransfer(
     .bind(id)
     .first<TransferRow>();
   if (!row) throw new Error("Transfer missing after creation");
+  // 收到转账 (docs/notification-design.md §3.1): into their 🐟额; a 打赏
+  // (written with `also`) tells of itself.
+  if (input.destination === "balance" && !also)
+    await noticeTransfer(env, {
+      id,
+      senderId,
+      recipientId: recipient.id,
+      amountMinor: input.amountMinor,
+      remark: input.remark ?? null,
+    });
   return { row, taskId };
 }
 
