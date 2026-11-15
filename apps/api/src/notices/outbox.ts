@@ -144,7 +144,7 @@ export function smtpAccountOf(env: ApiBindings): SmtpAccount | null {
 }
 
 /** Before 网站管理 has set it (migration 0067 sets these too). */
-const DEFAULT_PACE = { anyGapSeconds: 3, samePersonGapSeconds: 20 };
+const DEFAULT_PACE = { anyGapSeconds: 20, samePersonGapSeconds: 20 };
 
 /** How far apart mails go, as the 站长 set it in 网站管理 → 设置. */
 export async function readNoticePace(env: ApiBindings): Promise<NoticePace> {

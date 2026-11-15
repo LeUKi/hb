@@ -501,7 +501,7 @@ describe("私信通知's pace in 网站管理", () => {
     ).toBe(403);
     const read = await call("GET", "/admin/notifications/pace", owner);
     expect(read.json).toMatchObject({
-      pace: { anyGapSeconds: 3, samePersonGapSeconds: 20 },
+      pace: { anyGapSeconds: 20, samePersonGapSeconds: 20 },
     });
     const version = (read.json as { pace: { version: number } }).pace.version;
     const saved = await call("PATCH", "/admin/notifications/pace", owner, {

@@ -86,7 +86,7 @@ function PaceForm({ saved }: { saved: NoticePace }) {
             <Field
               label="任意两封之间"
               htmlFor={ids.any}
-              hint="默认 3 秒"
+              hint="默认 20 秒"
               error={whole(any, 600) ? null : "请填写 0–600 的整数"}
               live
             >
