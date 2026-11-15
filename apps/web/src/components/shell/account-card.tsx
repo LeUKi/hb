@@ -27,6 +27,7 @@ import { LinuxDoMark } from "../ui/linux-do-mark";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { CommandLink } from "./command-link";
 import { useIdentityRetry, useSignOut } from "./identity-check";
+import { ThemeSwitch } from "./theme-switch";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { WindowClip } from "./window-clip";
 import { useWindowInfo } from "./window-info";
@@ -118,6 +119,7 @@ function LoginContent() {
             ? "再试一次"
             : "通过 LINUX DO 登录"}
       </Button>
+      <ThemeSwitch />
     </div>
   );
 }
@@ -248,6 +250,7 @@ function AccountContent({ onDone }: { onDone: () => void }) {
           })}
       </ul>
       <div className="mx-1 grid gap-1 border-t border-line pt-1.5">
+        <ThemeSwitch />
         {signOut.error && (
           <p role="alert" className="px-2 text-sm text-danger">
             {signOut.error}

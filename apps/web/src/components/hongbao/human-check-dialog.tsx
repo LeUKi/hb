@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { CapProblem, solveCap } from "../../lib/cap";
 import { type HumanCheckRequest, humanCheckAtom } from "../../lib/human-check";
+import { currentTheme } from "../../lib/theme";
 import { loadTurnstile } from "../../lib/turnstile";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
@@ -54,7 +55,7 @@ function TurnstileWidget({
           sitekey: challenge.siteKey,
           action: challenge.action,
           cData: challenge.cData,
-          theme: "light",
+          theme: currentTheme(),
           language: "zh-cn",
           size: "flexible",
           appearance: "always",

@@ -302,7 +302,7 @@ return {
 | `hb.ready()` | `{ hongbao, viewer, theme }`。不在红包页里打开（直接打开、嵌在别处）时报错“没有接上红包页”。 |
 | `hongbao` | `id`、`title`、`url`（红包页地址）、`code`（是不是代码判定红包）、`status`（`draft` 未开放、`active` 进行中、`ended` 已结束）、`endedByCode`、`unit`（`LDC` 或 `🐟`）、`shares`（`{ total, claimed, remaining }`，红包没公开份数时是 null）、`pool`（奖池总额，没有时 null）、`deadlineAt`、`judged`（已判定几次）、`sender`（发红包的人的昵称和头像 `{ name, avatar }`，2026-11-13 起） |
 | `viewer` | 登录了 `{ signedIn: true, name }`（昵称），没登录 `{ signedIn: false }` |
-| `theme` | 现在总是 `light`：本站只有浅色 |
+| `theme` | 网页打开那一刻红包站是浅色还是深色（`light`、`dark`）：跟随系统，或者看的人在账号卡片的「外观」里选的；之后再切换不会另行通知 |
 | `hb.view()` | 判定器的公开数据 `{ summary, data, at }`，没有时 null |
 | `hb.on(名字, fn)` | `view`（公开数据变了）、`hongbao`（红包公开信息变了）、`announce`（新的一条动态 `{ n, at, user: { name, avatar }, text }`，几条同时来时从旧到新一条一条给）；返回取消订阅的函数 |
 | `hb.submit(input)` | 判定了：`{ judged: true, claimed: true, amount: "0.30", unit: "LDC", reply }` 或 `{ judged: true, claimed: false, reply }`（`reply` 是判定器的回复，没有就不带）；没判定：`{ judged: false, reason, seconds?, message? }` |

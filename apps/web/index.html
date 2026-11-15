@@ -20,6 +20,28 @@
         new URLSearchParams(location.search).has("embed")
       )
         document.documentElement.dataset.embed = "tip";
+      // 深色 (src/lib/theme.ts): the system's, or what was chosen in the
+      // account card, before the first paint so a dark page never flashes.
+      (() => {
+        var root = document.documentElement;
+        if (root.dataset.embed) return;
+        var saved = null;
+        try {
+          saved = localStorage.getItem("hb.theme");
+        } catch (e) {}
+        var dark =
+          saved === "dark" ||
+          (saved !== "light" &&
+            !!window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (!dark) return;
+        root.dataset.mode = "dark";
+        root.dataset.siteDark = "";
+        var scheme = document.querySelector('meta[name="color-scheme"]');
+        if (scheme) scheme.setAttribute("content", "dark");
+        var bar = document.querySelector('meta[name="theme-color"]');
+        if (bar) bar.setAttribute("content", "#2a0710");
+      })();
     </script>
     <style>
       /* Boot loader: painted before any JS or app CSS arrives. Colours mirror
@@ -110,6 +132,46 @@
       @media (max-width: 639px), (max-height: 559px) {
         #boot .boot-frame {
           background: rgb(255 250 248 / 0.92);
+        }
+      }
+      /* 深色: the same as .desktop-bg and .window-glass under data-site-dark
+         in src/styles.css. */
+      html[data-site-dark],
+      html[data-site-dark] body {
+        background: #16030a;
+      }
+      html[data-site-dark] #boot {
+        color: #ededed;
+        background:
+          radial-gradient(
+            42vmax 42vmax at 10% 108%,
+            rgb(242 196 109 / 0.2),
+            transparent 70%
+          ),
+          radial-gradient(
+            30vmax 30vmax at 84% -6%,
+            rgb(255 122 92 / 0.16),
+            transparent 70%
+          ),
+          radial-gradient(
+            18vmax 18vmax at 92% 96%,
+            rgb(242 196 109 / 0.1),
+            transparent 70%
+          ),
+          radial-gradient(120% 100% at 15% 0%, #5c1019 0%, #2e0710 48%, #16030a 100%);
+      }
+      html[data-site-dark] #boot .boot-plate {
+        box-shadow: 0 30px 60px -28px rgb(0 0 0 / 0.8);
+      }
+      html[data-site-dark] #boot .boot-frame {
+        background: rgb(30 24 26 / 0.86);
+        box-shadow:
+          inset 0 1px 0 rgb(255 255 255 / 0.08),
+          inset 0 0 0 1px rgb(255 255 255 / 0.08);
+      }
+      @media (max-width: 639px), (max-height: 559px) {
+        html[data-site-dark] #boot .boot-frame {
+          background: rgb(30 24 26 / 0.94);
         }
       }
       #boot .boot-center {
