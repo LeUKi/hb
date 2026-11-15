@@ -39,10 +39,11 @@ const STALE_MS = 10 * 60_000;
 const BODY_KEPT_MS = 30 * 86_400_000;
 const RELAY_DOMAIN = "@privaterelay.linux.do";
 /**
- * The HTML part sent beside the text. With none, the 社区 makes one of the
- * text and shows the body twice (Stage, 2026-11-15); an empty one is tried.
+ * The HTML part sent beside the text. The 社区 shows a mail's HTML as its
+ * source; with none, or an empty one, it makes one of the text and shows
+ * the body twice (Stage, 2026-11-15). One line says where the body is.
  */
-const NOTICE_HTML = "";
+const NOTICE_HTML = "<p>正文在下面的“正文文本”里。</p>";
 
 function adminIds(env: ApiBindings) {
   return JSON.stringify(
@@ -139,6 +140,20 @@ export function smtpAccountOf(env: ApiBindings): SmtpAccount | null {
     domain,
     fromName: "红包站",
   };
+}
+
+/**
+ * Between two mails: the 社区 turned only the first of a burst into a
+ * private message (Stage, 2026-11-15), so they go one at a time.
+ */
+const SPACING_SECONDS = 20;
+
+function spacingOf(env: ApiBindings) {
+  const seconds = Number(env.NOTICE_SPACING_SECONDS);
+  return (
+    (Number.isFinite(seconds) && seconds >= 0 ? seconds : SPACING_SECONDS) *
+    1000
+  );
 }
 
 /** Stage sends only to these LINUX DO ids; unset elsewhere means everyone. */
@@ -286,7 +301,12 @@ export async function handleNoticeBatch(
     }
   } else if (mails.length && account) {
     const attempts = new Map(rows.map((row) => [row.id, row.attempts]));
-    for (const outcome of await send(account, mails)) {
+    for (const outcome of await send(
+      account,
+      mails,
+      undefined,
+      spacingOf(env),
+    )) {
       if (outcome.ok) {
         finish(outcome.id, "sent", null);
         continue;

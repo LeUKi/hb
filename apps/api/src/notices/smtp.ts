@@ -213,6 +213,8 @@ export async function sendMails(
   account: SmtpAccount,
   mails: Mail[],
   open: (account: SmtpAccount) => Promise<SmtpConnection> = openTls,
+  /** Waited between two mails (the 社区 drops a burst, Stage 2026-11-15). */
+  spacingMs = 0,
 ): Promise<MailOutcome[]> {
   const outcomes = new Map<string, MailOutcome>();
   const failRest = (reason: string, permanent = false) => {
@@ -230,7 +232,9 @@ export async function sendMails(
       encoder.encode(`\0${account.user}\0${account.password}`),
     );
     await session.send(`AUTH PLAIN ${credentials}`, [235]);
-    for (const mail of mails) {
+    for (const [index, mail] of mails.entries()) {
+      if (index > 0 && spacingMs > 0)
+        await new Promise((resolve) => setTimeout(resolve, spacingMs));
       try {
         await session.send(`MAIL FROM:<${address(account.user)}>`, [250]);
         await session.send(`RCPT TO:<${address(mail.to)}>`, [250, 251]);

@@ -255,6 +255,19 @@ describe("SMTP to the 社区's mail server", () => {
     expect(server.data).toHaveLength(2);
   });
 
+  it("waits between two mails when told to", async () => {
+    const server = fakeServer();
+    const started = Date.now();
+    const outcomes = await sendMails(
+      account,
+      ["a", "b", "c"].map((id) => mail(id, `${id}@privaterelay.linux.do`)),
+      async () => server,
+      60,
+    );
+    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(110);
+  });
+
   it("leaves everything for later when the session breaks off", async () => {
     const server = fakeServer((command) =>
       command.startsWith("AUTH") ? "454 try later" : undefined,
