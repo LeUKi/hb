@@ -15,6 +15,8 @@
 - [07 其他页面](docs/redesign/07-pages.md)：发红包、红包记录、红包广场、账号资料、商户、付款、尝试统计、网站管理、结果页、帮助。
 - [08 落地方案](docs/redesign/08-migration.md)：迁移的阶段和进度。
 
+[深色](docs/dark-mode.md)：跟随系统或在账号卡片的「外观」里选，和小程序共用一套深色。
+
 ## 业务与运维
 
 - 业务语义以 [业务规格 v1](docs/business-spec-v1.md) 和共享契约 `packages/contracts` 为准（表情码的编码也在契约里）。

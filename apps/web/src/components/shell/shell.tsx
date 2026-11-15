@@ -13,6 +13,7 @@ import {
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
 import { useIdentity } from "../../lib/session";
+import { useTheme } from "../../lib/theme";
 import {
   editDraftAtom,
   messageAtom,
@@ -138,6 +139,8 @@ function useSessionRefresh() {
 
 export function Shell() {
   const reduced = useReducedMotionPref();
+  // keeps 深色 following the system (and other tabs) while the site is open
+  useTheme();
   useBootMilestones(useIdentity().ready);
   useIdentityReset();
   useSessionRefresh();

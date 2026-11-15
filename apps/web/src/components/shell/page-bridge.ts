@@ -26,6 +26,7 @@ import {
   participationKey,
 } from "../../lib/participation-cache";
 import { useSessionUser } from "../../lib/session";
+import { currentTheme } from "../../lib/theme";
 import { sdkUnitOf } from "../../lib/units";
 import { useJudgeBoard } from "../hongbao/judge-board";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -356,7 +357,7 @@ export function usePageBridge(
                   avatar: state.user.avatarUrl,
                 }
               : { signedIn: false },
-            theme: "light",
+            theme: currentTheme(),
             view: state.view,
             me: state.me,
             myView: state.myView,

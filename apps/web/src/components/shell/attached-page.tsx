@@ -182,7 +182,7 @@ function PageMark() {
   return (
     <span
       aria-hidden="true"
-      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white shadow-sm"
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent shadow-sm"
     >
       <Globe className="size-4" />
     </span>
@@ -771,7 +771,7 @@ function SideWindow({
                 <motion.div
                   key="closing"
                   role="status"
-                  className="absolute inset-0 z-[110] grid place-items-center bg-[rgb(176_18_40/0.45)] text-white backdrop-blur-md backdrop-saturate-150"
+                  className="absolute inset-0 z-[110] grid place-items-center bg-[rgb(176_18_40/0.45)] text-[#fff] backdrop-blur-md backdrop-saturate-150"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -793,7 +793,7 @@ function SideWindow({
                     <span className="text-base font-semibold">
                       松手关闭网页
                     </span>
-                    <span className="text-xs text-white/80">
+                    <span className="text-xs text-[rgb(255_255_255/0.8)]">
                       往回拖可以取消
                     </span>
                   </span>

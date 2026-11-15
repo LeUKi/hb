@@ -2742,3 +2742,314 @@ html[data-embed] .build-stamp {
   --color-danger: #ff6b80;
   --color-danger-soft: rgb(255 107 128 / 0.14);
 }
+
+/* 深色 for the site itself (src/lib/theme.ts, docs/dark-mode.md): the
+   shared tokens above, plus the site's own surfaces, which write their white
+   glass out. <html> carries data-site-dark only in the site (never in the
+   社区小程序, which imports this file, nor in an embedded 打赏卡). The 红包's
+   red cover, its gold and 代码判定's black lacquer stay as they are; the 背景
+   is the same crimson, deeper, its lanterns dimmer; the window is dark glass
+   with a faint warm cast, so it sits on the red rather than looking grey. */
+:root[data-site-dark] {
+  --mini-page: #1e191a;
+  --color-title-low: #aeb8cb;
+  --color-title-fast: #5fd39c;
+  --color-title-self: #dcb59e;
+  --focus-band-color: rgb(30 24 26 / 0.85);
+}
+@layer components {
+  :root[data-site-dark] .desktop-bg {
+    background: radial-gradient(
+      120% 100% at 15% 0%,
+      #5c1019 0%,
+      #2e0710 48%,
+      #16030a 100%
+    );
+  }
+  :root[data-site-dark] .desktop-glow-gold {
+    --c: rgb(242 196 109 / 0.2);
+  }
+  :root[data-site-dark] .desktop-glow-coral {
+    --c: rgb(255 122 92 / 0.16);
+  }
+  :root[data-site-dark] .desktop-glow-ember {
+    --c: rgb(242 196 109 / 0.1);
+  }
+
+  /* The window: dark glass, a faint light edge. */
+  :root[data-site-dark] .window-glass,
+  :root[data-site-dark] .window-glass-bar {
+    background: rgb(30 24 26 / 0.86);
+    --sq-ring: rgb(255 255 255 / 0.08);
+  }
+  :root[data-site-dark] .window-glass {
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+  :root[data-site-dark] .window-glass::before {
+    background: linear-gradient(
+      160deg,
+      rgb(255 255 255 / 0.05),
+      rgb(255 255 255 / 0) 38%
+    );
+  }
+  :root[data-site-dark] .window-glass.window-glass-split {
+    background: linear-gradient(transparent 0 4rem, #241d1f 4rem);
+  }
+  :root[data-site-dark] .window-plate {
+    box-shadow: 0 30px 60px -28px rgb(0 0 0 / 0.8);
+  }
+  @media (max-width: 639px), (max-height: 559px) {
+    :root[data-site-dark] .window-glass,
+    :root[data-site-dark] .window-glass-bar {
+      background: rgb(30 24 26 / 0.94);
+    }
+  }
+
+  /* Surfaces on the glass: white turned to a light veil. */
+  :root[data-site-dark] :is(.panel, .step-card) {
+    background: rgb(255 255 255 / 0.04);
+    --sq-ring: rgb(255 255 255 / 0.06);
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+  :root[data-site-dark] .step-card:not([data-open]):hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+  :root[data-site-dark] .step-card[data-open] {
+    background: rgb(255 255 255 / 0.08);
+  }
+  :root[data-site-dark] .step-plate {
+    box-shadow: 0 18px 36px -20px rgb(0 0 0 / 0.7);
+  }
+  :root[data-site-dark] .field {
+    background: rgb(255 255 255 / 0.06);
+    box-shadow: var(--sq-ring-shadow);
+  }
+  :root[data-site-dark] .field:hover {
+    background: rgb(255 255 255 / 0.09);
+  }
+  :root[data-site-dark] .field:focus-within {
+    background: rgb(255 255 255 / 0.1);
+  }
+  :root[data-site-dark] .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgb(255 255 255 / 0.05) 0%,
+      rgb(255 255 255 / 0.08) 40%,
+      rgb(255 255 255 / 0.14) 50%,
+      rgb(255 255 255 / 0.08) 60%,
+      rgb(255 255 255 / 0.05) 100%
+    );
+    background-size: 220% 100%;
+  }
+  :root[data-site-dark] .loading-sheen::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 38%,
+      rgb(255 255 255 / 0.12) 50%,
+      transparent 62%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+  }
+  :root[data-site-dark] .switch-knob {
+    background: #f2eeee;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  }
+  :root[data-site-dark] .switch[aria-checked="true"] {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2);
+  }
+
+  /* Option cards. */
+  :root[data-site-dark] .choice {
+    background: rgb(255 255 255 / 0.04);
+    --sq-ring: rgb(255 255 255 / 0.08);
+  }
+  :root[data-site-dark] .choice:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.07);
+  }
+  :root[data-site-dark] .choice[aria-pressed="true"] {
+    background: rgb(255 255 255 / 0.09);
+    --sq-ring-2: rgb(236 74 78 / 0.12);
+  }
+  :root[data-site-dark] .choice-toggle[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  }
+  :root[data-site-dark] .choice-tick {
+    background: var(--color-white);
+    box-shadow:
+      inset 0 0 0 1.5px rgb(255 255 255 / 0.3),
+      0 0 0 2px var(--mini-page);
+  }
+  :root[data-site-dark] .choice-tick[data-on] {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--mini-page);
+  }
+
+  /* Floating glass (menus, the account card, dialogs) and the dim behind it. */
+  :root[data-site-dark] .glass-pop {
+    background: color-mix(in srgb, var(--color-white) 94%, transparent);
+    --sq-ring: rgb(255 255 255 / 0.08);
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+  :root[data-site-dark] .pop-plate {
+    box-shadow: 0 18px 36px -18px rgb(0 0 0 / 0.7);
+  }
+  :root[data-site-dark] .scrim {
+    background: rgb(0 0 0 / 0.4);
+  }
+
+  /* 顶栏: dark frost once something is under it. */
+  :root[data-site-dark] .window-bar {
+    background-color: rgb(30 24 26 / 0);
+  }
+  :root[data-site-dark] .window-bar:is([data-scrolled], [data-bleed]) {
+    background-color: rgb(30 24 26 / 0.4);
+  }
+  :root[data-site-dark] .window-bar[data-bleed] {
+    background-color: rgb(30 24 26 / 0.22);
+  }
+  :root[data-site-dark] .window-bar[data-bleed][data-lacquer] {
+    background-color: rgb(30 24 26 / 0.08);
+  }
+
+  /* Buttons. */
+  :root[data-site-dark] .btn-primary:is(:disabled, [data-disabled]),
+  :root[data-site-dark] .btn-lacquer:is(:disabled, [data-disabled]) {
+    --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+  :root[data-site-dark] .btn-secondary {
+    --btn-top: rgb(255 255 255 / 0.08);
+    --btn-bottom: rgb(255 255 255 / 0.08);
+    --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
+    --btn-drop: 0 2px 6px -2px rgb(0 0 0 / 0.4);
+  }
+  :root[data-site-dark] .btn-secondary:hover {
+    --btn-top: rgb(255 255 255 / 0.13);
+    --btn-bottom: rgb(255 255 255 / 0.13);
+  }
+  :root[data-site-dark] .btn-secondary:active:not(:disabled, [data-disabled]) {
+    --btn-inset: inset 0 1px 3px rgb(0 0 0 / 0.35);
+    --btn-drop: 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  }
+  :root[data-site-dark]
+    .btn-secondary:is([aria-current="page"], [aria-pressed="true"]) {
+    --btn-inset: inset 0 1px 3px rgb(0 0 0 / 0.35);
+  }
+  :root[data-site-dark] .btn-quiet:hover {
+    --btn-top: rgb(255 255 255 / 0.14);
+    --btn-bottom: rgb(255 255 255 / 0.14);
+  }
+  :root[data-site-dark] .btn-quiet:active:not(:disabled, [data-disabled]) {
+    --btn-inset: inset 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  /* 代码判定's black lacquer on dark glass: a gold hairline keeps its edge. */
+  :root[data-site-dark] .btn-lacquer {
+    --btn-line: rgb(243 211 139 / 0.22);
+  }
+
+  /* Words on gold keep the dark gold ink (the light one is for gold words on
+     the dark page); the avatar's white ring becomes a faint one. */
+  :root[data-site-dark]
+  :is(.avatar-ring, .chip-gold, .title-badge[data-title="highest"]) {
+    color: #6a4510;
+  }
+  :root[data-site-dark] .avatar-ring {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.7),
+      0 0 0 2px rgb(255 255 255 / 0.18);
+  }
+  :root[data-site-dark] .kbd {
+    background: rgb(255 255 255 / 0.08);
+  }
+  :root[data-site-dark] .raised {
+    --sq-ring: rgb(255 255 255 / 0.06);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      var(--sq-ring-shadow),
+      inset 0 -1px 0 rgb(0 0 0 / 0.3);
+  }
+  :root[data-site-dark] .hb-note-card {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+  :root[data-site-dark] .hb-cover {
+    box-shadow:
+      0 3px 0 0 var(--color-cover-rim),
+      0 18px 30px -14px rgb(0 0 0 / 0.7);
+  }
+
+  /* The omnibox. */
+  :root[data-site-dark] .omnibox-chrome[data-chrome="start"],
+  :root[data-site-dark] .omnibox-chrome[data-chrome="expanded"] {
+    background-color: color-mix(in srgb, var(--color-white) 96%, transparent);
+    --sq-ring: rgb(255 255 255 / 0.08);
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 0 rgb(255 255 255 / 0.07);
+  }
+  :root[data-site-dark] .omnibox-chrome[data-chrome="docked-top"] {
+    background-color: rgb(255 255 255 / 0.06);
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 2px rgb(0 0 0 / 0.25);
+  }
+  :root[data-site-dark] .omnibox-chrome[data-chrome="docked-top"][data-bleed] {
+    background-color: rgb(30 24 26 / 0.82);
+    --sq-ring: rgb(255 255 255 / 0.1);
+    box-shadow:
+      var(--sq-ring-shadow),
+      inset 0 1px 0 rgb(255 255 255 / 0.07);
+  }
+  :root[data-site-dark] .omnibox-plate[data-chrome="start"] {
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.2),
+      0 18px 40px -18px rgb(0 0 0 / 0.6),
+      var(--omnibox-glow);
+  }
+  :root[data-site-dark] .omnibox-plate[data-chrome="expanded"] {
+    box-shadow:
+      0 2px 6px rgb(0 0 0 / 0.25),
+      0 28px 64px -20px rgb(0 0 0 / 0.7),
+      var(--omnibox-glow);
+  }
+
+  /* No blur (not supported, or the system asks for less transparency): the
+     same solid surfaces the light theme falls back to, dark. */
+  @supports not (
+      (backdrop-filter: blur(1px)) or
+      (-webkit-backdrop-filter: blur(1px))
+    ) {
+    :root[data-site-dark] :is(.window-glass, .window-glass-bar) {
+      background: rgb(30 24 26 / 0.98);
+    }
+    :root[data-site-dark] .window-bar:is([data-scrolled], [data-bleed]) {
+      background-color: rgb(30 24 26 / 0.94);
+    }
+    :root[data-site-dark] .glass-pop {
+      background: var(--color-white);
+    }
+    :root[data-site-dark] .scrim {
+      background: rgb(0 0 0 / 0.55);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root[data-site-dark] :is(.window-glass, .window-glass-bar) {
+      background: rgb(30 24 26 / 0.98);
+    }
+    :root[data-site-dark] .window-bar:is([data-scrolled], [data-bleed]) {
+      background-color: rgb(30 24 26 / 0.94);
+    }
+    :root[data-site-dark] .glass-pop {
+      background: var(--color-white);
+    }
+    :root[data-site-dark] .scrim {
+      background: rgb(0 0 0 / 0.55);
+    }
+  }
+}
