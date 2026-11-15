@@ -80,7 +80,12 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
   try {
     await tab("网站设置");
     await page.getByRole("textbox", { name: "首页" }).fill(String(next));
-    await page.getByRole("button", { name: "保存设置" }).click();
+    // 私信通知的间隔 below has its own 保存设置.
+    await page
+      .locator("form")
+      .filter({ has: page.getByRole("textbox", { name: "首页" }) })
+      .getByRole("button", { name: "保存设置" })
+      .click();
     await expect(page.getByText("已保存，立即生效")).toBeVisible();
     await expect(
       page.getByText(/^第 \d+ 版 · .* 由 完整应用作者 修改/),
