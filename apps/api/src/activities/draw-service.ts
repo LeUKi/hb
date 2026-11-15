@@ -365,8 +365,11 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
       env.DB.prepare(`INSERT INTO reward_inventory(id,activity_id,position,kind,ciphertext,amount_minor,created_at)
         SELECT json_extract(value,'$.id'),?,json_extract(value,'$.position'),'ldc',NULL,json_extract(value,'$.amountMinor'),${databaseNow}
         FROM json_each(?, '$.inventory')`).bind(activityId, saved.payload),
-      env.DB.prepare(`INSERT INTO claims(id,activity_id,user_id,inventory_id,password_id,claimed_at)
-        SELECT json_extract(value,'$.claimId'),?,json_extract(value,'$.userId'),json_extract(value,'$.inventoryId'),json_extract(value,'$.passwordId'),${databaseNow}
+      // A prize says where its sign-up was made (claims.via: the 社区小程序,
+      // a 个人令牌), as a claim does.
+      env.DB.prepare(`INSERT INTO claims(id,activity_id,user_id,inventory_id,password_id,claimed_at,via)
+        SELECT json_extract(value,'$.claimId'),?,json_extract(value,'$.userId'),json_extract(value,'$.inventoryId'),json_extract(value,'$.passwordId'),${databaseNow},
+          (SELECT r.via FROM activity_registrations r WHERE r.id=json_extract(value,'$.registrationId'))
         FROM json_each(?)`).bind(activityId, payload),
       ...(balance
         ? drawStatements(env, activityId, payload)

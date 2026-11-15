@@ -5,7 +5,7 @@ import {
   PAYMENT_LABELS,
   type PaymentState,
 } from "@hb/contracts";
-import { RotateCw } from "lucide-react";
+import { KeyRound, RotateCw } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useEffect, useState } from "react";
 import type { RosterRow } from "../../lib/hongbao";
@@ -19,8 +19,12 @@ import { Button } from "../ui/button";
 import { PersonName } from "../ui/person";
 import { ListItem } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
+import { TagHint } from "../ui/tag-hint";
 import { PasswordText } from "./password-text";
 import { TitleBadges } from "./title-badge";
+
+/** What the key on a 名单 row means (docs/personal-token-design.md §8). */
+const TOKEN_HINT = "用个人令牌领的：脚本或客户端，不是在网页上点的。";
 
 const paymentText = {
   success: "text-success",
@@ -135,6 +139,17 @@ function Row({
                 avatarUrl={row.avatarUrl}
                 className="min-w-[2.5em] text-sm text-ink"
               />
+              {/* Taken with a 个人令牌 (docs/personal-token-design.md
+                  §8): a quiet key, its meaning on a tap. */}
+              {row.token && (
+                <TagHint
+                  hint={TOKEN_HINT}
+                  aria-label="用令牌领的"
+                  className="inline-flex shrink-0 items-center text-ink-3"
+                >
+                  <KeyRound aria-hidden="true" className="size-3.5" />
+                </TagHint>
+              )}
               {row.you && (
                 <Squircle radius={7}>
                   <span className="chip chip-gold h-5 shrink-0 px-1.5 text-xs">

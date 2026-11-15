@@ -138,6 +138,11 @@ export function RosterPanel({
         : "报名名单";
   const total = totalOf(view, kind);
   const challengerTotal = challengers?.data?.pages[0]?.total;
+  const first = source.data?.pages[0];
+  const tokens =
+    (kind === "claims" || kind === "winners") && first && "tokens" in first
+      ? first.tokens
+      : undefined;
   const author = activity.author.displayName;
   // The sender also sees, per row, the 口令 used and the payment (the author
   // roster endpoints return both; only for the sender's own 红包).
@@ -183,7 +188,11 @@ export function RosterPanel({
             {author}的红包 · {activity.title}
           </span>
         </p>
-        <p className="text-xs text-ink-3">{metaLine(activity, view)}</p>
+        <p className="text-xs text-ink-3">
+          {metaLine(activity, view)}
+          {/* 个人令牌 (docs/personal-token-design.md §8): the keys below. */}
+          {tokens ? ` · 其中 ${tokens} 人用令牌领` : ""}
+        </p>
         {proof}
         {data.author && (
           <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">

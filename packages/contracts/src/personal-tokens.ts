@@ -70,3 +70,68 @@ export type CreatedPersonalToken = {
   token: string;
   personalToken: PersonalToken;
 };
+
+/**
+ * Each account's share of a minute, all its tokens together (§8): reads,
+ * the 红包广场's list, 领取 and 口令兑换, 附带网页认人. Over it, 429. The
+ * same numbers are the limiters in the API's wrangler configs.
+ */
+export const PERSONAL_TOKEN_RATE_LIMITS = {
+  read: 60,
+  square: 20,
+  claim: 20,
+  identity: 20,
+} as const;
+
+export type PersonalTokenRequestKind = keyof typeof PERSONAL_TOKEN_RATE_LIMITS;
+
+/** Requests in one hour or day: let through by kind, and turned away. */
+export type PersonalTokenUsageBucket = {
+  at: string;
+  read: number;
+  square: number;
+  claim: number;
+  identity: number;
+  /** Over the minute's share. */
+  limited: number;
+  /** While the 站长's switch was off. */
+  paused: number;
+};
+
+export type PersonalTokenUsage = {
+  /** False until the statistics can be read (no API token set). */
+  available: boolean;
+  /** The last 24 hours, by hour, oldest first. */
+  hours: PersonalTokenUsageBucket[];
+  /** The last 30 days, by day (Beijing time), oldest first. */
+  days: PersonalTokenUsageBucket[];
+};
+
+/** Someone's own: theirs, and each token's last 30 days. */
+export type MyPersonalTokenUsage = PersonalTokenUsage & {
+  tokens: { id: string; calls: number; limited: number }[];
+};
+
+/** The 站长's view: the switch, everyone's usage, who calls most. */
+export type PersonalTokenAdminView = {
+  settings: { enabled: boolean; version: number; updatedAt: string };
+  limits: typeof PERSONAL_TOKEN_RATE_LIMITS;
+  usage: PersonalTokenUsage;
+  /** The last 24 hours' busiest accounts, at most 20. */
+  topUsers: {
+    userId: string;
+    username: string | null;
+    displayName: string | null;
+    avatarUrl: string | null;
+    calls: number;
+    limited: number;
+  }[];
+};
+
+export const updatePersonalTokenSettingsSchema = z.strictObject({
+  expectedVersion: z.number().int().positive().safe(),
+  enabled: z.boolean(),
+});
+export type UpdatePersonalTokenSettingsInput = z.infer<
+  typeof updatePersonalTokenSettingsSchema
+>;

@@ -133,6 +133,8 @@ export async function signPageIdentity(
     activityId: string;
     userId: string;
     nonce?: string;
+    /** Asked with a 个人令牌: refused where 允许用令牌领 is off (§8). */
+    viaToken?: boolean;
   },
 ): Promise<PageIdentity> {
   const [row, person, sender] = await Promise.all([
@@ -165,6 +167,12 @@ export async function signPageIdentity(
   ]);
   if (!row) activityNotFound();
   if (!person) throw new ActivityError(401, "UNAUTHORIZED", "请先登录。");
+  if (input.viaToken && !row.allowTokens)
+    throw new ActivityError(
+      403,
+      "TOKEN_CLAIMS_OFF",
+      "这个红包的发红包的人关了“允许用令牌领”，只能在网页上玩。",
+    );
   const pageUrl = configuration(row).pageUrl;
   if (!pageUrl || row.pageStoppedAt !== null || !(await attachedPagesOn(env)))
     throw new ActivityError(404, "PAGE_NOT_FOUND", "这个红包没有附带网页。");
@@ -245,6 +253,7 @@ export const pageIdentityRoutes = new Hono<ApiContext>()
           activityId: c.req.param("id"),
           userId: session.user.id,
           nonce: c.req.valid("json").nonce,
+          viaToken: session.personalTokenId !== undefined,
         }),
       );
     },

@@ -130,6 +130,8 @@ export type FormState = {
   /** Opened as the 红包 page is entered (§2.7). */
   pageAutoOpen: boolean;
   listed: boolean;
+  /** 允许用令牌领 (docs/personal-token-design.md §8): on unless turned off. */
+  allowTokens: boolean;
   quantity: "exact" | "fuzzy";
   /** 领取前人机验证: a check in a dialog before each claim or sign-up. */
   humanCheck: boolean;
@@ -262,6 +264,7 @@ export function emptyForm(now = Date.now()): FormState {
     page: "",
     pageAutoOpen: false,
     listed: false,
+    allowTokens: true,
     humanCheck: false,
     humanCheckMethod: "cap",
     quantity: "exact",
@@ -802,6 +805,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     page: config.pageUrl ?? "",
     pageAutoOpen: config.pageAutoOpen === true,
     listed: config.joinSquare,
+    allowTokens: config.allowTokens !== false,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
     // One turned on before there was a choice is Turnstile.
@@ -892,6 +896,7 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     topicUrl: normalizeTopic(form.topic).value,
     forceDedicated: pageOnly,
     joinSquare: form.listed || pageOnly,
+    allowTokens: form.allowTokens,
     deadline,
     allocation:
       form.mode === "random" || draw
@@ -1031,6 +1036,7 @@ export function openedInputOf(
     title: form.title.trim(),
     topicUrl: normalizeTopic(form.topic).value,
     joinSquare: form.listed,
+    allowTokens: form.allowTokens,
     quantityVisibility: form.quantity,
     beforeInfo: form.beforeInfo,
     afterClaimInfo: form.afterClaimInfo,

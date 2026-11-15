@@ -12,8 +12,10 @@ import { ActivityError } from "../activities/errors";
 import { ActivityValidationError } from "../activities/routes";
 import {
   getOptionalActor,
+  markTokenClaim,
   requireActor,
   requireActorMutation,
+  TOKEN_REQUEST_HEADER,
 } from "../auth/personal-token";
 import { getOptionalSession, requireAuth } from "../auth/session";
 import type { ApiContext } from "../env";
@@ -77,7 +79,12 @@ export const discoveryRoutes = new Hono<ApiContext>()
         "https://activity.internal/internal/redemptions/discover",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(session.personalTokenId !== undefined
+              ? { [TOKEN_REQUEST_HEADER]: "1" }
+              : {}),
+          },
           body: JSON.stringify({
             userId: session.user.id,
             ...c.req.valid("json"),
@@ -114,12 +121,16 @@ export const discoveryRoutes = new Hono<ApiContext>()
     }),
     async (c) => {
       const session = await requireActorMutation(c);
+      const viaToken = session.personalTokenId !== undefined;
       const stub = globalRedemptionObject(c.env, session.user.id);
       const response = await stub.fetch(
         "https://activity.internal/internal/redemptions/submit",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(viaToken ? { [TOKEN_REQUEST_HEADER]: "1" } : {}),
+          },
           body: JSON.stringify({
             userId: session.user.id,
             ...c.req.valid("json"),
@@ -127,8 +138,14 @@ export const discoveryRoutes = new Hono<ApiContext>()
         },
       );
       if (!response.ok) return response;
-      return response as Response &
-        TypedResponse<GlobalRedemptionResult, 200, "json">;
+      if (!viaToken)
+        return response as Response &
+          TypedResponse<GlobalRedemptionResult, 200, "json">;
+      // The one 红包 it landed on, claimed: marked as a token's (§8).
+      const result = (await response.json()) as GlobalRedemptionResult;
+      if (result.claimResult)
+        await markTokenClaim(c.env, session.user.id, result.claimResult);
+      return c.json(result);
     },
   )
   .get("/redemptions/:id", cursorQuery, async (c) => {

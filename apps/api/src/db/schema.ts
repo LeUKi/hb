@@ -210,6 +210,14 @@ export const activities = sqliteTable(
     joinSquare: integer("join_square", { mode: "boolean" })
       .notNull()
       .default(false),
+    /**
+     * 允许用令牌领 (docs/personal-token-design.md §8): whether a 个人令牌
+     * may claim it, get its 附带网页认人 or land a 口令 on it. Its sender
+     * changes it at any time, opened or not.
+     */
+    allowTokens: integer("allow_tokens", { mode: "boolean" })
+      .notNull()
+      .default(true),
     topicId: text("topic_id"),
     postNumber: integer("post_number").notNull().default(1),
     deletedAt: integer("deleted_at"),
@@ -408,8 +416,11 @@ export const claims = sqliteTable(
     inventoryId: text("inventory_id").notNull(),
     passwordId: text("password_id").references(() => activityPasswords.id),
     claimedAt: integer("claimed_at").notNull(),
-    /** Where it was taken: "mini" in the forum's mini app; null on 红包站. */
-    via: text("via", { enum: ["mini"] }),
+    /**
+     * Where it was taken: "mini" in the forum's mini app, "token" with a
+     * 个人令牌 (shown on the 名单); null on 红包站.
+     */
+    via: text("via", { enum: ["mini", "token"] }),
   },
   (table) => [
     foreignKey({
@@ -520,8 +531,11 @@ export const activityRegistrations = sqliteTable(
     ordinal: integer("ordinal").notNull(),
     recipientId: text("recipient_id").notNull(),
     registeredAt: integer("registered_at").notNull(),
-    /** Where they signed up: "mini" in the forum's mini app; null on 红包站. */
-    via: text("via", { enum: ["mini"] }),
+    /**
+     * Where they signed up: "mini" in the forum's mini app, "token" with a
+     * 个人令牌; null on 红包站.
+     */
+    via: text("via", { enum: ["mini", "token"] }),
   },
   (table) => [
     uniqueIndex("activity_registrations_user_unique").on(
@@ -3357,5 +3371,23 @@ export const personalTokens = sqliteTable(
         AND (${table.revokedAt} IS NOT NULL OR (${table.revokedByUserId} IS NULL AND ${table.revokeReason} IS NULL))
         AND (${table.revokedByUserId} IS NULL OR length(${table.revokeReason}) BETWEEN 1 AND 200)`,
     ),
+  ],
+);
+
+/**
+ * 个人令牌's switch (docs/personal-token-design.md §8): off, every request
+ * with a token is refused at once; the tokens themselves stay.
+ */
+export const personalTokenSettings = sqliteTable(
+  "personal_token_settings",
+  {
+    id: text("id").primaryKey(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    version: integer("version").notNull().default(1),
+    updatedBy: text("updated_by").references(() => users.id),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check("personal_token_settings_singleton", sql`${table.id} = 'global'`),
   ],
 );

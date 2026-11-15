@@ -66,6 +66,14 @@ type ApiEnvVars = {
   NOTICE_SMTP_HOST?: string;
   NOTICE_SMTP_PORT?: string;
   NOTICE_ALLOWED_LINUX_DO_IDS?: string;
+  /**
+   * 个人令牌's statistics (docs/personal-token-design.md §8): each request
+   * with a token is a data point here; the account and an API token with
+   * Account Analytics Read let the pages read them back.
+   */
+  TOKEN_EVENTS?: AnalyticsEngineDataset;
+  TOKEN_STATS_ACCOUNT_ID?: string;
+  TOKEN_STATS_API_TOKEN?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

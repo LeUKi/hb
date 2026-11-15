@@ -221,6 +221,7 @@ export function configuration(row: ActivityRow): StoredConfig {
     showRecipientTime: undefined,
     showRecipientAmount: undefined,
     joinSquare: row.joinSquare,
+    allowTokens: row.allowTokens,
   } as StoredConfig;
 }
 
@@ -814,8 +815,8 @@ export async function createActivity(
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO activities
-        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, funding, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at, points_system_id)
-        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, funding, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at, points_system_id, allow_tokens)
+        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         1,
         authorId,
@@ -839,6 +840,7 @@ export async function createActivity(
         now,
         now,
         pointsSystem?.id ?? null,
+        Number(config.allowTokens ?? true),
       ),
       insertPasswordRows(env.DB, passwords),
       insertInventoryRows(env.DB, inventory),
@@ -1094,7 +1096,7 @@ export async function updateActivity(
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL
       AND (?=0 OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1))
       THEN version + 1 ELSE NULL END,
-      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, funding = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?, points_system_id = ?
+      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, funding = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?, points_system_id = ?, allow_tokens = ?
       WHERE id = ?`).bind(
       input.version,
       authorId,
@@ -1120,6 +1122,8 @@ export async function updateActivity(
       now,
       deadline,
       points ? (input.activity.pointsSystemId ?? null) : null,
+      // 允许用令牌领: its sender's to change, opened or not (§8).
+      Number(config.allowTokens ?? true),
       id,
     ),
   ];

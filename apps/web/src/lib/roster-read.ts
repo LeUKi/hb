@@ -16,7 +16,12 @@ export type RosterItem =
   | PublicRegistration
   | AuthorClaim
   | AuthorRegistration;
-export type RosterPage = { items: RosterItem[]; nextCursor: string | null };
+export type RosterPage = {
+  items: RosterItem[];
+  nextCursor: string | null;
+  /** First page: how many took theirs with a 个人令牌. */
+  tokens?: number;
+};
 
 const publicPath = { claims: "recipients", registrations: "registrations" };
 

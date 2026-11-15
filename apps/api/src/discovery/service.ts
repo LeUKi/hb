@@ -340,6 +340,8 @@ async function prepare(
   env: ApiBindings,
   userId: string,
   input: GlobalRedemptionInput,
+  /** Asked with a 个人令牌: only 红包 that allow it (§8). */
+  viaToken = false,
 ) {
   const [fingerprint, passwordDigest] = await Promise.all([
     digestPassword(
@@ -362,6 +364,7 @@ async function prepare(
           SELECT a.id FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
           WHERE p.digest = ? AND a.reward_type='ldc' AND a.participation_mode='password' AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.force_dedicated = 0 AND a.archived_at IS NULL
             AND (COALESCE(a.ended_at, a.deadline) IS NULL OR COALESCE(a.ended_at, a.deadline) > ${databaseNow} - ?)
+            AND (? = 0 OR a.allow_tokens = 1)
           ORDER BY a.opened_at DESC, a.id DESC
         )
       ), ?, ${databaseNow}`).bind(
@@ -372,6 +375,7 @@ async function prepare(
         passwordDigest,
         passwordDigest,
         ARCHIVE_DELAY_MS,
+        Number(viaToken),
         crypto.randomUUID(),
       ),
     ]);
@@ -480,8 +484,9 @@ export async function redeemGlobally(
   env: ApiBindings,
   userId: string,
   input: GlobalRedemptionInput,
+  viaToken = false,
 ): Promise<GlobalRedemptionResult> {
-  const row = await prepare(env, userId, input);
+  const row = await prepare(env, userId, input, viaToken);
   const ids = JSON.parse(row.candidateIds) as string[];
   if (ids.length === 1) {
     const id = ids[0];
@@ -536,8 +541,9 @@ export async function discoverGlobalRedemption(
   env: ApiBindings,
   userId: string,
   input: GlobalRedemptionInput,
+  viaToken = false,
 ): Promise<Omit<GlobalRedemptionResult, "claimResult">> {
-  const row = await prepare(env, userId, input);
+  const row = await prepare(env, userId, input, viaToken);
   const { claimResult: _claimResult, ...discovery } = await result(env, row);
   return discovery;
 }

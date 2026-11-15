@@ -41,6 +41,7 @@ function rowOf(
       password: item.sourcePassword ?? null,
       payment: item.payment,
       ...(item.judge ? { judge: item.judge, attempt: item.judge.attempt } : {}),
+      ...(item.token ? { token: true as const } : {}),
     };
   if ("participant" in item)
     return {
@@ -70,6 +71,7 @@ function rowOf(
     at: Date.parse("claimedAt" in item ? item.claimedAt : item.registeredAt),
     titles,
     ...("attempt" in item && item.attempt ? { attempt: item.attempt } : {}),
+    ...("token" in item && item.token ? { token: true as const } : {}),
   };
 }
 

@@ -484,6 +484,13 @@
       "when": 1794718438296,
       "tag": "0068_personal_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1794721784226,
+      "tag": "0069_token_limits",
+      "breakpoints": true
     }
   ]
 }

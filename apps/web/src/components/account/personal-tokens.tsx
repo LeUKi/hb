@@ -8,6 +8,7 @@ import { useId, useState } from "react";
 import {
   usePersonalTokenActions,
   usePersonalTokens,
+  usePersonalTokenUsage,
 } from "../../lib/personal-tokens";
 import { clockLabel } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
@@ -19,6 +20,7 @@ import { Field, TextInput } from "../ui/field";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
 import { StatusChip } from "../ui/status-chip";
+import { limitsLine, TokenUsageChart } from "./token-usage";
 
 // 个人令牌 (docs/personal-token-design.md): made, listed and stopped here
 // only. A token is shown once, as it is made.
@@ -42,11 +44,16 @@ const lifetimes = PERSONAL_TOKEN_LIMITS.lifetimeDays.map((days) => ({
   label: `${days} 天`,
 }));
 
-function usageLine(token: PersonalToken) {
+type Calls = { calls: number; limited: number };
+
+function usageLine(token: PersonalToken, calls?: Calls) {
+  const counted = calls?.calls
+    ? ` · 近 30 天 ${calls.calls} 次${calls.limited ? `，限流 ${calls.limited} 次` : ""}`
+    : "";
   if (token.status === "active")
     return `${clockLabel(token.expiresAt)} 到期 · ${
       token.lastUsedAt ? `最近使用 ${clockLabel(token.lastUsedAt)}` : "还没用过"
-    }`;
+    }${counted}`;
   if (token.status === "expired") return `${clockLabel(token.expiresAt)} 到期`;
   return token.revokedAt
     ? `${clockLabel(token.revokedAt)} 停用${
@@ -57,9 +64,11 @@ function usageLine(token: PersonalToken) {
 
 function TokenRow({
   token,
+  calls,
   onStop,
 }: {
   token: PersonalToken;
+  calls?: Calls;
   onStop: (token: PersonalToken) => void;
 }) {
   const active = token.status === "active";
@@ -80,7 +89,7 @@ function TokenRow({
             </span>
           </span>
           <span className="truncate text-xs text-ink-3 tabular-nums">
-            {usageLine(token)}
+            {usageLine(token, calls)}
           </span>
         </span>
         {active ? (
@@ -106,6 +115,8 @@ export function PersonalTokensSection({ user }: { user: SessionUser }) {
   const active = tokens.filter((token) => token.status === "active");
   const max = query.data?.max ?? PERSONAL_TOKEN_LIMITS.activeMax;
   const full = active.length >= max;
+  const usage = usePersonalTokenUsage(user.id, tokens.length > 0).data?.usage;
+  const calls = new Map(usage?.tokens.map((entry) => [entry.id, entry]));
   return (
     <PageSection
       title="个人令牌"
@@ -134,10 +145,25 @@ export function PersonalTokensSection({ user }: { user: SessionUser }) {
       ) : (
         <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
           {tokens.map((token) => (
-            <TokenRow key={token.id} token={token} onStop={setStopping} />
+            <TokenRow
+              key={token.id}
+              token={token}
+              calls={calls.get(token.id)}
+              onStop={setStopping}
+            />
           ))}
         </Panel>
       )}
+      <Reveal show={Boolean(usage)}>
+        {usage && (
+          <Panel className="grid gap-3 p-4">
+            <TokenUsageChart usage={usage} />
+            <p className="text-xs text-ink-3">
+              {limitsLine}超过的请求会被拒绝，下一分钟恢复。
+            </p>
+          </Panel>
+        )}
+      </Reveal>
       <NewTokenDialog
         open={making}
         onClose={() => setMaking(false)}

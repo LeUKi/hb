@@ -86,6 +86,7 @@ import {
   updateActivity,
 } from "./activities/service";
 import { findActivity } from "./activities/storage";
+import { TOKEN_REQUEST_HEADER } from "./auth/personal-token";
 import { createDb } from "./db/client";
 import { merchants } from "./db/schema";
 import {
@@ -1811,15 +1812,22 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             const parsed = globalRedemptionSchema.safeParse(input);
             if (!parsed.success)
               throw new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效");
+            // A 个人令牌's: only 红包 that allow it (personal-token.ts).
+            const viaToken = request.headers.get(TOKEN_REQUEST_HEADER) === "1";
             if (url.pathname === "/internal/redemptions/discover")
               return Response.json(
-                await discoverGlobalRedemption(this.env, userId, parsed.data),
+                await discoverGlobalRedemption(
+                  this.env,
+                  userId,
+                  parsed.data,
+                  viaToken,
+                ),
                 {
                   headers: { "Cache-Control": "no-store" },
                 },
               );
             return Response.json(
-              await redeemGlobally(this.env, userId, parsed.data),
+              await redeemGlobally(this.env, userId, parsed.data, viaToken),
               {
                 headers: { "Cache-Control": "no-store" },
               },

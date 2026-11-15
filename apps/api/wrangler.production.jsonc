@@ -7,6 +7,7 @@
   "preview_urls": false,
   "vars": {
     "APP_ORIGIN": "https://hb.lafi.sh",
+    "TOKEN_STATS_ACCOUNT_ID": "fd9563d3d06aeeca5665fcdec5efbb80",
     "APP_ENV": "production",
     "LDC_NETWORK_MODE": "live",
     "LDC_ACCEPTANCE_ID": "",
@@ -94,7 +95,30 @@
       "name": "JUDGE_FILLS",
       "namespace_id": "1202",
       "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "name": "TOKEN_READS",
+      "namespace_id": "1203",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      "name": "TOKEN_SQUARE",
+      "namespace_id": "1204",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "TOKEN_CLAIMS",
+      "namespace_id": "1205",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "TOKEN_IDENTITY",
+      "namespace_id": "1206",
+      "simple": { "limit": 20, "period": 60 }
     }
+  ],
+  "analytics_engine_datasets": [
+    { "binding": "TOKEN_EVENTS", "dataset": "hb_token_requests_production" }
   ],
   "services": [{ "binding": "CAP", "service": "hb-cap-production" }],
   "triggers": {

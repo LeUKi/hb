@@ -28,6 +28,8 @@ async function resetLegacyDb(db: D1Database) {
     "opening_watchers",
     "square_watchers",
     "notice_settings",
+    "personal_token_settings",
+    "personal_tokens",
     "merchant_config_changes",
     "payment_identity_corrections",
     "merchant_client_ids",
@@ -285,6 +287,8 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       // 0062: not a 三方积分红包.
       points_system_id: null,
       points_stop_reason: null,
+      // 0069: 允许用令牌领, on for every 红包 until its sender turns it off.
+      allow_tokens: 1,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...oldConfig,
@@ -618,6 +622,8 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       // 0062: not a 三方积分红包.
       points_system_id: null,
       points_stop_reason: null,
+      // 0069: 允许用令牌领, on for every 红包 until its sender turns it off.
+      allow_tokens: 1,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...JSON.parse(String(row.config)),

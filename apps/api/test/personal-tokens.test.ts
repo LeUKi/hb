@@ -5,7 +5,9 @@ import {
   type CreatedPersonalToken,
   emptyActivityInput,
   type LdcActivityInput,
+  PERSONAL_TOKEN_RATE_LIMITS,
   type PersonalToken,
+  type PersonalTokenAdminView,
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivity, openActivity } from "../src/activities/service";
@@ -414,5 +416,219 @@ describe("个人令牌与附带网页", () => {
     expect(signed.status).toBe(200);
     expect(signed.body.user).toMatchObject({ id: alice.externalId });
     expect(signed.body.token).toEqual(expect.any(String));
+
+    // Where its sender turned 允许用令牌领 off, the page is the web's only.
+    const closed = await opened({
+      ...base,
+      title: "只在网页上玩",
+      rewardType: "ldc",
+      funding: "balance",
+      merchantId: "",
+      participationMode: "direct",
+      passwords: [],
+      money: { mode: "fixed", totalAmount: "1.00", count: 2 },
+      pageUrl: "https://game.example.com/play",
+      allowTokens: false,
+    } as ActivityInput);
+    const refused = await call(
+      "POST",
+      `/api/activities/${closed.id}/page-identity`,
+      { token, body: { nonce: "abc12345-xyz" } },
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.body.error?.code).toBe("TOKEN_CLAIMS_OFF");
+  });
+});
+
+describe("个人令牌的限制和统计", () => {
+  it("is turned away while the 站长's switch is off, and the 站长 alone turns it", async () => {
+    const { token } = await newToken(alice);
+    const asAdmin = { ...bindings, ADMIN_LINUX_DO_IDS: owner.externalId };
+    const read = await call("GET", "/api/admin/personal-tokens", {
+      user: owner,
+      env: asAdmin,
+    });
+    expect(read.status).toBe(200);
+    const view = read.body as unknown as PersonalTokenAdminView;
+    expect(view.settings.enabled).toBe(true);
+    expect(view.limits).toEqual(PERSONAL_TOKEN_RATE_LIMITS);
+    expect(view.usage.available).toBe(false);
+    expect(
+      (await call("GET", "/api/admin/personal-tokens", { user: alice })).status,
+    ).toBe(403);
+
+    const off = await call("PATCH", "/api/admin/personal-tokens/settings", {
+      user: owner,
+      env: asAdmin,
+      body: { expectedVersion: view.settings.version, enabled: false },
+    });
+    expect(off.status).toBe(200);
+    const paused = await call("GET", "/api/session", { token });
+    expect(paused.status).toBe(403);
+    expect(paused.body.error?.code).toBe("PERSONAL_TOKENS_PAUSED");
+    // The page itself goes on as before.
+    expect((await call("GET", "/api/session", { user: alice })).status).toBe(
+      200,
+    );
+    // An old version is refused.
+    expect(
+      (
+        await call("PATCH", "/api/admin/personal-tokens/settings", {
+          user: owner,
+          env: asAdmin,
+          body: { expectedVersion: view.settings.version, enabled: true },
+        })
+      ).status,
+    ).toBe(409);
+    await call("PATCH", "/api/admin/personal-tokens/settings", {
+      user: owner,
+      env: asAdmin,
+      body: { expectedVersion: view.settings.version + 1, enabled: true },
+    });
+    expect((await call("GET", "/api/session", { token })).status).toBe(200);
+  });
+
+  it("limits an account's minute, all its tokens together, and counts each request", async () => {
+    const [first, second] = [
+      await newToken(alice),
+      await newToken(alice, "第二个"),
+    ];
+    const written: { indexes?: unknown[]; blobs?: unknown[] }[] = [];
+    const counted = {
+      ...bindings,
+      TOKEN_EVENTS: {
+        writeDataPoint: (point: { indexes?: unknown[]; blobs?: unknown[] }) =>
+          void written.push(point),
+      },
+    } as unknown as ApiBindings;
+    const limit = PERSONAL_TOKEN_RATE_LIMITS.square;
+    const statuses: number[] = [];
+    for (let index = 0; index <= limit; index++)
+      statuses.push(
+        (
+          await call("GET", "/api/discovery/activities", {
+            token: (index % 2 ? second : first).token,
+            env: counted,
+          })
+        ).status,
+      );
+    expect(statuses.slice(0, limit).every((status) => status === 200)).toBe(
+      true,
+    );
+    expect(statuses.at(-1)).toBe(429);
+    // Other kinds have their own share.
+    expect(
+      (await call("GET", "/api/session", { token: first.token, env: counted }))
+        .status,
+    ).toBe(200);
+    expect(written).toHaveLength(limit + 2);
+    expect(written[0]).toEqual({
+      indexes: [alice.id],
+      blobs: ["square", "ok", first.personalToken.id],
+      doubles: [1],
+    });
+    expect(written[limit]?.blobs?.slice(0, 2)).toEqual(["square", "limited"]);
+    expect(written.at(-1)?.blobs?.slice(0, 2)).toEqual(["read", "ok"]);
+  });
+
+  it("shows someone their own usage only on the page, as unavailable until it can be read", async () => {
+    const { token } = await newToken(alice);
+    const mine = await call("GET", "/api/me/personal-tokens/usage", {
+      user: alice,
+    });
+    expect(mine.status).toBe(200);
+    expect(mine.body).toMatchObject({
+      usage: { available: false, tokens: [] },
+      limits: PERSONAL_TOKEN_RATE_LIMITS,
+    });
+    expect(
+      (await call("GET", "/api/me/personal-tokens/usage", { token })).status,
+    ).toBe(403);
+  });
+});
+
+describe("允许用令牌领", () => {
+  it("is the sender's to turn off and on, opened or not; off, a token neither claims nor lands a 口令 there", async () => {
+    const input = ldc({ allowTokens: false });
+    const activity = await opened(input);
+    const { token } = await newToken(alice);
+    const refused = await call("POST", `/api/activities/${activity.id}/claim`, {
+      token,
+      body: {
+        submissionId: crypto.randomUUID(),
+        participationMode: "direct",
+      },
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error?.code).toBe("TOKEN_CLAIMS_OFF");
+
+    // Turned on after opening, with the 红包's own edit (the deadline as
+    // it was kept, as the page sends it).
+    const kept = await env.DB.prepare(
+      "SELECT config FROM activities WHERE id=?",
+    )
+      .bind(activity.id)
+      .first<{ config: string }>();
+    const { deadline } = JSON.parse(kept?.config ?? "{}") as {
+      deadline: LdcActivityInput["deadline"];
+    };
+    const edited = await call("PATCH", `/api/me/activities/${activity.id}`, {
+      user: owner,
+      body: {
+        version: activity.version,
+        activity: { ...input, deadline, allowTokens: true },
+      },
+    });
+    expect(edited.status).toBe(200);
+    const claimed = await call("POST", `/api/activities/${activity.id}/claim`, {
+      token,
+      body: { submissionId: crypto.randomUUID(), participationMode: "direct" },
+    });
+    expect((claimed.body as unknown as ClaimResult).result).toBe("claimed");
+
+    // The 名单 marks it, the sender's list too.
+    const roster = await call(
+      "GET",
+      `/api/activities/${activity.id}/recipients`,
+      {},
+    );
+    expect(roster.body.items).toEqual([
+      expect.objectContaining({ token: true }),
+    ]);
+    const theirs = await call(
+      "GET",
+      `/api/me/activities/${activity.id}/claims`,
+      {
+        user: owner,
+      },
+    );
+    expect((theirs.body.items as { token?: true }[])[0]).toMatchObject({
+      token: true,
+    });
+  });
+
+  it("keeps a 口令 found with a token from 红包 that turned it off", async () => {
+    const password = `令牌口令${crypto.randomUUID().slice(0, 8)}`;
+    await opened(
+      ldc({
+        participationMode: "password",
+        passwords: [password],
+        allowTokens: false,
+      }),
+    );
+    const { token } = await newToken(alice);
+    const withToken = await call("POST", "/api/redemptions/discover", {
+      token,
+      body: { submissionId: crypto.randomUUID(), password },
+    });
+    expect(withToken.status).toBe(200);
+    expect(withToken.body.result).toBe("none");
+    // Another account (one account's 口令 attempts wait for each other).
+    const bob = await actor();
+    const onThePage = await call("POST", "/api/redemptions/discover", {
+      user: bob,
+      body: { submissionId: crypto.randomUUID(), password },
+    });
+    expect(onThePage.body.result).toBe("single");
   });
 });

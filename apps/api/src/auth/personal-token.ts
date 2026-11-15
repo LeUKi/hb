@@ -9,6 +9,7 @@
 // at its expiry; its owner stops it, or an admin with a reason; a stop is
 // final. Ten in use at most, for anyone signed in.
 import {
+  type ClaimResult,
   type CreatePersonalTokenInput,
   PERSONAL_TOKEN_LIMITS,
   PERSONAL_TOKEN_PREFIX,
@@ -17,6 +18,7 @@ import {
 import type { Context } from "hono";
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
+import { RateLimitedError } from "../balance/errors";
 import type { ApiBindings, ApiContext } from "../env";
 import { sha256Hex } from "../security/crypto";
 import {
@@ -210,6 +212,7 @@ export async function adminRevokePersonalToken(
 }
 
 type TokenAccountRow = AccountRow & {
+  tokensOn: number;
   tokenId: string;
   tokenExpiresAt: number;
   lastUsedAt: number | null;
@@ -221,7 +224,64 @@ type TokenAccountRow = AccountRow & {
  * the request has no Bearer header at all. A Bearer header that is not a
  * token in use, of an account in use, is a 401: never the cookie instead.
  */
-export async function personalTokenSession(
+export function personalTokenSession(
+  c: Context<ApiContext>,
+): Promise<AuthenticatedSession | null> {
+  // Once a request: a route may ask twice, the limit counts once.
+  const known = asked.get(c.req.raw);
+  if (known) return known;
+  const answer = tokenSessionOf(c);
+  asked.set(c.req.raw, answer);
+  return answer;
+}
+
+const asked = new WeakMap<Request, Promise<AuthenticatedSession | null>>();
+
+/** What a request with a token asks for, as it is limited and counted (§8). */
+export type TokenRequestKind = "read" | "square" | "claim" | "identity";
+
+export function tokenRequestKind(
+  method: string,
+  path: string,
+): TokenRequestKind {
+  if (method === "POST" && /\/page-identity$/.test(path)) return "identity";
+  if (
+    method === "POST" &&
+    (/^\/api\/activities\/[^/]+\/claim$/.test(path) ||
+      /^\/api\/redemptions(\/discover)?$/.test(path))
+  )
+    return "claim";
+  if (path === "/api/discovery/activities") return "square";
+  return "read";
+}
+
+function limiterOf(env: ApiBindings, kind: TokenRequestKind) {
+  return {
+    read: env.TOKEN_READS,
+    square: env.TOKEN_SQUARE,
+    claim: env.TOKEN_CLAIMS,
+    identity: env.TOKEN_IDENTITY,
+  }[kind] as RateLimit | undefined;
+}
+
+/** One data point a request (§8): whose, what, and how it went. */
+function countTokenRequest(
+  env: ApiBindings,
+  userId: string,
+  tokenId: string,
+  kind: TokenRequestKind,
+  outcome: "ok" | "limited" | "paused",
+) {
+  try {
+    env.TOKEN_EVENTS?.writeDataPoint({
+      indexes: [userId],
+      blobs: [kind, outcome, tokenId],
+      doubles: [1],
+    });
+  } catch {}
+}
+
+async function tokenSessionOf(
   c: Context<ApiContext>,
 ): Promise<AuthenticatedSession | null> {
   const authorization = c.req.header("Authorization");
@@ -236,7 +296,8 @@ export async function personalTokenSession(
           u.trust_level AS trustLevel,u.profile_seen_at AS profileSeenAt,u.provider,
           u.external_id AS externalId,u.active,
           cd.revision AS cooldownRevision,cd.next_allowed_at AS nextAllowedAt,
-          ${databaseNow} AS serverTime
+          ${databaseNow} AS serverTime,
+          COALESCE((SELECT enabled FROM personal_token_settings WHERE id='global'),1) AS tokensOn
         FROM personal_tokens t JOIN users u ON u.id=t.user_id
         LEFT JOIN account_attempt_cooldowns cd ON cd.user_id=u.id
         WHERE t.token_hash=? AND t.revoked_at IS NULL AND t.expires_at>?`,
@@ -250,6 +311,22 @@ export async function personalTokenSession(
     : null;
   if (!row?.active)
     tokenError(401, "INVALID_PERSONAL_TOKEN", "令牌不对、已过期或已停用");
+  // The 站长's switch, then this account's share of a minute (§8).
+  const kind = tokenRequestKind(c.req.method, new URL(c.req.url).pathname);
+  if (!row.tokensOn) {
+    countTokenRequest(c.env, row.userId, row.tokenId, kind, "paused");
+    tokenError(
+      403,
+      "PERSONAL_TOKENS_PAUSED",
+      "个人令牌暂时停用了，请在网页上操作。",
+    );
+  }
+  const limiter = limiterOf(c.env, kind);
+  if (limiter && !(await limiter.limit({ key: row.userId })).success) {
+    countTokenRequest(c.env, row.userId, row.tokenId, kind, "limited");
+    throw new RateLimitedError(60, "令牌的请求太频繁了，一分钟后再试。");
+  }
+  countTokenRequest(c.env, row.userId, row.tokenId, kind, "ok");
   if (row.lastUsedAt === null || now - row.lastUsedAt >= TOUCH_INTERVAL_MS)
     await c.env.DB.prepare(
       `UPDATE personal_tokens SET last_used_at=?,last_used_ip=?,use_count=use_count+1
@@ -287,7 +364,9 @@ export async function getOptionalActor(
 }
 
 /** A read a 个人令牌 may make: the token's account, or the cookie session. */
-export async function requireActor(c: Context<ApiContext>) {
+export async function requireActor(
+  c: Context<ApiContext>,
+): Promise<AuthenticatedSession> {
   return (await personalTokenSession(c)) ?? requireAuth(c);
 }
 
@@ -295,6 +374,54 @@ export async function requireActor(c: Context<ApiContext>) {
  * A write a 个人令牌 may make. With a token there is no cookie to forge, so
  * Origin and CSRF guard only the cookie session, exactly as before.
  */
-export async function requireActorMutation(c: Context<ApiContext>) {
+export async function requireActorMutation(
+  c: Context<ApiContext>,
+): Promise<AuthenticatedSession> {
   return (await personalTokenSession(c)) ?? requireProtectedMutation(c);
+}
+
+/**
+ * A claim made with a 个人令牌 says so (claims.via, activity_registrations.via;
+ * the 名单 marks it, §8): written after, as the 社区小程序's are when its
+ * line did not. A 限时开奖's prize takes its sign-up's mark when drawn.
+ */
+export async function markTokenClaim(
+  env: ApiBindings,
+  userId: string,
+  result: ClaimResult,
+) {
+  const claimId =
+    result.result === "claimed"
+      ? result.claim.id
+      : result.result === "judged"
+        ? (result.settled?.claim?.id ?? null)
+        : null;
+  if (claimId)
+    await env.DB.prepare(
+      "UPDATE claims SET via='token' WHERE id=? AND user_id=? AND via IS NULL",
+    )
+      .bind(claimId, userId)
+      .run();
+  else if (result.result === "registered")
+    await env.DB.prepare(
+      "UPDATE activity_registrations SET via='token' WHERE id=? AND user_id=? AND via IS NULL",
+    )
+      .bind(result.registration.id, userId)
+      .run();
+}
+
+/** Told to a 口令兑换's Durable Object: this one came with a token (§8). */
+export const TOKEN_REQUEST_HEADER = "X-Hb-Personal-Token";
+
+/** 允许用令牌领 off: a request with a token stops here (§8). */
+export function refuseTokenOn(
+  session: AuthenticatedSession,
+  activity: { allowTokens: boolean },
+) {
+  if (session.personalTokenId !== undefined && !activity.allowTokens)
+    tokenError(
+      403,
+      "TOKEN_CLAIMS_OFF",
+      "这个红包的发红包的人关了“允许用令牌领”，只能在网页上领。",
+    );
 }

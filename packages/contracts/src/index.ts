@@ -202,6 +202,12 @@ const baseActivitySchema = z.strictObject({
   ),
   forceDedicated: z.boolean(),
   joinSquare: z.boolean().default(false),
+  /**
+   * 允许用令牌领 (docs/personal-token-design.md §8): a 个人令牌 may claim it,
+   * get its 附带网页认人 and land a 口令 on it. Changeable once opened too;
+   * absent is on.
+   */
+  allowTokens: z.boolean().optional(),
   deadline: deadlineSchema,
   allocation: z.enum(["sequential", "random"]),
   passwords: z
@@ -1317,12 +1323,16 @@ export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo" | "judge"> & {
   judge?: NonNullable<ClaimDetail["judge"]> & { asked?: string };
   claimant: ActivityAuthor;
   speedTitle?: RecipientSpeedTitle;
+  /** Taken with a 个人令牌 (docs/personal-token-design.md §8). */
+  token?: true;
   /** 手气王 / 手气亡, over the whole roster, as the public list has them. */
   title?: "highest" | "lowest";
 } & { rewardType: "ldc"; amount: string; payment?: PaymentView };
 export type AuthorClaimList = {
   items: AuthorClaim[];
   nextCursor: string | null;
+  /** First page: how many took theirs with a 个人令牌. */
+  tokens?: number;
 };
 export type PublicRecipient = PublicUserProfile & {
   id: string;
@@ -1334,11 +1344,15 @@ export type PublicRecipient = PublicUserProfile & {
   attempt?: number;
   /** 自领: the sender's own share; its title is 自领的屑, none other. */
   self?: true;
+  /** Taken with a 个人令牌 (docs/personal-token-design.md §8). */
+  token?: true;
 };
 /** Always public (redesign 06 §2), oldest first (06 §3). */
 export type PublicRecipientList = {
   items: PublicRecipient[];
   nextCursor: string | null;
+  /** First page: how many took theirs with a 个人令牌. */
+  tokens?: number;
   titles?: { highestClaimIds: string[]; lowestClaimIds: string[] };
 };
 export type PublicRegistration = PublicUserProfile & {

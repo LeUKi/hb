@@ -5,12 +5,15 @@ import {
   adminRevokePersonalTokenSchema,
   createPersonalTokenSchema,
   PERSONAL_TOKEN_LIMITS,
+  PERSONAL_TOKEN_RATE_LIMITS,
+  type PersonalTokenAdminView,
+  updatePersonalTokenSettingsSchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { ActivityError } from "../activities/errors";
-import type { ApiContext } from "../env";
+import type { ApiBindings, ApiContext } from "../env";
 import {
   adminRevokePersonalToken,
   createPersonalToken,
@@ -18,10 +21,30 @@ import {
   revokeOwnPersonalToken,
 } from "./personal-token";
 import {
+  busiestTokenAccounts,
+  myTokenUsage,
+  tokenUsage,
+} from "./personal-token-stats";
+import {
+  requireAdmin,
   requireAdminMutation,
   requireAuth,
   requireProtectedMutation,
 } from "./session";
+
+/** The 站长's switch for every request with a token (§8). */
+async function tokenSettingsOf(env: ApiBindings) {
+  const row = await env.DB.prepare(
+    "SELECT enabled, version, updated_at FROM personal_token_settings WHERE id='global'",
+  ).first<{ enabled: number; version: number; updated_at: number }>();
+  return row
+    ? {
+        enabled: row.enabled === 1,
+        version: row.version,
+        updatedAt: new Date(row.updated_at).toISOString(),
+      }
+    : { enabled: true, version: 0, updatedAt: new Date(0).toISOString() };
+}
 
 const body = bodyLimit({
   maxSize: 4096,
@@ -58,6 +81,14 @@ export const personalTokenRoutes = new Hono<ApiContext>()
       max: PERSONAL_TOKEN_LIMITS.activeMax,
     });
   })
+  // Their own usage (§8): by hour for a day, by day for 30, each token's.
+  .get("/me/personal-tokens/usage", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      usage: await myTokenUsage(c.env, session.user.id),
+      limits: PERSONAL_TOKEN_RATE_LIMITS,
+    });
+  })
   .post(
     "/me/personal-tokens",
     body,
@@ -87,6 +118,55 @@ export const personalTokenRoutes = new Hono<ApiContext>()
         c.req.param("id"),
       ),
     });
+  })
+  // The 站长's (§8): the switch, everyone's usage and who calls most.
+  .get("/admin/personal-tokens", async (c) => {
+    refuseToken(c.req.header("Authorization"));
+    await requireAdmin(c);
+    const [settings, usage, topUsers] = await Promise.all([
+      tokenSettingsOf(c.env),
+      tokenUsage(c.env),
+      busiestTokenAccounts(c.env),
+    ]);
+    return c.json({
+      settings,
+      limits: PERSONAL_TOKEN_RATE_LIMITS,
+      usage,
+      topUsers,
+    } satisfies PersonalTokenAdminView);
+  })
+  .patch("/admin/personal-tokens/settings", body, async (c) => {
+    refuseToken(c.req.header("Authorization"));
+    const session = await requireAdminMutation(c);
+    const input = updatePersonalTokenSettingsSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!input.success)
+      throw new ActivityError(400, "INVALID_TOKEN_SETTINGS", "设置无效");
+    const saved = await c.env.DB.prepare(
+      `UPDATE personal_token_settings SET enabled=?,version=version+1,updated_by=?,updated_at=?
+       WHERE id='global' AND version=?`,
+    )
+      .bind(
+        input.data.enabled ? 1 : 0,
+        session.user.id,
+        Date.now(),
+        input.data.expectedVersion,
+      )
+      .run();
+    if (saved.meta.changes === 0)
+      throw new ActivityError(
+        409,
+        "TOKEN_SETTINGS_CHANGED",
+        "设置刚被改过，刷新后再改。",
+      );
+    console.info(
+      JSON.stringify({
+        event: "personal_tokens_switched",
+        enabled: input.data.enabled,
+      }),
+    );
+    return c.json({ settings: await tokenSettingsOf(c.env) });
   })
   .post(
     "/admin/personal-tokens/:id/revoke",

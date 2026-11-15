@@ -424,6 +424,8 @@ export type RosterRow = {
   judge?: AuthorClaim["judge"];
   /** 代码判定: 第 N 次领到, for everyone (05 §7). */
   attempt?: number;
+  /** Taken with a 个人令牌: a script or client (docs/personal-token-design.md §8). */
+  token?: true;
 };
 
 /**

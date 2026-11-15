@@ -24,6 +24,8 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import {
   getOptionalActor,
+  markTokenClaim,
+  refuseTokenOn,
   requireActor,
   requireActorMutation,
 } from "../auth/personal-token";
@@ -502,6 +504,8 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const id = c.req.param("id");
       const { session, activity } = await claimantAndActivity(c, id);
+      // 允许用令牌领 (docs/personal-token-design.md §8).
+      refuseTokenOn(session, activity);
       const { humanToken, ...input } = c.req.valid("json");
       // A token is checked here, not in the 红包's Durable Object, whose
       // writes wait for one another (human-check.ts).
@@ -528,7 +532,10 @@ export const activityRoutes = new Hono<ApiContext>()
         },
       );
       if (!response.ok) return response;
-      return c.json((await response.json()) as ClaimResult);
+      const result = (await response.json()) as ClaimResult;
+      if (session.personalTokenId !== undefined)
+        await markTokenClaim(c.env, session.user.id, result);
+      return c.json(result);
     },
   )
   // A running 红包's live channel (live.ts): a WebSocket to its own DO.

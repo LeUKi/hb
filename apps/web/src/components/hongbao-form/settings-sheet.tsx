@@ -681,6 +681,22 @@ export function SettingsSheet({
                 }
               />
             </Setting>
+            {/* 允许用令牌领 (docs/personal-token-design.md §8): its
+                sender's at any time, opened or not. */}
+            <Setting>
+              <Switch
+                label="允许用令牌领"
+                description={
+                  form.allowTokens
+                    ? "用个人令牌的脚本和客户端也能领、能进附带网页，名单上会标出来。开放后也能改。"
+                    : "只能在网页上领。用个人令牌的脚本和客户端领不了，也进不了附带网页。开放后也能改。"
+                }
+                checked={form.allowTokens}
+                onChange={(allowTokens) =>
+                  update((current) => ({ ...current, allowTokens }))
+                }
+              />
+            </Setting>
             <Setting title="数量展示">
               <ChoiceCards
                 label="数量展示"

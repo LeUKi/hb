@@ -671,6 +671,8 @@ export function HongbaoForm({
     form.afterClaimInfo.trim() ? "有附言" : "附言未填",
     form.topic.trim() ? "关联了帖子" : "不关联帖子",
     form.listed || form.mode === "code" ? "加入红包广场" : "不加入红包广场",
+    // Said only when turned off: on is how every 红包 starts.
+    ...(form.allowTokens ? [] : ["不让令牌领"]),
     form.quantity === "exact" ? "精确数量" : "模糊数量",
     // 代码判定 is only ever on its page: not a setting to mention.
     ...(form.mode !== "code" &&

@@ -493,6 +493,16 @@ export async function listUserClaims(
   };
 }
 
+/** Claims taken with a 个人令牌 (docs/personal-token-design.md §8). */
+async function tokenClaimCount(env: ApiBindings, activityId: string) {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM claims WHERE activity_id=? AND via='token'",
+  )
+    .bind(activityId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export async function listAuthorClaims(
   env: ApiBindings,
   activityId: string,
@@ -530,7 +540,9 @@ export async function listAuthorClaims(
   const titles = drawPending(activity)
     ? noTitles()
     : await publicRecipientTitles(env, activity);
+  const tokens = cursor ? 0 : await tokenClaimCount(env, activity.id);
   return {
+    ...(tokens ? { tokens } : {}),
     items: page.map(({ claim, claimant }) => {
       const { afterClaimInfo: _privateNote, ...detail } =
         details.get(claim.id) ?? activityNotFound();
@@ -540,6 +552,7 @@ export async function listAuthorClaims(
         claimant,
         ...(speedTitle === undefined ? {} : { speedTitle }),
         ...luckTitle(titles, claim.id),
+        ...(claim.via === "token" ? { token: true as const } : {}),
       };
     }),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
@@ -601,8 +614,11 @@ export async function listPublicRecipients(
     activity,
     page.map(({ claim }) => claim.id),
   );
+  // How many took theirs with a 个人令牌, on the first page (§8).
+  const tokens = cursor ? 0 : await tokenClaimCount(env, activity.id);
   return {
     titles,
+    ...(tokens ? { tokens } : {}),
     items: page.map(
       ({ claim, username, displayName, avatarUrl, amountMinor }) => ({
         id: claim.id,
@@ -619,6 +635,8 @@ export async function listPublicRecipients(
         ...luckTitle(titles, claim.id),
         ...(attempts.has(claim.id) ? { attempt: attempts.get(claim.id) } : {}),
         ...(claim.userId === activity.authorId ? { self: true as const } : {}),
+        // Taken with a 个人令牌 (docs/personal-token-design.md §8).
+        ...(claim.via === "token" ? { token: true as const } : {}),
       }),
     ),
     nextCursor:

@@ -263,7 +263,7 @@ function Usage({ usage }: { usage: AdminJudgeUsage }) {
 }
 
 /** One of 谁在用's two lists: up to ten rows, each a way into its tab. */
-function Board({
+export function Board({
   title,
   empty,
   children,
@@ -287,7 +287,7 @@ function Board({
 }
 
 /** A 谁在用 row: the link is the squircle, so its focus ring follows it. */
-function BoardRow({
+export function BoardRow({
   to,
   id,
   children,
