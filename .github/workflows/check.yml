@@ -1,28 +1,72 @@
 name: check
 
+# The same checks as `bun run check`, split into jobs that run side by side:
+# the browser tests, most of the time, in four shards. A change to documents
+# alone runs nothing; a newer push to the same pull request or branch stops
+# the run it replaces.
 on:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
+
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  static:
+    name: lint, typecheck, build
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run build
+
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: bun run test
+
+  e2e:
+    name: browser tests ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@v2
+          browser: "true"
+      - run: bunx playwright test --shard=${{ matrix.shard }}/4
+
+  e2e-full-app:
+    name: full-app browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
         with:
-          bun-version-file: .bun-version
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Install browser
-        run: bunx playwright install --with-deps chromium
-      - name: Run local checks
-        run: bun run check
+          browser: "true"
+      - run: bun run test:e2e:full-app
