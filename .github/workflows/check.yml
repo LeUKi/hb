@@ -1,25 +1,28 @@
 name: check
 
 # The same checks as `bun run check`, split into jobs that run side by side:
-# the browser tests, most of the time, in four shards. A change to documents
-# alone runs nothing; a newer push to the same pull request or branch stops
-# the run it replaces.
+# the browser tests, most of the time, in four shards. A change to the design
+# documents alone (docs/**/*.md, README, LICENSE) runs nothing; Markdown the
+# checks read stays checked: kit/AGENTS.md and the skill (tests hold them
+# alike, the help pages import the skill), and docs/mocks is linted. A newer
+# push to the same pull request stops the run it replaces; every push to main
+# runs to the end, as each one's result goes into the release records.
 on:
   pull_request:
     paths-ignore:
-      - "docs/**"
-      - "**/*.md"
+      - "docs/**/*.md"
+      - "README.md"
       - "LICENSE"
   push:
     branches: [main]
     paths-ignore:
-      - "docs/**"
-      - "**/*.md"
+      - "docs/**/*.md"
+      - "README.md"
       - "LICENSE"
 
 concurrency:
   group: check-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
