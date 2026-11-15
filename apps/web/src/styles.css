@@ -2756,6 +2756,11 @@ html[data-embed] .build-stamp {
   --color-title-fast: #5fd39c;
   --color-title-self: #dcb59e;
   --focus-band-color: rgb(30 24 26 / 0.85);
+  /* A small 红包 that is over: dusty red sunk into the dark, the way an
+     ended cover dims, not the light theme's pale pink, which would be the
+     brightest thing in a dark list. */
+  --color-envelope-ended: #6e4f4c;
+  --color-envelope-ended-flap: #7b5b57;
 }
 @layer components {
   :root[data-site-dark] .desktop-bg {

@@ -441,7 +441,11 @@ function PageRisk({
   );
 }
 
-/** The frame, clear until its page has loaded (a spinner under it). */
+/**
+ * The frame, clear until its page has loaded (a spinner under it), then
+ * white under the page in 深色 too: a page made before 深色 may draw dark
+ * words on no background of its own.
+ */
 function PageFrame({ url }: { url: string }) {
   const [ready, setReady] = useState(false);
   const host = hostOf(url);
@@ -460,7 +464,7 @@ function PageFrame({ url }: { url: string }) {
       <iframe
         ref={frame}
         title={`${host} 的网页`}
-        className={`absolute inset-0 size-full border-0 ${ready ? "bg-white" : ""}`}
+        className={`absolute inset-0 size-full border-0 ${ready ? "bg-[#fff]" : ""}`}
         src={url}
         onLoad={() => setReady(true)}
         referrerPolicy="no-referrer-when-downgrade"
