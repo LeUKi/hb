@@ -1,8 +1,4 @@
-import type {
-  Merchant,
-  MerchantChangeImpact,
-  MerchantChangePreview,
-} from "@hb/contracts";
+import type { Merchant, MerchantChangePreview } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -12,7 +8,7 @@ import {
   PauseCircle,
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { ActivityRequestError, refused } from "../../lib/activities";
+import { ActivityRequestError } from "../../lib/activities";
 import { useReceivedCheckouts } from "../../lib/balance";
 import {
   MerchantChangeConfirmationError,
@@ -36,7 +32,6 @@ import {
   Panel,
 } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
-import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -47,31 +42,12 @@ import { fishText } from "../ui/fish";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { ChangeDialog, clientIdError, saveError } from "./merchant-change";
 import { CredentialLine } from "./merchant-credential";
 import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
 const PAGE_NOTE = "用商户发的红包，由集市应用直接付给领取者，不经过本站。";
-
-/** Production's rules for a Client ID (createMerchantSchema). */
-function clientIdError(value: string) {
-  const id = value.trim();
-  if (id.length > 200) return "Client ID 最多 200 个字符";
-  if (id && !/^[A-Za-z0-9_-]+$/.test(id))
-    return "Client ID 只能有字母、数字、下划线和短横线";
-  return null;
-}
-
-/** A save that did not go through, in words. */
-function saveError(error: unknown, what: string) {
-  if (error instanceof ActivityRequestError) {
-    if (error.status === 429) return "尝试过于频繁，请稍后再试。";
-    if (error.status === 409)
-      return "保存失败：商户配置刚在别处改过。你的输入还在，确认后再保存一次。";
-    if (refused(error) && error.message) return error.message;
-  }
-  return `保存没有完成：网络或服务出了问题，${what}。可以再试一次。`;
-}
 
 /** The merchant at a glance: which one, whether it can pay, what it pays. */
 function MerchantSummary({
@@ -191,91 +167,6 @@ function MerchantSummary({
         </MoreLink>
       </div>
     </Panel>
-  );
-}
-
-const impactLabels: [keyof MerchantChangeImpact, string][] = [
-  ["activeActivities", "进行中的红包"],
-  ["unfinishedDraws", "未完成的开奖"],
-  ["pendingPayments", "待发放"],
-  ["sendingPayments", "发送中"],
-  ["reconcilingPayments", "核对中"],
-];
-
-/** "谨慎更换商户配置": what a new Client ID or 密钥 would touch. */
-function ChangeDialog({
-  preview,
-  busy,
-  note,
-  onConfirm,
-  onCancel,
-}: {
-  preview: MerchantChangePreview | null;
-  busy: boolean;
-  /** The impact changed while the dialog was open. */
-  note: string | null;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <ConfirmDialog
-      open={preview !== null}
-      onClose={onCancel}
-      busy={busy}
-      title="谨慎更换商户配置"
-      text="这个商户还有进行中的红包或未完成的付款。换 Client ID 或密钥之前，请确认影响。"
-      actions={
-        <>
-          <Button
-            aria-disabled={busy || undefined}
-            data-disabled={busy || undefined}
-            onClick={() => {
-              if (!busy) onCancel();
-            }}
-          >
-            返回修改
-          </Button>
-          <Button
-            variant="primary"
-            aria-disabled={busy || undefined}
-            onClick={() => {
-              if (!busy) onConfirm();
-            }}
-          >
-            {busy ? "正在保存…" : "确认更换"}
-          </Button>
-        </>
-      }
-    >
-      <Squircle radius={12}>
-        <dl className="grid grid-cols-3 gap-x-3 gap-y-3 bg-fill px-4 py-3">
-          {impactLabels.map(([key, label]) => {
-            const count = preview?.impact[key] ?? 0;
-            return (
-              <div key={key} className="grid gap-0.5">
-                <dt className="text-xs text-ink-3">{label}</dt>
-                <dd
-                  className={`text-base font-semibold tabular-nums ${count > 0 ? "text-ink" : "text-ink-3"}`}
-                >
-                  {count}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
-      </Squircle>
-      <Reveal show={Boolean(note)}>
-        <p role="alert" className="text-sm text-danger">
-          {note}
-        </p>
-      </Reveal>
-      <Callout tone="warning">
-        能安全续付的付款，会在新凭证检查通过后用新配置继续；已经建单或结果未知的付款，继续核对原订单，期间可能暂停这个商户的新发送。
-      </Callout>
-      <p className="text-xs text-ink-3">
-        原付款的业务号、收款人、金额和记录都保留。确认更换不会绕过付款保护。
-      </p>
-    </ConfirmDialog>
   );
 }
 

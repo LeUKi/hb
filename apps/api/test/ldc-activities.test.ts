@@ -285,6 +285,45 @@ describe("LDC activity allocation and durable payment responsibility", () => {
     ).toEqual({ count: 0 });
   });
 
+  it("keeps a 商户直发 draft saved before there is a merchant, and asks for one only on opening", async () => {
+    const draft = await create(config({ merchantId: "" }), false);
+    expect(draft.openingBlockedReason).toBe("MERCHANT_NEEDED");
+    // Real, as a merchant configured from the form is.
+    expect(
+      await env.DB.prepare(
+        "SELECT merchant_id, payment_mode FROM activities WHERE id = ?",
+      )
+        .bind(draft.id)
+        .first(),
+    ).toEqual({ merchant_id: null, payment_mode: "real" });
+    const refused = await request(
+      `/api/me/activities/${draft.id}/open`,
+      owner,
+      "POST",
+      { version: draft.version },
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: {
+        code: "MERCHANT_NEEDED",
+        message: "还没有配置 LDC 商户，草稿已保存。",
+      },
+    });
+    const timed = await request(
+      `/api/me/activities/${draft.id}/schedule`,
+      owner,
+      "POST",
+      {
+        version: draft.version,
+        at: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+    );
+    expect(timed.status).toBe(409);
+    expect(await timed.json()).toMatchObject({
+      error: { code: "MERCHANT_NEEDED" },
+    });
+  });
+
   it("freezes merchant, type and amount pool after opening but permits presentation updates", async () => {
     const activity = await create(
       config({ money: { mode: "custom", amounts: ["1.25", "2.50"] } }),

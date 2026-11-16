@@ -1427,7 +1427,7 @@ test.describe("发红包", () => {
     await expect(page.getByRole("button", { name: "再加一个" })).toHaveCount(0);
   });
 
-  test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({
+  test("从哪发：没有商户、有🐟额就默认🐟额；卡片不变灰，选中的那种下面一行写现状和按钮，超过可用当场说，存下的输入不带商户", async ({
     page,
   }) => {
     await mockSession(page, { ...viewer, balance: true });
@@ -1443,24 +1443,33 @@ test.describe("发红包", () => {
       .first()
       .click();
     const fish = page.getByRole("button", { name: /^🐟额/ });
-    await expect(fish).toContainText("可用 12.34 🐟");
     await expect(fish).toHaveAttribute("aria-pressed", "true");
+    await expect(fish).toContainText("领到的进领取者的🐟额");
+    await expect(shown(page, "可用 12.34 🐟")).toBeVisible();
+    await expect(page.getByRole("link", { name: "去🐟额" })).toBeVisible();
+    // The merchant's card only says what it is, and can be picked.
     const merchant = page.getByRole("button", { name: /^LDC 商户/ });
-    await expect(merchant).toContainText("还没有配置商户");
-    await expect(merchant).toBeDisabled();
-    await expect(page.getByRole("link", { name: "去配置商户" })).toBeVisible();
+    await expect(merchant).toBeEnabled();
+    await expect(merchant).not.toContainText("还没有配置");
+    await merchant.click();
+    await expect(shown(page, "还没有配置 LDC 商户")).toBeVisible();
+    await page.getByRole("button", { name: "配置商户" }).click();
+    const dialog = page.getByRole("dialog", { name: "配置商户" });
+    await expect(dialog.getByLabel("Client ID")).toBeVisible();
+    await expect(dialog.getByLabel("商户密钥")).toBeVisible();
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toHaveCount(0);
+    await fish.click();
     await expect(
       page.getByText(/Credit 站会按你在 Credit 站的等级扣分发费/),
     ).toHaveCount(0);
     await page.locator("#hb-random-total").fill("20");
     await page.locator("#hb-random-count").fill("3");
     await expect(
-      shown(page, "可用只有 12.34 🐟，不够发这个红包。"),
+      shown(page, "可用只有 12.34 🐟，不够发这个红包"),
     ).toBeVisible();
     await page.locator("#hb-random-total").fill("0.30");
-    await expect(
-      shown(page, "可用只有 12.34 🐟，不够发这个红包。"),
-    ).toHaveCount(0);
+    await expect(shown(page, "可用 12.34 🐟")).toBeVisible();
     await page.keyboard.press("Enter");
     await page.getByLabel("口令 1").fill("表单口令2026");
     await page.keyboard.press("Enter");
@@ -1474,7 +1483,9 @@ test.describe("发红包", () => {
     });
   });
 
-  test("还没有商户：发多少里提示去配置，保存不会发出", async ({ page }) => {
+  test("还没有商户：发多少里一行提示，配置商户在叠层窗口里；草稿照样存", async ({
+    page,
+  }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, []);
     const sent = await mockCreate(page);
@@ -1485,10 +1496,13 @@ test.describe("发红包", () => {
       .getByRole("button", { name: /拼手气/ })
       .first()
       .click();
-    await expect(
-      page.getByText("还没有配置 LDC 商户，配置好才能保存和开放。"),
-    ).toBeVisible();
-    await expect(page.getByRole("link", { name: "去配置商户" })).toBeVisible();
+    await expect(shown(page, "还没有配置 LDC 商户")).toBeVisible();
+    await page.getByRole("button", { name: "配置商户" }).click();
+    const dialog = page.getByRole("dialog", { name: "配置商户" });
+    await expect(dialog.getByLabel("商户名称")).toHaveValue("默认商户");
+    await expect(dialog.getByRole("button", { name: "怎么填" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
     await page.locator("#hb-random-total").fill("0.30");
     await page.locator("#hb-random-count").fill("3");
     await page.keyboard.press("Enter");
@@ -1496,12 +1510,9 @@ test.describe("发红包", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator("#hb-title")).toBeVisible();
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(
-        page,
-        "还没有配置商户，不能保存。先到 LDC 商户配置填好商户。",
-      ).first(),
-    ).toBeVisible();
-    expect(sent).toHaveLength(0);
+    await expect.poll(() => sent.length).toBe(1);
+    // 商户直发 leaves funding out, as before 🐟额红包; no merchant yet.
+    expect(sent[0]?.activity.funding).toBeUndefined();
+    expect(sent[0]?.activity).toMatchObject({ merchantId: "" });
   });
 });

@@ -34,7 +34,7 @@ export type Phase = "idle" | "saving" | "checking" | "opening" | "scheduling";
 
 export const phaseLabels: Record<Exclude<Phase, "idle">, string> = {
   saving: "正在保存…",
-  checking: "正在检查商户凭证…",
+  checking: "正在检查商户密钥…",
   opening: "正在开放…",
   scheduling: "正在定时…",
 };
@@ -51,7 +51,7 @@ const lost = "尚未确认保存结果，请重试原提交，避免重复提交
 
 /**
  * Saving a 红包, as production does it: 保存草稿 or 保存并开放 (the 商户
- * 凭证 is checked on the way), and on 📝 保存修改. A lost answer is sent
+ * 密钥 is checked on the way), and on 📝 保存修改. A lost answer is sent
  * again as it was (重试原提交: a create keeps its requestId, so it cannot
  * make a second 红包); a 409 on 📝 reads the 红包 again and keeps what was
  * typed. Checking the form is the caller's job.
@@ -232,24 +232,9 @@ export function useSubmit({
     const retrying = retries(open);
     setNotice(null);
     const paying = activity?.config.merchantId || merchant?.id;
-    // A 🐟额红包 has no merchant: 🐟额 is checked when it opens; nor has
-    // a 三方积分红包, whose key and 额度 are checked by the server.
-    if (!retrying && !opened && form.funding === "merchant") {
-      if (!merchant || !paying) {
-        notify({
-          tone: "danger",
-          text: "还没有配置商户，不能保存。先到 LDC 商户配置填好商户。",
-        });
-        return;
-      }
-      if (open && merchant.credentialVerification.status === "rejected") {
-        notify({
-          tone: "danger",
-          text: "商户凭证未通过，不能开放。可以先存草稿。",
-        });
-        return;
-      }
-    }
+    // Whatever 从哪发 says, the draft saves; opening is checked by the
+    // server, the draft kept (07 发多少): no merchant, its 密钥 turned
+    // down, 🐟额 short, no 三方积分 key.
     const payload = withDefaultTitle(form);
     // A draft is paid by the current merchant; an opened one keeps its own.
     const input =

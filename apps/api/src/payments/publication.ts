@@ -50,13 +50,16 @@ export async function publicationEligibility(
 export const publicationMessages = {
   TIMED_DRAW_NOT_ENABLED: "限时开奖尚未启用，草稿已保存。",
   REAL_LDC_NOT_ENABLED: "平台暂未开放真实 LDC 红包，草稿已保存。",
+  MERCHANT_NEEDED: "还没有配置 LDC 商户，草稿已保存。",
   MERCHANT_LEGACY: "此红包关联历史商户，请在草稿中重新绑定当前商户。",
   MERCHANT_CREDENTIALS_UNVERIFIED:
-    "当前商户凭证尚未通过最近检查，请检查凭证后开放。",
+    "商户的密钥最近没有查过，查过才能开放，草稿已保存。",
   MERCHANT_CREDENTIALS_CHECKING:
-    "正在检查当前商户凭证，草稿已保留，检查通过后将继续开放。",
-  MERCHANT_CREDENTIALS_REJECTED: "认证未通过，请检查商户 ID 和密钥。",
-  MERCHANT_CREDENTIALS_UNAVAILABLE: "暂时无法验证商户凭证，请稍后重新检查。",
+    "正在检查商户的密钥，草稿已保存，查过后会继续开放。",
+  MERCHANT_CREDENTIALS_REJECTED:
+    "商户的 Client ID 或密钥没通过检查，换好才能开放，草稿已保存。",
+  MERCHANT_CREDENTIALS_UNAVAILABLE:
+    "暂时查不了商户的密钥，草稿已保存，请稍后再试。",
   BALANCE_HONGBAO_PAUSED: "🐟额红包暂时关闭，草稿已保存。",
   BALANCE_INSUFFICIENT: "🐟额可用不够，草稿已保存。",
   CODE_HONGBAO_PAUSED: "代码判定红包暂时关闭，草稿已保存。",

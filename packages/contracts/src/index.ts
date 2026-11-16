@@ -376,7 +376,10 @@ const ldcActivitySchema = baseActivitySchema.extend({
   rewardType: z.literal("ldc"),
   // Optional (not defaulted) for the same reason as participationMode.
   funding: activityFundingSchema.optional(),
-  /** The paying merchant; empty for a 🐟额红包 and a 三方积分红包. */
+  /**
+   * The paying merchant; empty for a 🐟额红包 and a 三方积分红包, and for a
+   * 商户直发 draft saved before its sender has a merchant.
+   */
   merchantId: z.union([z.uuid(), z.literal("")]),
   /**
    * 三方积分 (docs/third-party-points-design.md): the points system paying
@@ -395,17 +398,14 @@ function validateActivity(
   context: z.RefinementCtx,
 ) {
   const funding = fundingOf(activity);
-  const noMerchant = funding !== "merchant";
-  if (noMerchant ? activity.merchantId !== "" : activity.merchantId === "")
+  // 商户直发 with no merchant yet is still a draft: opening asks for one
+  // (MERCHANT_NEEDED, docs/redesign/07-pages.md 发多少).
+  if (funding !== "merchant" && activity.merchantId !== "")
     context.addIssue({
       code: "custom",
       path: ["merchantId"],
       message:
-        funding === "balance"
-          ? "🐟额红包不用商户"
-          : funding === "points"
-            ? "三方积分红包不用商户"
-            : "请先配置 LDC 商户",
+        funding === "balance" ? "🐟额红包不用商户" : "三方积分红包不用商户",
     });
   if ((funding === "points") !== (activity.pointsSystemId !== undefined))
     context.addIssue({

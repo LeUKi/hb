@@ -179,6 +179,8 @@ export type LdcOpeningBlockedReason =
   /** A 密钥 its version needs is not filled (docs/judge-key-design.md §3). */
   | "JUDGE_KEY_MISSING"
   | "TIMED_DRAW_NOT_ENABLED"
+  /** 商户直发 saved as a draft before its sender had a merchant. */
+  | "MERCHANT_NEEDED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"
   | "MERCHANT_CREDENTIALS_CHECKING"

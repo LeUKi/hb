@@ -393,7 +393,8 @@ async function openingBlockedReason(
         : undefined)
     );
   }
-  if (!row.merchantId) return undefined;
+  // 商户直发 saved before its sender had a merchant (07 发多少).
+  if (!row.merchantId) return "MERCHANT_NEEDED";
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     return "TIMED_DRAW_NOT_ENABLED";
   const merchant = await ownedMerchant(env, row.merchantId, row.authorId);
@@ -773,7 +774,7 @@ export async function createActivity(
     ? await requirePointsFunding(env, authorId, input.activity)
     : null;
   const merchant =
-    balance || points
+    balance || points || !input.activity.merchantId
       ? null
       : await ownedMerchant(env, input.activity.merchantId, authorId);
   if (merchant?.usageStatus === "legacy")
@@ -826,8 +827,11 @@ export async function createActivity(
         config.title,
         input.activity.rewardType,
         config.participationMode ?? "password",
-        balance || points ? null : input.activity.merchantId,
-        balance || points ? balancePaymentMode(env) : (merchant?.mode ?? null),
+        balance || points ? null : input.activity.merchantId || null,
+        // No merchant yet: real, as one configured from the form is.
+        balance || points
+          ? balancePaymentMode(env)
+          : (merchant?.mode ?? "real"),
         fundingOf(input.activity),
         Number(config.forceDedicated),
         Number(config.joinSquare),
@@ -922,7 +926,7 @@ export async function updateActivity(
   if (coded && row.participationMode !== "code")
     await requireCodeHongbao(env, authorId);
   const merchant =
-    balance || points
+    balance || points || !input.activity.merchantId
       ? null
       : await ownedMerchant(env, input.activity.merchantId, authorId);
   // Its system as the 红包 shows it: written by the server only.
@@ -1011,7 +1015,7 @@ export async function updateActivity(
       input.activity.rewardType !== row.rewardType ||
       config.allocation !== row.allocation ||
       oldConfig.rewardType !== "ldc" ||
-      (balance || points ? null : input.activity.merchantId) !==
+      (balance || points ? null : input.activity.merchantId || null) !==
         row.merchantId ||
       !sameLdcMoney(input.activity.money, oldConfig.money)
     ) {
@@ -1104,7 +1108,7 @@ export async function updateActivity(
       config.title,
       input.activity.rewardType,
       config.participationMode ?? "password",
-      balance || points ? null : input.activity.merchantId,
+      balance || points ? null : input.activity.merchantId || null,
       nextPaymentMode ?? null,
       fundingOf(input.activity),
       Number(config.forceDedicated),
@@ -1210,6 +1214,13 @@ export async function openActivity(
       "限时开奖尚未启用，草稿已保存。",
     );
   if (row.version !== version) activityConflict();
+  // 商户直发 saved as a draft before its sender had a merchant.
+  if (row.funding === "merchant" && !row.merchantId)
+    throw new ActivityError(
+      409,
+      "MERCHANT_NEEDED",
+      publicationMessages.MERCHANT_NEEDED,
+    );
   if (
     openingExpectation?.merchantId &&
     openingExpectation.merchantId !== row.merchantId
@@ -1232,7 +1243,7 @@ export async function openActivity(
     openingExpectation.credentialVersion !==
       publicationMerchant?.credentialVersion
   )
-    activityConflict("商户凭证已更新，请确认新凭证后重试");
+    activityConflict("商户的密钥刚换过，看一下再开放");
   if (publicationMerchant) {
     const eligibility = await publicationEligibility(env, publicationMerchant);
     if (
@@ -1581,7 +1592,7 @@ export async function openActivity(
         authorId,
       );
       if (latestMerchant.credentialVersion !== expectedCredentialVersion)
-        activityConflict("商户凭证已更新，请确认新凭证后重试");
+        activityConflict("商户的密钥刚换过，看一下再开放");
     }
     if (!timedCountdown && deadline <= Date.now())
       invalidActivity("截止时间必须晚于正式开放时间");

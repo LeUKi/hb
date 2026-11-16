@@ -156,20 +156,20 @@ export function useActivityOpening(userId: string, csrfToken: string) {
         }
         while (true) {
           if (Date.now() >= deadline)
-            throw new Error("凭证检查仍未完成。草稿已保存，可以稍后继续开放。");
+            throw new Error("商户的密钥还没查完。草稿已保存，可以稍后再开放。");
           await waitForCheck(signal);
           assertActive();
           const current = await readActivity();
           if (current.openedAt) return await remember(current);
           const checked = await readMerchant();
           if (checked?.credentialVersion !== credentialVersion)
-            throw new Error("商户凭证已更新，请检查商户配置后重新开放。");
+            throw new Error("商户的密钥刚换过，看一下再开放。");
           if (checked?.credentialVerification.status === "checking") continue;
           if (checked?.credentialVerification.status !== "passed")
             throw new Error(
               checked?.credentialVerification.status === "rejected"
-                ? "商户认证未通过，请更新凭证后再开放。"
-                : "暂时无法验证商户凭证。草稿已保存，请稍后再试。",
+                ? "商户的 Client ID 或密钥没通过检查，换好才能开放。"
+                : "暂时查不了商户的密钥。草稿已保存，请稍后再试。",
             );
           break;
         }

@@ -24,6 +24,7 @@ import { PointsCapsule, PointsMark } from "../ui/points-mark";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import type { FormState } from "./form-state";
+import { FundingLine, LineButton } from "./funding-lines";
 
 /** The systems a sender may pick now, and whether 三方积分红包 are on. */
 export function useOnlineSystems(enabled = true) {
@@ -64,7 +65,7 @@ export function useFormPoints(form: FormState) {
  * 从哪发's 三方积分 card (the user, 2026-11-11): across the row under LDC
  * 商户 and 🐟额. It opens a dialog to pick which 三方积分, so it says so —
  * 选择 › until one is picked, then the pick with 更换 on its right. The key
- * line (余额, 填密钥) follows under it.
+ * line (PointsLine: 余额, 填密钥) is under the cards, as every source's is.
  */
 export function PointsChoice({
   form,
@@ -124,7 +125,6 @@ export function PointsChoice({
           )}
         </button>
       </Squircle>
-      {system && <KeyLine system={system} />}
       <PickDialog
         open={open}
         items={items}
@@ -219,49 +219,54 @@ function PickDialog({
   );
 }
 
-/** 额度 with one's key, or why not, and the way to paste or change it. */
-function KeyLine({ system }: { system: PointsSystemView }) {
+/**
+ * 额度 with one's key, or why not, or short of the total (07 发多少: the
+ * line every source has), and the way to paste or change the key.
+ */
+export function PointsLine({
+  system,
+  total,
+}: {
+  system: PointsSystemView;
+  total: number | null;
+}) {
   const user = useSessionUser();
   const balance = usePointsBalance(user?.id ?? "", system.id);
   const [open, setOpen] = useState(false);
   const unit = { unit: system.unit, step: system.step };
   const data = balance.data;
-  const line =
+  const kind = data?.kind ?? (balance.isError ? "error" : "loading");
+  const short = data?.kind === "ok" && total !== null && total > data.available;
+  const state = short ? "short" : kind;
+  const text =
     data?.kind === "ok"
-      ? `可用 ${amountText(data.available, unit)}，将从 @${data.accountUsername} 的账户扣`
-      : data?.kind === "no_key"
-        ? `还没填你在 ${system.host} 的密钥`
-        : data?.kind === "key_invalid"
-          ? `${system.host} 说你的密钥失效了，换一把才能开放`
-          : data?.kind === "unreachable"
-            ? `暂时连不上 ${system.host}，查不到余额`
-            : balance.isError
-              ? "余额读取失败，请稍后再试"
-              : null;
+      ? short
+        ? `可用只有 ${amountText(data.available, unit)}，不够发这个红包`
+        : `可用 ${amountText(data.available, unit)}，将从 @${data.accountUsername} 的账户扣`
+      : {
+          no_key: `还没填你在 ${system.host} 的密钥`,
+          key_invalid: `${system.host} 说你的密钥失效了，换一把才能开放`,
+          unreachable: `暂时连不上 ${system.host}，查不到余额`,
+          error: "余额读取失败，请稍后再试",
+          loading: `正在查你在 ${system.host} 的余额`,
+        }[kind === "ok" ? "loading" : kind];
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-sm">
-      <span
-        className={
-          line === null
-            ? "loading-sheen min-w-0 text-ink-3"
-            : data?.kind === "ok"
-              ? "min-w-0 text-ink-2"
-              : "min-w-0 text-warning"
+    <>
+      <FundingLine
+        state={`points:${system.id}:${state}`}
+        tone={state === "loading" ? "loading" : state === "ok" ? "ok" : "warn"}
+        text={text}
+        action={
+          <LineButton
+            icon={<KeyRound aria-hidden="true" />}
+            onClick={() => setOpen(true)}
+          >
+            {data?.key ? "换密钥" : "填密钥"}
+          </LineButton>
         }
-      >
-        {line ?? `正在查你在 ${system.host} 的余额`}
-      </span>
-      <Button
-        variant="quiet"
-        size="sm"
-        className="gap-1.5"
-        onClick={() => setOpen(true)}
-      >
-        <KeyRound aria-hidden="true" />
-        {data?.key ? "换密钥" : "填密钥"}
-      </Button>
+      />
       <KeyDialog system={system} open={open} onClose={() => setOpen(false)} />
-    </div>
+    </>
   );
 }
 

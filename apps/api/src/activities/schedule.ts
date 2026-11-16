@@ -155,6 +155,8 @@ async function scheduleBlocked(
 ): Promise<LdcOpeningBlockedReason | undefined> {
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     return "TIMED_DRAW_NOT_ENABLED";
+  // 商户直发 saved before its sender had a merchant: that first.
+  if (row.funding === "merchant" && !row.merchantId) return "MERCHANT_NEEDED";
   // 三方积分 pays through its issuer, not Credit: its own gate.
   if (
     row.paymentMode === "real" &&
