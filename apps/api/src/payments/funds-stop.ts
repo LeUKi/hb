@@ -2,7 +2,7 @@
 // whose Credit balance ran short is retried as before; this keeps when its
 // wait began, and three days on stops what it never sent. The payment
 // engines are not changed: the payments job runs this each minute, from
-// what the tables say.
+// what the tables say. The wait ends only when nothing is left to send.
 import { PAYOUT_FUNDS_WAIT_MS } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import { tellPaymentWatchers } from "../activities/live";
@@ -33,7 +33,7 @@ export async function assertMerchantFunded(
   throw new ActivityError(
     409,
     "MERCHANT_FUNDS_PAUSED",
-    "红包作者的 LDC 商户余额不足，领取已暂停。补足余额、奖励恢复发放后，领取将自动恢复。",
+    "红包作者的 LDC 商户余额不足，领取已暂停。未发放的奖励全部发出后，领取将自动恢复。",
   );
 }
 
@@ -79,35 +79,35 @@ export async function fundsHolds(
 }
 
 /**
- * Each minute: a wait begins (the first 余额不足 after the merchant's last
- * payment through, or after its last stop), its sender is told once, a
- * wait with nothing left to send is dropped (one paid through is dropped
- * by the engine as it confirms), and a wait three days old stops. Returns
- * how many payments stopped.
+ * Each minute: a wait begins once a payment is held by 余额不足, counted
+ * from the merchant's oldest payment still unsent (one or two paid through
+ * now and then, as a balance that trickles in allows, do not restart it);
+ * its sender is told once; a wait with nothing left to send is dropped;
+ * and a wait three days old stops. Returns how many payments stopped.
  */
 export async function sweepFundsWaits(env: ApiBindings, now = Date.now()) {
   await env.DB.prepare(
     `UPDATE merchants SET funds_wait_since=COALESCE((
-        SELECT MIN(a.finished_at) FROM payment_tasks t JOIN payment_attempts a ON a.task_id=t.id
-        WHERE t.merchant_id=merchants.id AND a.operation='send' AND a.reason='funds'
-          AND a.finished_at IS NOT NULL
-          AND a.finished_at>(SELECT COALESCE(MAX(CASE WHEN c.status='confirmed' THEN c.confirmed_at ELSE c.updated_at END),0)
-            FROM payment_tasks c WHERE c.merchant_id=merchants.id
-              AND (c.status='confirmed' OR (c.status='failed' AND c.send_block_reason='funds')))),?1)
+        SELECT MIN(t.created_at) FROM payment_tasks t
+        WHERE t.merchant_id=merchants.id AND t.source='claim'
+          AND t.status IN ('pending','sending','reconciling','waiting')),?1)
       WHERE id IN (SELECT DISTINCT merchant_id FROM payment_tasks
           WHERE status='waiting' AND reason='funds' AND source='claim')
         AND kind='author' AND funds_wait_since IS NULL`,
   )
     .bind(now)
     .run();
-  // Its sender hears of each wait once, with until when (payout-stop §4).
+  // Its sender hears of each wait once, with until when (payout-stop §4);
+  // one already past its three days (a wait from before this rule) only
+  // hears that it stopped.
   const told = await env.DB.prepare(
     `UPDATE merchants SET funds_noticed_at=funds_wait_since
       WHERE funds_wait_since IS NOT NULL AND funds_noticed_at IS NOT funds_wait_since
       RETURNING id, funds_wait_since AS since`,
   ).all<{ id: string; since: number }>();
   for (const merchant of told.results)
-    await noticePayoutWaiting(env, merchant.id, merchant.since);
+    if (merchant.since + PAYOUT_FUNDS_WAIT_MS > now)
+      await noticePayoutWaiting(env, merchant.id, merchant.since);
   await env.DB.prepare(
     `UPDATE merchants SET funds_wait_since=NULL
       WHERE funds_wait_since IS NOT NULL AND NOT EXISTS(SELECT 1 FROM payment_tasks t

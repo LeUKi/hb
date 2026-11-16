@@ -271,26 +271,25 @@ async function shortOfFunds() {
   const f = await fixture();
   await cycle(f, upstream(short));
   const [head] = f.tasks;
-  expect(await task(head ?? "")).toMatchObject({
-    status: "waiting",
-    reason: "funds",
-  });
-  return { f, shortAt: now };
+  const held = await task(head ?? "");
+  expect(held).toMatchObject({ status: "waiting", reason: "funds" });
+  // The wait counts from its oldest payment still unsent.
+  return { f, since: held.createdAt };
 }
 
 describe("a merchant short of funds", () => {
   it("waits from its first 余额不足: claims pause, opening is refused, the sender hears once", async () => {
-    const { f, shortAt } = await shortOfFunds();
+    const { f, since } = await shortOfFunds();
     now += 60_000;
     expect(await sweepFundsWaits(f.bindings)).toBe(0);
     const row = await merchant(f);
-    expect(row.fundsWaitSince).toBe(shortAt);
-    expect(row.fundsNoticedAt).toBe(shortAt);
+    expect(row.fundsWaitSince).toBe(since);
+    expect(row.fundsNoticedAt).toBe(since);
     expect(await notices()).toEqual([
       {
         userId: f.owner,
         kind: "payout_stuck",
-        dedupeKey: `payout_waiting:${f.merchantId}:${shortAt}`,
+        dedupeKey: `payout_waiting:${f.merchantId}:${since}`,
       },
     ]);
     await sweepFundsWaits(f.bindings);
@@ -304,7 +303,7 @@ describe("a merchant short of funds", () => {
       ).toMatchObject({
         status: "waiting",
         reason: "funds",
-        fundsStopAt: new Date(shortAt + PAYOUT_FUNDS_WAIT_MS).toISOString(),
+        fundsStopAt: new Date(since + PAYOUT_FUNDS_WAIT_MS).toISOString(),
       });
     }
     // The 红包: claims wait, its page says until when.
@@ -319,7 +318,7 @@ describe("a merchant short of funds", () => {
     expect(
       (await getPublicActivity(f.bindings, f.activityId)).fundsPaused,
     ).toEqual({
-      stopAt: new Date(shortAt + PAYOUT_FUNDS_WAIT_MS).toISOString(),
+      stopAt: new Date(since + PAYOUT_FUNDS_WAIT_MS).toISOString(),
     });
     // No new 红包 on it.
     expect(
@@ -327,21 +326,19 @@ describe("a merchant short of funds", () => {
     ).toBe("MERCHANT_FUNDS_PAUSED");
   });
 
-  it("ends the wait once a payment goes through", async () => {
-    const { f } = await shortOfFunds();
+  it("keeps counting while a payment or two trickles through, and ends the wait once nothing is left", async () => {
+    const { f, since } = await shortOfFunds();
     await sweepFundsWaits(f.bindings);
-    expect((await merchant(f)).fundsWaitSince).not.toBeNull();
-    const [head] = f.tasks;
-    const row = await task(head ?? "");
-    const paid: PaymentAdapter = {
+    expect((await merchant(f)).fundsWaitSince).toBe(since);
+    const paid = (businessNo: string): PaymentAdapter => ({
       mode: "real",
       send: vi.fn(
         async (): Promise<AdapterResult> => ({
           kind: "sent",
           evidence: {
             source: "send",
-            businessNo: row.businessNo,
-            externalOrderId: "TRADE-FUNDS",
+            businessNo,
+            externalOrderId: `TRADE-${businessNo}`,
           },
         }),
       ),
@@ -350,31 +347,50 @@ describe("a merchant short of funds", () => {
           kind: "confirmed",
           evidence: {
             source: "query",
-            businessNo: row.businessNo,
+            businessNo,
             clientId: f.clientId,
             amountMinor: 10,
-            externalOrderId: "TRADE-FUNDS",
+            externalOrderId: `TRADE-${businessNo}`,
             status: 1,
           },
         }),
       ),
-    };
-    for (let round = 0; round < 6; round++) {
-      const current = await task(head ?? "");
-      if (current.status === "confirmed") break;
-      now =
-        Math.max(
-          now,
-          current.nextRunAt,
-          current.nextSendAt ?? 0,
-          current.nextQueryAt ?? 0,
-          current.queryRetryAfterAt ?? 0,
-        ) + 1;
-      await cycle(f, paid);
+    });
+    /** Runs the merchant until this payment is through. */
+    async function through(id: string) {
+      const { businessNo } = await task(id);
+      for (let round = 0; round < 8; round++) {
+        const current = await task(id);
+        if (current.status === "confirmed") return;
+        now =
+          Math.max(
+            now,
+            current.nextRunAt,
+            current.nextSendAt ?? 0,
+            current.nextQueryAt ?? 0,
+            current.queryRetryAfterAt ?? 0,
+          ) + 1;
+        await cycle(f, paid(businessNo));
+      }
+      expect((await task(id)).status).toBe("confirmed");
     }
-    expect((await task(head ?? "")).status).toBe("confirmed");
+    const [head, queued] = f.tasks;
+    await through(head ?? "");
+    // One through: the other still waits, and so does the count.
+    await sweepFundsWaits(f.bindings);
+    expect((await merchant(f)).fundsWaitSince).toBe(since);
+    await expect(
+      refusal(
+        assertMerchantFunded(f.bindings, {
+          funding: "merchant",
+          merchantId: f.merchantId,
+        }),
+      ),
+    ).resolves.toMatchObject({ code: "MERCHANT_FUNDS_PAUSED" });
+    await through(queued ?? "");
+    // Nothing left: the wait is over, claims go on.
+    await sweepFundsWaits(f.bindings);
     expect((await merchant(f)).fundsWaitSince).toBeNull();
-    // Claims go on: the 红包 takes them again.
     await expect(
       assertMerchantFunded(f.bindings, {
         funding: "merchant",
@@ -384,11 +400,11 @@ describe("a merchant short of funds", () => {
   });
 
   it("three days on: what was never sent stops, the 红包 ends, the sender and each claimant are told", async () => {
-    const { f, shortAt } = await shortOfFunds();
+    const { f, since } = await shortOfFunds();
     await sweepFundsWaits(f.bindings);
-    now = shortAt + PAYOUT_FUNDS_WAIT_MS - 1;
+    now = since + PAYOUT_FUNDS_WAIT_MS - 1;
     expect(await sweepFundsWaits(f.bindings)).toBe(0);
-    now = shortAt + PAYOUT_FUNDS_WAIT_MS;
+    now = since + PAYOUT_FUNDS_WAIT_MS;
     expect(await sweepFundsWaits(f.bindings)).toBe(2);
     for (const id of f.tasks)
       expect(await task(id)).toMatchObject({
@@ -430,8 +446,25 @@ describe("a merchant short of funds", () => {
     expect(await notices()).toHaveLength(4);
   });
 
+  it("stops a wait already past three days at its first run, telling the sender only that it stopped", async () => {
+    // Short since before this rule: nothing looked at it until now.
+    const { f, since } = await shortOfFunds();
+    now = since + PAYOUT_FUNDS_WAIT_MS + 3_600_000;
+    expect(await sweepFundsWaits(f.bindings)).toBe(2);
+    for (const id of f.tasks) expect((await task(id)).status).toBe("failed");
+    const told = await notices();
+    expect(told.map((row) => row.kind).sort()).toEqual([
+      "payout_failed",
+      "payout_failed",
+      "payout_stopped",
+    ]);
+    expect(told.find((row) => row.kind === "payout_stopped")?.dedupeKey).toBe(
+      `payout_stopped:${f.merchantId}:${since}`,
+    );
+  });
+
   it("never stops a payment whose result is unknown", async () => {
-    const { f, shortAt } = await shortOfFunds();
+    const { f, since } = await shortOfFunds();
     await sweepFundsWaits(f.bindings);
     const [head, queued] = f.tasks;
     await env.DB.prepare(
@@ -439,7 +472,7 @@ describe("a merchant short of funds", () => {
     )
       .bind(head)
       .run();
-    now = shortAt + PAYOUT_FUNDS_WAIT_MS;
+    now = since + PAYOUT_FUNDS_WAIT_MS;
     expect(await sweepFundsWaits(f.bindings)).toBe(1);
     expect((await task(head ?? "")).status).toBe("reconciling");
     expect((await task(queued ?? "")).status).toBe("failed");

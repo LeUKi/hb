@@ -77,7 +77,7 @@ export function payoutWaiting(
     subject: subjectOf("奖励发放暂停：Credit 余额不足"),
     body: bodyOf(
       [
-        `你用 LDC 商户发的红包有 ${input.payments} 笔奖励（共 ${input.amount}）因你的 Credit 余额不足暂未发放，这些红包的新领取也已暂停。补足余额后，系统将自动继续发放，领取随之恢复。`,
+        `你用 LDC 商户发的红包有 ${input.payments} 笔奖励（共 ${input.amount}）因你的 Credit 余额不足暂未发放，这些红包的新领取也已暂停。补足余额后，系统将自动继续发放；未发放的奖励全部发出后，领取自动恢复。`,
         `系统将自动重试至 ${timeOf(input.stopAt)}；届时仍未成功，未发放的奖励将终止发放，用这个商户发的进行中红包也将结束。`,
       ],
       { label: "付款记录", url: `${originOf(env)}/payments` },

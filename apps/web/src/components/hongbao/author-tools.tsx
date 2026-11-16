@@ -197,7 +197,7 @@ export function AuthorTools({
           <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <span>
               已有奖励因你的 Credit
-              余额不足暂未发放，新领取也已暂停。补足余额后，系统将自动继续发放，领取随之恢复。系统将自动重试至{" "}
+              余额不足暂未发放，新领取也已暂停。补足余额后，系统将自动继续发放；未发放的奖励全部发出后，领取自动恢复。系统将自动重试至{" "}
               {openingLabel(activity.fundsPaused.stopAt)}
               ；届时仍未成功，未发放的奖励将终止发放，红包也将结束。
             </span>

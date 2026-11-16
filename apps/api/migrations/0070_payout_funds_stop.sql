@@ -1,17 +1,16 @@
 -- 奖励发放：余额不足终止 (docs/payout-stop-design.md §1, §7). A merchant whose
 -- Credit balance ran short keeps when its wait began; three days on, the
 -- payments job stops the ones never sent, and tells each sender of a wait
--- once (funds_noticed_at). Merchants already waiting on funds start their
--- three days now (§6 point 1). The evidence trigger is as it was, and lets
+-- once (funds_noticed_at). Merchants already waiting on funds are left to
+-- the job, which counts from their first 余额不足: one past three days stops
+-- at its first run (§6 point 1, user 2026-11-16). The evidence trigger is as
+-- it was, and lets
 -- a claim's payment end failed for funds too: never sent (pending, no
 -- attempt at all), or held by 余额不足 with Credit's refusal on record and
 -- nothing in flight. Never one with an order or an unknown end.
 ALTER TABLE `merchants` ADD `funds_wait_since` integer;--> statement-breakpoint
 ALTER TABLE `merchants` ADD `funds_noticed_at` integer;--> statement-breakpoint
 CREATE INDEX `merchants_funds_wait_idx` ON `merchants` (`funds_wait_since`) WHERE "merchants"."funds_wait_since" IS NOT NULL;--> statement-breakpoint
-UPDATE `merchants` SET `funds_wait_since`=CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
-WHERE `kind`='author' AND EXISTS(SELECT 1 FROM payment_tasks t WHERE t.merchant_id=merchants.id
-  AND t.source='claim' AND t.status='waiting' AND t.reason='funds');--> statement-breakpoint
 DROP TRIGGER payment_tasks_real_evidence_sticky;--> statement-breakpoint
 CREATE TRIGGER payment_tasks_real_evidence_sticky BEFORE UPDATE ON payment_tasks
 WHEN OLD.mode='real' AND (
