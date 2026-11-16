@@ -174,70 +174,33 @@
           background: rgb(30 24 26 / 0.94);
         }
       }
+      /* Loading shows the desktop and the mark alone (02 §8, 2026-11-16):
+         the window glass is only there to carry a failure. */
+      #boot .boot-window {
+        grid-area: 1 / 1;
+        opacity: 0;
+      }
+      #boot[data-state="failed"] .boot-window {
+        opacity: 1;
+      }
       #boot .boot-center {
+        grid-area: 1 / 1;
         display: grid;
         justify-items: center;
-        gap: 22px;
         transition:
           opacity 200ms ease,
           transform 200ms ease;
       }
-      /* Lit tile: the squircle face is clipped, the glow stays outside. */
+      /* 96px tile, its ring hugging it (120 with the ring); the script
+         turns the ring's arc and, at the end, flies the mark to the 顶栏. */
       #boot .boot-mark {
-        position: relative;
-        isolation: isolate;
-        display: grid;
-        place-items: center;
-        width: 56px;
-        height: 56px;
-        --sq-r: 17px;
-        border-radius: var(--sq-r);
-        box-shadow: 0 10px 22px -10px rgb(197 30 42 / 0.7);
-        color: #fff6ee;
-        font-size: 28px;
-        font-weight: 600;
-        line-height: 1;
+        width: 120px;
+        height: 120px;
+        transform-origin: 0 0;
       }
-      #boot .boot-mark-fill {
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        border-radius: inherit;
-        background: linear-gradient(180deg, #e8473d, #c51e2a);
-        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4);
-      }
-      #boot .boot-dot {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: linear-gradient(180deg, #f8e6bc, #edcb86);
-        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
-      }
-      #boot .boot-track {
-        position: relative;
-        width: 220px;
-        height: 6px;
-        overflow: hidden;
-        --sq-r: 3px;
-        border-radius: var(--sq-r);
-        background: rgb(42 21 25 / 0.08);
-        box-shadow: inset 0 1px 1px rgb(42 21 25 / 0.08);
-      }
-      #boot .boot-fill {
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        background: linear-gradient(90deg, #edcb86, #e8473d 55%, #c51e2a);
-        transform: scaleX(0);
-        transform-origin: left center;
-      }
-      #boot .boot-pct {
-        min-width: 4ch;
-        color: #9a7f85;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 13px;
-        font-variant-numeric: tabular-nums;
-        text-align: center;
+      #boot .boot-mark svg {
+        display: block;
+        overflow: visible;
       }
       #boot .boot-failure {
         display: grid;
@@ -273,6 +236,20 @@
         opacity: 0;
         transform: translateY(-6px);
       }
+      /* Handing over (02 §8): the app's own desktop shows through, the
+         mark flies to the 顶栏 and the window opens out from it. */
+      #boot[data-state="reveal"] {
+        background: none;
+        pointer-events: none;
+      }
+      #boot[data-state="reveal"] .boot-window {
+        display: none;
+      }
+      #boot[data-state="reveal"] .boot-mark {
+        position: fixed;
+        left: 0;
+        top: 0;
+      }
       #boot[data-motion="reduce"],
       #boot[data-motion="reduce"] .boot-center {
         transition: none;
@@ -297,22 +274,16 @@
       aria-valuemax="100"
       aria-valuenow="0"
     >
-      <div class="boot-window">
+      <div class="boot-window" data-boot-window>
         <div class="boot-plate"></div>
         <div class="boot-frame" data-squircle>
-          <div class="boot-center">
-            <!--brand-mark-->
-            <div class="boot-track" data-squircle>
-              <div class="boot-fill" data-boot-fill></div>
-            </div>
-            <div class="boot-pct" data-boot-pct>0%</div>
-          </div>
           <div class="boot-failure" data-boot-failure hidden>
             <span>加载失败</span>
             <button type="button" data-boot-reload data-squircle>重新加载</button>
           </div>
         </div>
       </div>
+      <div class="boot-center"><!--brand-mark--></div>
     </div>
     <div id="root" inert></div>
     <script>
@@ -370,8 +341,35 @@
         clipSquircles();
         addEventListener("resize", clipSquircles);
 
-        const fill = boot.querySelector("[data-boot-fill]");
-        const percent = boot.querySelector("[data-boot-pct]");
+        const mark = boot.querySelector("[data-boot-mark]");
+        const arc = boot.querySelector("[data-boot-arc]");
+        const track = boot.querySelector("[data-boot-track]");
+        const ring = boot.querySelector("[data-boot-ring]");
+        const dot = boot.querySelector("[data-boot-dot]");
+        const glint = boot.querySelector("[data-boot-glint]");
+        // A cubic-bezier, as CSS's, for the hand-over below.
+        const bezier = (x1, y1, x2, y2) => (x) => {
+          if (x <= 0) return 0;
+          if (x >= 1) return 1;
+          let lo = 0;
+          let hi = 1;
+          let t = x;
+          for (let i = 0; i < 24; i++) {
+            t = (lo + hi) / 2;
+            const at = 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3;
+            if (at < x) lo = t;
+            else hi = t;
+          }
+          return 3 * y1 * t * (1 - t) ** 2 + 3 * y2 * t * t * (1 - t) + t ** 3;
+        };
+        const clamp = (v) => Math.max(0, Math.min(1, v));
+        const mix = (a, b, k) => a + (b - a) * k;
+        // The dot breathes while loading: 62% of its size, a little more on
+        // each breath (1.6s), brighter as it swells.
+        const DOT = 14.4;
+        const breath = (now) =>
+          0.5 + 0.5 * Math.sin(((now / 1000) * 2 * Math.PI) / 1.6 - Math.PI / 2);
+        const dotRadius = (now) => DOT * 0.62 * (1 + 0.16 * breath(now));
         const failure = boot.querySelector("[data-boot-failure]");
         const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (reduce) boot.dataset.motion = "reduce";
@@ -433,9 +431,169 @@
 
         const render = () => {
           const shown = Math.min(100, Math.floor(value));
-          if (fill) fill.style.transform = `scaleX(${value / 100})`;
-          if (percent) percent.textContent = `${shown}%`;
+          // The arc is the progress, turning steadily the whole time; at
+          // 100% its ends meet.
+          const now = performance.now();
+          if (arc) {
+            const length = Math.max(50, Math.min(1000, value * 10));
+            arc.setAttribute(
+              "stroke-dasharray",
+              length >= 999 ? "1000 0" : `${length} ${1000 - length}`,
+            );
+            arc.setAttribute(
+              "stroke-dashoffset",
+              reduce ? "0" : String(-(((now / 1000) * 0.55) % 1) * 1000),
+            );
+          }
+          if (dot && !reduce) {
+            dot.setAttribute("r", String(dotRadius(now)));
+            dot.setAttribute("opacity", String(0.78 + 0.22 * breath(now)));
+          }
           boot.setAttribute("aria-valuenow", String(shown));
+        };
+
+        // Handing over (docs/redesign/02-shell.md §8): the ring closes into
+        // the dot, the mark flies on an arc to the 顶栏's home button, the
+        // 顶栏 grows out from behind it on the way, unrolls to the right and
+        // the window drops down from it; the window's contents show as each
+        // edge passes (a mask over them), not part by part. Reduced motion,
+        // a hidden tab or a missing part: the loader fades as it always did.
+        const handOver = () => {
+          const frame = document.querySelector(".app-window-frame");
+          const stage = document.querySelector("[data-window-stage]");
+          const home = document.querySelector("[data-boot-home]");
+          const bar = document.querySelector(".window-bar");
+          const shell = boot.querySelector("[data-boot-window]");
+          // Automated browsers (the e2e suites) get the plain fade, so tests
+          // do not wait out the flight; one that sets hb:boot-reveal sees it.
+          let watched = false;
+          try {
+            watched = sessionStorage.getItem("hb:boot-reveal") === "1";
+          } catch {}
+          if (navigator.webdriver && !watched) return false;
+          if (reduce || document.hidden || !mark || !frame || !stage || !home || !bar)
+            return false;
+          const plate = frame.querySelector(".window-plate");
+          const win = frame.getBoundingClientRect();
+          const target = home.getBoundingClientRect();
+          const barHeight = bar.getBoundingClientRect().height;
+          const radius =
+            Number.parseFloat(getComputedStyle(shell).getPropertyValue("--sq-r")) || 0;
+          const from = mark.getBoundingClientRect();
+          const x0 = from.left + from.width / 2;
+          const y0 = from.top + from.height / 2;
+          const x1 = target.left + target.width / 2;
+          const y1 = target.top + target.height / 2;
+          const landSize = target.width;
+          const narrow = win.width < 640;
+          const lag = narrow ? 14 : 30;
+          const feather = narrow ? 16 : 34;
+          const r0 = dot ? Number(dot.getAttribute("r")) : DOT;
+          const closing = dot ? 0.42 : 0;
+          const flyAt = dot ? 0.45 : 0.1;
+          const inward = bezier(0.55, 0, 0.25, 1);
+          const thicken = bezier(0.45, 0, 0.3, 1);
+          const rounder = bezier(0.4, 0, 0.2, 1);
+          const swell = bezier(0.3, 0, 0.2, 1);
+          const thrown = bezier(0.45, 0, 0.2, 1);
+          const settle = bezier(0.2, 0, 0, 1);
+          const sprout = bezier(0.4, 0, 0.2, 1);
+          const unrolls = bezier(0.3, 0, 0.1, 1);
+          // Each part hidden until it is reached.
+          frame.style.clipPath = "inset(50%)";
+          if (plate) plate.style.opacity = "0";
+          home.style.visibility = "hidden";
+          if (arc) arc.style.display = "none";
+          if (track) track.style.display = "none";
+          const startedAt = performance.now();
+          let ended = false;
+          const end = () => {
+            if (ended) return;
+            ended = true;
+            frame.style.clipPath = "";
+            for (const key of ["maskImage", "maskSize", "maskRepeat", "webkitMaskImage", "webkitMaskSize", "webkitMaskRepeat"])
+              stage.style[key] = "";
+            home.style.visibility = "";
+            if (plate) {
+              plate.style.transition = "opacity 240ms ease";
+              plate.style.opacity = "";
+            }
+            removeEventListener("resize", clipSquircles);
+            boot.remove();
+          };
+          const step = (now) => {
+            if (ended) return;
+            const t = (now - startedAt) / 1000;
+            // 1. The ring moves in and thickens, squircle to circle, and
+            //    becomes the dot, which swells to meet it; a small bounce.
+            if (dot && ring) {
+              const k = inward(clamp(t / closing));
+              const width = mix(7, DOT, thicken(clamp(t / closing)));
+              const size = Math.max(0.02, mix(109, DOT * 2, k) - width);
+              const round = mix(0.6394, 1, rounder(k));
+              ring.setAttribute("d", squirclePath(size, size, (round * size) / 2));
+              ring.setAttribute("transform", `translate(${-size / 2} ${-size / 2})`);
+              ring.setAttribute("stroke-width", String(width));
+              ring.style.display = t < closing ? "" : "none";
+              const after = t - closing;
+              dot.setAttribute(
+                "r",
+                String(
+                  after < 0
+                    ? mix(r0, DOT, swell(clamp(t / closing)))
+                    : DOT * (1 + 0.14 * Math.sin(clamp(after / 0.22) * Math.PI)),
+                ),
+              );
+              dot.setAttribute("opacity", "1");
+              if (glint)
+                glint.setAttribute("stroke-opacity", String(0.7 * clamp((t - closing - 0.06) / 0.14)));
+            }
+            // 2. The flight, with the 顶栏 growing out from behind the mark.
+            const flight = t - flyAt;
+            if (flight >= 0) {
+              if (boot.dataset.state !== "reveal") boot.dataset.state = "reveal";
+              const k = thrown(clamp(flight / 0.55));
+              // A parabola whose top is the landing point: it rises fast and
+              // glides in level, never above the 顶栏 it lands in.
+              const x = mix(x0, x1, k);
+              const y = y1 + (y0 - y1) * (1 - k) ** 2;
+              const size = mix(96, landSize, settle(clamp(flight / 0.5)));
+              mark.style.transform = `translate(${x}px, ${y}px) scale(${size / 96}) translate(-60px, -60px)`;
+              if (flight >= 0.55) {
+                home.style.visibility = "";
+                mark.style.visibility = "hidden";
+              }
+              const e = sprout(clamp((k - 0.35) / 0.65));
+              const unroll = unrolls(clamp((flight - 0.42) / 0.42));
+              const drop = unrolls(clamp((flight - 0.7) / 0.5));
+              const tall = mix(size * 0.62, barHeight, e);
+              const top = y - tall / 2 + mix(0, barHeight / 2 - (y1 - win.top), e);
+              const left = x + mix(0, win.left - x1, e);
+              const right = mix(x + mix(0, landSize / 2 + 10, e), win.right, unroll);
+              const bottom = mix(top + tall, win.bottom, drop);
+              const round = mix(tall / 2, radius, clamp(drop * 3));
+              frame.style.clipPath = `inset(${top - win.top}px ${win.right - right}px ${win.bottom - bottom}px ${left - win.left}px round ${round}px)`;
+              const ex = right - win.left - lag;
+              const ey = bottom - win.top - lag;
+              const image = `linear-gradient(to right, #000 ${ex - feather}px, transparent ${ex}px), linear-gradient(to bottom, transparent ${barHeight}px, #000 ${barHeight}px, #000 ${ey - feather}px, transparent ${ey}px)`;
+              const sizes = `100% ${barHeight}px, 100% 100%`;
+              stage.style.maskImage = image;
+              stage.style.webkitMaskImage = image;
+              stage.style.maskSize = sizes;
+              stage.style.webkitMaskSize = sizes;
+              stage.style.maskRepeat = "no-repeat";
+              stage.style.webkitMaskRepeat = "no-repeat";
+              if (flight >= 1.22) {
+                end();
+                return;
+              }
+            }
+            requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+          // A tab hidden half way stops frames: never leave the app covered.
+          setTimeout(end, 3500);
+          return true;
         };
 
         const finish = () => {
@@ -448,13 +606,15 @@
             sessionStorage.removeItem(retryKey);
           } catch {}
           appRoot.removeAttribute("inert");
-          boot.dataset.state = "done";
+          const handing = handOver();
+          if (!handing) boot.dataset.state = "done";
           for (const callback of listeners.splice(0)) callback();
           window.dispatchEvent(new CustomEvent("hb:boot-done"));
-          setTimeout(() => {
-            removeEventListener("resize", clipSquircles);
-            boot.remove();
-          }, reduce ? 0 : 240);
+          if (!handing)
+            setTimeout(() => {
+              removeEventListener("resize", clipSquircles);
+              boot.remove();
+            }, reduce ? 0 : 240);
         };
 
         const tick = (now, painted) => {

@@ -3,7 +3,14 @@ import { brand } from "../../lib/brand";
 import { SquircleFill } from "../ui/squircle";
 
 /** The swappable brand mark from lib/brand.ts; a house icon when there is none. */
-export function BrandMark({ size = 32 }: { size?: number }) {
+export function BrandMark({
+  size = 32,
+  bootTarget = false,
+}: {
+  size?: number;
+  /** The 顶栏's: where the boot loader's mark lands (index.html, 02 §8). */
+  bootTarget?: boolean;
+}) {
   const { mark } = brand;
   if (!mark)
     return (
@@ -20,6 +27,7 @@ export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <span
       aria-hidden="true"
+      data-boot-home={bootTarget || undefined}
       className="relative isolate grid shrink-0 place-items-center font-semibold text-on-accent shadow-[0_6px_14px_-6px_color-mix(in_srgb,var(--color-accent-bottom)_70%,transparent)]"
       style={{
         width: size,

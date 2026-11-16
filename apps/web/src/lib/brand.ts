@@ -37,15 +37,25 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-/** Static markup for the inline boot loader (styled by index.html). */
+/**
+ * The boot loader's mark (index.html, docs/redesign/02-shell.md §8): the lit
+ * tile at 96px, a ring hugging it whose gold arc is the loading progress,
+ * and, for the dot mark, a smaller gold dot breathing in the middle. The
+ * loader's script turns the arc, closes the ring into the dot and flies the
+ * mark to the 顶栏. Shapes are worked out here, once, as the app draws them.
+ */
 export function brandMarkHtml() {
   const { mark } = brand;
   if (!mark) return "";
-  const inner =
+  const tile = squirclePath(-48, -48, 96, 96, 29);
+  // The ring's middle line: 3.5px out from the tile (a 7px band hugging it;
+  // the tile is drawn over its inner half-pixel so no seam shows).
+  const ring = squirclePath(-51, -51, 102, 102, 32.6);
+  const face =
     mark.kind === "glyph"
-      ? escapeHtml(mark.glyph)
-      : '<span class="boot-dot"></span>';
-  return `<div class="boot-mark" aria-hidden="true"><span class="boot-mark-fill" data-squircle></span>${inner}</div>`;
+      ? `<text x="0" y="1" text-anchor="middle" dominant-baseline="central" font-size="48" font-weight="600" fill="#fff6ee">${escapeHtml(mark.glyph)}</text>`
+      : '<circle data-boot-dot r="8.9" fill="url(#boot-gold-v)"/>';
+  return `<div class="boot-mark" aria-hidden="true" data-boot-mark="${mark.kind}"><svg viewBox="-60 -60 120 120" width="120" height="120"><defs><linearGradient id="boot-red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8473d"/><stop offset="1" stop-color="#c51e2a"/></linearGradient><linearGradient id="boot-gold" gradientUnits="userSpaceOnUse" x1="0" y1="-60" x2="0" y2="60"><stop offset="0" stop-color="#f8e6bc"/><stop offset="1" stop-color="#edcb86"/></linearGradient><linearGradient id="boot-gold-v" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8e6bc"/><stop offset="1" stop-color="#edcb86"/></linearGradient></defs><path data-boot-track d="${ring}" fill="none" stroke="rgb(255 240 236 / 0.2)" stroke-width="7"/><path data-boot-arc d="${ring}" fill="none" stroke="url(#boot-gold)" stroke-width="7" stroke-linecap="round" pathLength="1000" stroke-dasharray="50 950"/><path d="${tile}" fill="url(#boot-red)"/><path d="${tile}" fill="none" stroke="rgb(255 255 255 / 0.28)" stroke-width="1.4"/><path data-boot-ring fill="none" stroke="url(#boot-gold)"/>${face}<path data-boot-glint d="M-8.6 -3.6a10 10 0 0 1 17.3 0" fill="none" stroke="#fff" stroke-opacity="0" stroke-width="2.2" stroke-linecap="round"/></svg></div>`;
 }
 
 /**

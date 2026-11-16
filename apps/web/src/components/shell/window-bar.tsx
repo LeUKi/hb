@@ -191,7 +191,7 @@ export function WindowBar() {
             style={homeShape}
           >
             <SquircleFill radius={buttonRadius.icon} />
-            <BrandMark size={compact ? 32 : 34} />
+            <BrandMark size={compact ? 32 : 34} bootTarget />
           </Link>
         </div>
         <div className="flex min-w-0 justify-center">
