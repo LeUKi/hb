@@ -464,7 +464,13 @@ describe("terminal password validation without reward allocation", () => {
     ).toBe(401);
     expect((await submitSolve(activity.id)).status).toBe(403);
     const draft = await create(ldcConfig(), false);
-    expect((await submitSolve(draft.id)).status).toBe(404);
+    // Not open yet, for anyone: never 404, which the page takes for a
+    // 红包 that is gone (05 §5).
+    const early = await submitSolve(draft.id);
+    expect(early.status).toBe(400);
+    expect(await early.json()).toMatchObject({
+      error: { code: "ACTIVITY_NOT_OPEN" },
+    });
     expect((await submitSolve(draft.id, owner)).status).toBe(400);
     await claim(activity.id);
     const before = await counts(activity.id);

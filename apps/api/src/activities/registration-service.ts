@@ -81,11 +81,9 @@ export async function registerForDraw(
     if (previous)
       return result(env, bindFingerprint(previous, fingerprint, "register"));
     const activity = await findActivity(env, activityId);
-    if (
-      !activity ||
-      (activity.openedAt === null && activity.authorId !== userId)
-    )
-      activityNotFound();
+    // A draft is recorded as such (result "draft"), for anyone: 404 only
+    // for a 红包 that is not there (05 §5).
+    if (!activity) activityNotFound();
     assertParticipationMode(activity, mode);
     const money = timedDrawMoney(activity);
     if (!money) throw new Error("Activity is not a timed draw");

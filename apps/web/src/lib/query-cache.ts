@@ -113,7 +113,12 @@ function removeActivityFromListData(
   };
 }
 
+/** At most one fresh look at a 红包's own read per this long, however many of
+ * its other reads answer 404. */
+const RECHECK_MS = 5_000;
+
 export function createAppQueryClient() {
+  const rechecked = new Map<string, number>();
   const queryCache = new QueryCache({
     onError: (error, query) => {
       // A later transport failure must never resurrect data denied by the server.
@@ -225,6 +230,23 @@ export function createAppQueryClient() {
         error instanceof ActivityRequestError &&
         error.status === 404
       ) {
+        // Only the 红包's own read says whether it is there (05 §5). Any
+        // other read of it answering 404 asks that one again instead of
+        // declaring the 红包 gone: a draft's 口令 (2026-11-04) and a
+        // scheduled 限时开奖's participation (2026-11-16) answered 404,
+        // and the page flashed 未找到红包 in a loop. A 红包 really gone
+        // answers 404 there too, and is cleared below.
+        if (query.queryKey[0] !== "activity-public") {
+          const now = Date.now();
+          if (now - (rechecked.get(access.activityId) ?? 0) >= RECHECK_MS) {
+            rechecked.set(access.activityId, now);
+            void queryClient.refetchQueries({
+              queryKey: ["activity-public", access.activityId],
+              type: "active",
+            });
+          }
+          return;
+        }
         for (const related of queryCache.findAll({
           predicate: (candidate) => {
             const candidateAccess = activityAccess(candidate.queryKey);

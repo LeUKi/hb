@@ -2113,6 +2113,56 @@ test.describe("红包页", () => {
     expect(asked.every((status) => status !== "draft")).toBe(true);
   });
 
+  test("红包的其他读取回 404（草稿时）：页面只认红包本身的读取，一次也不闪“未找到红包”", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.activity = timed(state.activity, Date.now() + 60 * 60_000);
+    state.recipients = [];
+    // Watched all along, so a flash between two reads counts too.
+    await page.addInitScript(() => {
+      const w = window as unknown as { sawMissing?: boolean };
+      new MutationObserver(() => {
+        if (document.body?.textContent?.includes("未找到红包"))
+          w.sawMissing = true;
+      }).observe(document, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+    // Every other read of it answers 404, as a scheduled 限时开奖's
+    // participation did for a draft (2026-11-16) and a 口令 draft's 口令
+    // before it (2026-11-04).
+    const missed: string[] = [];
+    await page.route(
+      new RegExp(`/api/(me/)?activities/${id}/(?!live)[^/?]+`),
+      (route) => {
+        missed.push(
+          new URL(route.request().url()).pathname.split("/").at(-1) ?? "",
+        );
+        return route.fulfill({
+          status: 404,
+          json: {
+            error: { code: "ACTIVITY_NOT_FOUND", message: "未找到红包" },
+          },
+        });
+      },
+    );
+    await openApp(page, path);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    await page.waitForTimeout(6_500);
+    expect(missed.length).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { sawMissing?: boolean }).sawMissing ?? false,
+      ),
+    ).toBe(false);
+  });
+
   test("定时开放的草稿：左上角也写着多少人在看；开放推过来，页面马上翻成能领", async ({
     page,
   }) => {

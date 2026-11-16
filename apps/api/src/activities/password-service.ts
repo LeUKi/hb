@@ -185,11 +185,9 @@ export async function solveActivityPassword(
       return solveResult(previous);
     }
     const activity = await findActivity(env, activityId);
-    if (
-      !activity ||
-      (activity.openedAt === null && activity.authorId !== userId)
-    )
-      activityNotFound();
+    // A draft is answered 红包尚未开放 below, to anyone: 404 only for a
+    // 红包 that is not there (05 §5).
+    if (!activity) activityNotFound();
     assertParticipationMode(activity, "password");
     const status = activityStatus(activity);
     if (status === "draft")

@@ -195,8 +195,10 @@ export async function getCurrentRegistration(
   userId: string,
 ) {
   const activity = await findActivity(env, activityId);
-  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
-    activityNotFound();
+  // A draft too (05 §5): anyone with its link reads it, and nobody has
+  // registered yet. 404 only for a 红包 that is not there: the page takes
+  // a 404 as the 红包 gone (docs/redesign/05-hongbao.md §5).
+  if (!activity) activityNotFound();
   const entry = await findRegistration(env, activityId, userId);
   return entry ? detail(env, entry, activity) : null;
 }
@@ -258,8 +260,9 @@ export async function getCurrentParticipation(
   userId: string,
 ): Promise<ActivityParticipationResponse> {
   const activity = await findActivity(env, activityId);
-  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
-    activityNotFound();
+  // A draft too, as above: a scheduled 限时开奖 answered 404 to everyone
+  // but its sender until it opened, and the page flashed 未找到红包.
+  if (!activity) activityNotFound();
   return getCurrentParticipationForActivity(env, activity, userId);
 }
 

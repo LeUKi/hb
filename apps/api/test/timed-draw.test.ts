@@ -377,6 +377,37 @@ describe("timed LDC registration and draw lifecycle", () => {
     });
   });
 
+  it("answers a draft (a scheduled one before it opens) to anyone, never 404", async () => {
+    // The page takes a 404 on any read of a 红包 as the 红包 gone: a
+    // scheduled 限时开奖 answered 404 to everyone but its sender until it
+    // opened, and its page flashed 未找到红包 (2026-11-16).
+    const draft = await create({}, {}, false);
+    const visitor = entrants[0] as Actor;
+    expect(await participationJson(draft.id, visitor)).toMatchObject({
+      claim: null,
+      registration: null,
+    });
+    expect(await participationJson(draft.id, visitor, "0")).toMatchObject({
+      claim: null,
+      registration: null,
+    });
+    const registration = await app.request(
+      `${origin}/api/activities/${draft.id}/registration`,
+      { headers: { Cookie: visitor.cookie } },
+      bindings,
+    );
+    expect(registration.status).toBe(200);
+    expect(await registration.json()).toEqual({ registration: null });
+    // Registering before it opens is told it has not opened, not that it
+    // is missing; nothing is written.
+    expect((await register(draft.id)).result).toBe("draft");
+    expect(await totals(draft.id)).toMatchObject({ registrations: 0 });
+    // A 红包 that is not there is still 404.
+    expect((await participation(crypto.randomUUID(), visitor)).status).toBe(
+      404,
+    );
+  });
+
   it("gates new openings only, preserves one participation across retries and keeps solving separate", async () => {
     const draft = await create({}, {}, false);
     await expect(
