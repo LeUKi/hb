@@ -2,7 +2,7 @@ import type { PaymentState, PublicActivity } from ".";
 import { formatDisplayAmount } from "./amount";
 import { encodeActivityEmoji } from "./ecoji-v2";
 import { forumHref } from "./forum-emoji";
-import { amountToMinor } from "./payments";
+import { amountToMinor, PAYMENT_LABELS } from "./payments";
 import { squirclePath } from "./squircle-path";
 
 // The forum image of a 红包 (内嵌图, docs/redesign/05 §6), served at
@@ -267,6 +267,7 @@ function remainingLine(activity: PublicActivity) {
 
 /** Why it is over, as under the page's seal. */
 function endLine(activity: PublicActivity, now: Date) {
+  if (activity.fundsStopped) return "红包作者的商户余额不足，红包已结束";
   if (activity.draw)
     return activity.draw.state === "empty" ? "无人报名" : "已开奖";
   if (activity.stopped || activity.judge?.stopped) return "红包已被站长停用";
@@ -276,17 +277,17 @@ function endLine(activity: PublicActivity, now: Date) {
   return "红包已提前结束";
 }
 
-/** Production's payment words. */
+/** The page's payment words (PAYMENT_LABELS, docs/payout-stop-design.md §2). */
 function paymentWords(status: ActivityImagePaymentStatus): {
   text: string;
   tone: ActivityImageTone;
 } {
-  if (status === "confirmed") return { text: "已发放", tone: "success" };
-  if (status === "attention") return { text: "需要关注", tone: "danger" };
-  if (status === "failed") return { text: "未发出", tone: "neutral" };
-  if (status === "reconciling")
-    return { text: "正在核对原订单", tone: "warning" };
-  return { text: "付款处理中", tone: "warning" };
+  // No payment read yet: 待发放.
+  const text = (status && PAYMENT_LABELS[status]) || PAYMENT_LABELS.pending;
+  if (status === "confirmed") return { text, tone: "success" };
+  if (status === "attention") return { text, tone: "danger" };
+  if (status === "failed") return { text, tone: "neutral" };
+  return { text, tone: "warning" };
 }
 
 /** What a viewer sees, by the same tiers as the page (05 §6). */

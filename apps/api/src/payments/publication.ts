@@ -21,6 +21,9 @@ export async function publicationEligibility(
     credentialVersion: merchant.credentialVersion,
   });
   if (merchant.usageStatus !== "current") return result("MERCHANT_LEGACY");
+  // Short of funds, its payments wait: no new 红包 until they go through
+  // (docs/payout-stop-design.md §4).
+  if (merchant.fundsWaitSince !== null) return result("MERCHANT_FUNDS_PAUSED");
   if (merchant.mode === "simulation")
     return result(simulatesPayments(env) ? null : "REAL_LDC_NOT_ENABLED");
   if (!allowsRealOpening(env, await readPlatformControls(env)))
@@ -51,6 +54,8 @@ export const publicationMessages = {
   TIMED_DRAW_NOT_ENABLED: "限时开奖尚未启用，草稿已保存。",
   REAL_LDC_NOT_ENABLED: "平台暂未开放真实 LDC 红包，草稿已保存。",
   MERCHANT_NEEDED: "还没有配置 LDC 商户，草稿已保存。",
+  MERCHANT_FUNDS_PAUSED:
+    "你的 LDC 商户余额不足，奖励发放已暂停；补足后系统将自动恢复发放，恢复后才能开放新红包。草稿已保存。",
   MERCHANT_LEGACY: "此红包关联历史商户，请在草稿中重新绑定当前商户。",
   MERCHANT_CREDENTIALS_UNVERIFIED:
     "商户的密钥最近没有查过，查过才能开放，草稿已保存。",

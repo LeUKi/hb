@@ -188,16 +188,19 @@ export function paymentSteps(
     case "attention":
       steps.push({
         at: latest,
-        title: "发送已暂停",
-        detail: "这笔付款不会自动重发",
+        title: "发放已暂停",
+        detail: "这笔付款不会自动重新发送",
         tone: "stop",
       });
       break;
     case "failed":
       steps.push({
         at: latest,
-        title: "没能发出",
-        detail: "收款人没有 LINUX DO Credit 账户，不再补发",
+        title: "发放失败",
+        detail:
+          payment.reason === "funds"
+            ? "商户余额不足，自动重试 3 天仍未成功，发放已终止"
+            : "收款人没有 LINUX DO Credit 账户，重新发送期限已过，发放已终止",
         tone: "stop",
       });
       break;
@@ -212,10 +215,12 @@ export function paymentSteps(
             }
           : {
               at: latest,
-              title: "等待恢复",
+              title: "发放暂停",
               detail: needsMerchantKey(payment)
                 ? "商户密钥更新、检查通过后自动继续"
-                : "条件满足后自动继续",
+                : payment.reason === "funds"
+                  ? "商户余额不足，补足后自动继续；3 天内仍不足则终止"
+                  : "条件满足后自动继续",
               tone: "now",
             },
       );
@@ -223,7 +228,7 @@ export function paymentSteps(
     case "reconciling":
       steps.push({
         at: lastQuery ?? latest,
-        title: "核对原订单",
+        title: "结果核对中",
         detail: "查清之前不会重新发送，不会重复付款",
         tone: "now",
       });

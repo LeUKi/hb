@@ -70,10 +70,13 @@ function MerchantSummary({
   const { leaveTo } = useOmniboxController();
   const current = merchant.usageStatus === "current";
   const verification = merchant.credentialVerification;
-  const pause = merchant.pausedReason
-    ? merchantPause(merchant.pausedReason, {
+  // Short of funds is said whatever the engine's last word (payout-stop §4).
+  const pausedFor = merchant.fundsStopAt ? "funds" : merchant.pausedReason;
+  const pause = pausedFor
+    ? merchantPause(pausedFor, {
         resumeAt: merchant.quotaResumeAt,
         queued: usage?.openPayments,
+        stopAt: merchant.fundsStopAt,
       })
     : null;
   return (

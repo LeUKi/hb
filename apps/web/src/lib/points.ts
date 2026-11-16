@@ -451,7 +451,7 @@ export const payoutReasonWords: Record<string, string> = {
   network: "连不上",
   stopped: "红包已停",
   retired: "已下架",
-  admin: "站长标为未发出",
+  admin: "站长标为发放失败",
   mismatch: "回复对不上",
   final_query: "等最后一次查单",
 };

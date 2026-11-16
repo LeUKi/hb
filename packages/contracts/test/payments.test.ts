@@ -54,7 +54,7 @@ describe("payment channel contracts", () => {
   it("uses a compact confirmed label and distinguishes simulation", () => {
     expect(paymentLabel("simulation", "confirmed")).toBe("模拟发放已确认");
     expect(paymentLabel("real", "confirmed")).toBe("已发放");
-    expect(paymentLabel("real", "reconciling")).toBe("核对中");
+    expect(paymentLabel("real", "reconciling")).toBe("结果核对中");
   });
 });
 

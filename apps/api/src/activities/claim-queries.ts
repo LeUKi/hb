@@ -23,6 +23,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { fundsHolds } from "../payments/funds-stop";
 import { quotaHolds } from "../payments/quota";
 import {
   heldForRecipient,
@@ -258,13 +259,15 @@ export async function claimSummariesBatch(
   const byClaim = new Map(
     payments.map((payment) => [payment.claimId, payment]),
   );
-  // A merchant stopped by its daily limit holds every payment it owes.
-  const held = await quotaHolds(
-    env,
-    payments
-      .filter((payment) => queued(payment.status))
-      .map((payment) => payment.merchantId),
-  );
+  // A merchant stopped by its daily limit holds every payment it owes; one
+  // short of funds too, until its wait stops (payout-stop §3).
+  const queuedMerchants = payments
+    .filter((payment) => queued(payment.status))
+    .map((payment) => payment.merchantId);
+  const [held, short] = await Promise.all([
+    quotaHolds(env, queuedMerchants),
+    fundsHolds(env, queuedMerchants),
+  ]);
   // Payments turned down for want of a Credit account may go again a while.
   const rejections = await recipientRejections(
     env,
@@ -312,6 +315,16 @@ export async function claimSummariesBatch(
       const resumeAt = queued(payment.status)
         ? held.get(payment.merchantId)
         : undefined;
+      const stopAt =
+        resumeAt === undefined && queued(payment.status)
+          ? short.get(payment.merchantId)
+          : undefined;
+      const hold =
+        resumeAt !== undefined
+          ? "quota"
+          : stopAt !== undefined
+            ? "funds"
+            : null;
       return [
         claim.id,
         {
@@ -323,8 +336,9 @@ export async function claimSummariesBatch(
                 payment: {
                   id: payment.id,
                   mode: payment.mode,
-                  status: payment.status,
-                  reason: resumeAt === undefined ? payment.reason : "quota",
+                  // Held: 发放暂停, the queued ones too (payout-stop §2).
+                  status: hold ? "waiting" : payment.status,
+                  reason: hold ?? payment.reason,
                   confirmedAt:
                     payment.confirmedAt === null
                       ? null
@@ -335,6 +349,9 @@ export async function claimSummariesBatch(
                   ...(resumeAt === undefined
                     ? {}
                     : { quotaResumeAt: new Date(resumeAt).toISOString() }),
+                  ...(stopAt === undefined
+                    ? {}
+                    : { fundsStopAt: new Date(stopAt).toISOString() }),
                 },
               }
             : {}),

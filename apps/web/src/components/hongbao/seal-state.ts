@@ -87,7 +87,9 @@ export function sealOf({
     activity.participation === "direct" && !gate && cooling && !retry;
   // 代码判定: its code failed five times running, claims wait (05 §13).
   const code = activity.participation === "code";
-  const paused = code && activity.judge?.paused === true;
+  // 商户余额不足 (docs/payout-stop-design.md §6): claims wait too.
+  const fundsPaused = Boolean(activity.fundsPaused);
+  const paused = (code && activity.judge?.paused === true) || fundsPaused;
   // Protocol 5: settled with nothing (no claim), they are done here.
   const settledEmpty = Boolean(standing?.settled) && !mine;
   const sealState = drawing
@@ -109,7 +111,9 @@ export function sealOf({
             ? `${openingLabel(activity.scheduledOpenAt)} 开放`
             : `还没开放，开放后才能${verb}`
         : paused
-          ? "判定器连续出错，暂停领取"
+          ? fundsPaused
+            ? `红包作者的商户余额不足，暂停${verb}`
+            : "判定器连续出错，暂停领取"
           : settledEmpty
             ? "已经结算了，没有领到"
             : spinning

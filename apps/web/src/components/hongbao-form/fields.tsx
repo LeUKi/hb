@@ -440,7 +440,7 @@ export function AmountFields({
           <p className="text-xs text-ink-3">
             {stepRule(money)}
             每个人赢多少、什么时候结算由判定器定；红包结束时，还没结算的人按各自的待结算发，剩下的
-            {form.funding === "balance" ? "退回你的🐟额" : "不再发"}。
+            {form.funding === "balance" ? "退回你的🐟额" : "不再发放"}。
             {fundingNote(form, money)}
           </p>
         ) : (

@@ -253,7 +253,7 @@ function RemoveKeyDialog({
       onClosed={() => remove.reset()}
       busy={remove.isPending}
       title={`删掉你在 ${host} 的密钥`}
-      text="用它发的、还开着的红包会立即结束，没发出的不再发。"
+      text="用它发的进行中红包将立即结束，尚未发放的奖励将终止发放。"
       error={error}
       actions={
         <>

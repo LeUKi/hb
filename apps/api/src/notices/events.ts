@@ -7,6 +7,7 @@ import {
   FISH_UNIT,
   formatAmountWithUnit,
   LDC_UNIT,
+  PAYOUT_FUNDS_WAIT_MS,
   readClaimScope,
   type StoredClaimScope,
   scopeAllows,
@@ -93,24 +94,24 @@ export function noticeDrawWon(
 }
 
 /**
- * 红包分发暂停: a claim's payment on the sender's own 商户 stopped for want
- * of funds or by the day's limit. Once a 红包, whichever came first.
+ * 奖励发放暂停 for the day's limit: a claim's payment on the sender's own
+ * 商户 stopped by it. Once a 红包. Want of funds is told once a wait, by
+ * the payments job (noticePayoutWaiting).
  */
 export function noticePayoutStuck(env: ApiBindings, taskId: string) {
   return quietly("payout_stuck", async () => {
     const row = await env.DB.prepare(
-      `SELECT p.reason, a.id AS activity_id, a.title, a.author_id,
+      `SELECT a.id AS activity_id, a.title, a.author_id,
         (SELECT COUNT(*) FROM payment_tasks q JOIN claims d ON d.id=q.claim_id
           WHERE d.activity_id=a.id AND q.source='claim' AND q.status IN ('pending','sending','reconciling','waiting')) AS waiting
        FROM payment_tasks p JOIN claims c ON c.id=p.claim_id
        JOIN activities a ON a.id=c.activity_id
        JOIN merchants m ON m.id=p.merchant_id
-       WHERE p.id=? AND p.source='claim' AND p.status='waiting' AND p.reason IN ('funds','quota')
+       WHERE p.id=? AND p.source='claim' AND p.status='waiting' AND p.reason='quota'
          AND m.kind='author' AND m.author_id=a.author_id`,
     )
       .bind(taskId)
       .first<{
-        reason: "funds" | "quota";
         activity_id: string;
         title: string;
         author_id: string;
@@ -125,9 +126,115 @@ export function noticePayoutStuck(env: ApiBindings, taskId: string) {
         activityId: row.activity_id,
         title: row.title,
         waiting: Math.max(1, row.waiting),
-        reason: row.reason,
       }),
     });
+  });
+}
+
+/**
+ * 奖励发放暂停 for want of funds (docs/payout-stop-design.md §4): once a
+ * wait, to the merchant's owner, with what waits and until when.
+ */
+export function noticePayoutWaiting(
+  env: ApiBindings,
+  merchantId: string,
+  since: number,
+) {
+  return quietly("payout_waiting", async () => {
+    const row = await env.DB.prepare(
+      `SELECT m.author_id, COUNT(t.id) AS payments, COALESCE(SUM(t.amount_minor),0) AS minor
+        FROM merchants m JOIN payment_tasks t ON t.merchant_id=m.id
+        WHERE m.id=? AND m.kind='author' AND t.source='claim'
+          AND t.status IN ('pending','sending','reconciling','waiting')
+        GROUP BY m.author_id`,
+    )
+      .bind(merchantId)
+      .first<{ author_id: string; payments: number; minor: number }>();
+    if (!row || row.payments === 0) return;
+    await notify(env, {
+      userId: row.author_id,
+      kind: "payout_stuck",
+      key: `payout_waiting:${merchantId}:${since}`,
+      ...notice.payoutWaiting(env, {
+        payments: row.payments,
+        amount: formatAmountWithUnit(row.minor, LDC_UNIT),
+        stopAt: since + PAYOUT_FUNDS_WAIT_MS,
+      }),
+    });
+  });
+}
+
+/**
+ * 奖励发放已终止 (payout-stop §4, §6 point 2): the sender once, over every
+ * 红包 it touched; each claimant once a 红包, with what they were to get.
+ */
+export function noticePayoutStopped(
+  env: ApiBindings,
+  merchantId: string,
+  since: number,
+  taskIds: string[],
+) {
+  return quietly("payout_stopped", async () => {
+    if (!taskIds.length) return;
+    const rows = await env.DB.prepare(
+      `SELECT a.id AS activityId, a.title, a.author_id AS authorId, c.user_id AS userId,
+          SUM(t.amount_minor) AS minor, COUNT(*) AS payments
+        FROM payment_tasks t JOIN claims c ON c.id=t.claim_id
+        JOIN activities a ON a.id=c.activity_id
+        WHERE t.id IN (SELECT value FROM json_each(?)) AND t.status='failed'
+        GROUP BY a.id, c.user_id`,
+    )
+      .bind(JSON.stringify(taskIds))
+      .all<{
+        activityId: string;
+        title: string;
+        authorId: string;
+        userId: string;
+        minor: number;
+        payments: number;
+      }>();
+    const list = rows.results;
+    const first = list[0];
+    if (!first) return;
+    const byActivity = new Map<string, { title: string; payments: number }>();
+    for (const row of list) {
+      const seen = byActivity.get(row.activityId);
+      byActivity.set(row.activityId, {
+        title: row.title,
+        payments: (seen?.payments ?? 0) + row.payments,
+      });
+    }
+    const most = [...byActivity.values()].sort(
+      (a, b) => b.payments - a.payments,
+    )[0];
+    await notify(env, [
+      {
+        userId: first.authorId,
+        kind: "payout_stopped",
+        key: `payout_stopped:${merchantId}:${since}`,
+        ...notice.payoutStopped(env, {
+          firstTitle: most?.title ?? first.title,
+          activities: byActivity.size,
+          payments: list.reduce((sum, row) => sum + row.payments, 0),
+          amount: formatAmountWithUnit(
+            list.reduce((sum, row) => sum + row.minor, 0),
+            LDC_UNIT,
+          ),
+        }),
+      },
+      ...list
+        .filter((row) => row.userId !== row.authorId)
+        .map((row) => ({
+          userId: row.userId,
+          kind: "payout_failed" as const,
+          key: `payout_failed:${row.activityId}:${row.userId}`,
+          ...notice.payoutFailed(env, {
+            activityId: row.activityId,
+            title: row.title,
+            amount: formatAmountWithUnit(row.minor, LDC_UNIT),
+          }),
+        })),
+    ]);
   });
 }
 

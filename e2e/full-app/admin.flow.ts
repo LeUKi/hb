@@ -60,7 +60,7 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
   await row.click();
   const pane = page.getByRole("complementary", { name: "详情" });
   await expect(pane.getByText("口令 2 个 · 关闭首页领取")).toBeVisible();
-  await expect(pane.getByText("0 笔 · 未确认 0 · 异常待处理 0")).toBeVisible();
+  await expect(pane.getByText("0 笔 · 未确认 0 · 发放异常 0")).toBeVisible();
 
   // The author is on the admin list, shown and not switchable.
   await tab("用户");

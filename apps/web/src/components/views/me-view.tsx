@@ -346,9 +346,12 @@ function DraftsLink({ count }: { count: number }) {
 function MeMerchant({ user }: { user: SessionUser }) {
   const { leaveTo } = useOmniboxController();
   const { merchant } = useCurrentMerchant(user.id);
-  const pause = merchant?.pausedReason
-    ? merchantPause(merchant.pausedReason, {
-        resumeAt: merchant.quotaResumeAt,
+  // Short of funds is said whatever the engine's last word (payout-stop §4).
+  const pausedFor = merchant?.fundsStopAt ? "funds" : merchant?.pausedReason;
+  const pause = pausedFor
+    ? merchantPause(pausedFor, {
+        resumeAt: merchant?.quotaResumeAt,
+        stopAt: merchant?.fundsStopAt,
       })
     : null;
   return (

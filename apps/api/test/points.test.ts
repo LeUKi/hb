@@ -525,7 +525,7 @@ describe("三方积分红包", () => {
     });
     await pauseSystem(bindings, admin.id, systemId, true);
     const a = await actor();
-    await expect(claim(hongbao.id, a)).rejects.toThrow("暂时发不出");
+    await expect(claim(hongbao.id, a)).rejects.toThrow("暂时无法发放");
   });
 
   it("ends the sender's 红包 when the key is removed", async () => {

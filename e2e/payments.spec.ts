@@ -211,7 +211,9 @@ test.describe("付款记录", () => {
       page.getByText("已领 3 / 5 份 · 已发放 0.66 LDC"),
     ).toBeVisible();
     await expect(
-      page.getByText("商户凭证失效，等待红包作者更新。"),
+      page.getByText(
+        "商户的 Client ID 或密钥未通过检查，发放已暂停，等待红包作者更新。",
+      ),
     ).toBeVisible();
     await page
       .getByRole("group", { name: "付款状态" })
@@ -219,15 +221,17 @@ test.describe("付款记录", () => {
       .click();
     await expect(page).toHaveURL(/\/payments\?filter=open$/);
     await expect.poll(() => filters).toContain("open");
-    // 未发出 is over: neither 未完成 nor 异常待处理, a filter of its own.
+    // 发放失败 is over: neither 未完成 nor 发放异常, a filter of its own.
     await expect(
       page
-        .getByText("收款人没有 LINUX DO Credit 账户，没能发出，不再补发。")
+        .getByText(
+          "收款人没有 LINUX DO Credit 账户，重新发送期限已过，本次发放已终止。",
+        )
         .first(),
     ).toBeVisible();
     await page
       .getByRole("group", { name: "付款状态" })
-      .getByRole("button", { name: /未发出/ })
+      .getByRole("button", { name: /发放失败/ })
       .click();
     await expect(page).toHaveURL(/\/payments\?filter=failed$/);
     await expect.poll(() => filters).toContain("failed");
@@ -320,7 +324,9 @@ test.describe("付款记录", () => {
       }),
     ).toBeVisible();
     await expect(
-      page.getByText("LDC 拒绝：商户凭证失效，等待红包作者更新"),
+      page.getByText(
+        "LDC 拒绝：商户的 Client ID 或密钥未通过检查，发放已暂停，等待红包作者更新",
+      ),
     ).toBeVisible();
     await expect(
       page.getByText(
@@ -394,7 +400,7 @@ test.describe("LDC 商户配置", () => {
     await expect(
       page.getByText("凭证认证未通过，请核对 Client ID 和密钥。"),
     ).toBeVisible();
-    await expect(page.getByText("付款已暂停：商户资金不足")).toBeVisible();
+    await expect(page.getByText("发放已暂停：商户余额不足")).toBeVisible();
     await expect(page.getByText("进行中 1 个")).toBeVisible();
     await expect(page.getByText("1.32 LDC")).toBeVisible();
     // A new Client ID needs its own key.
@@ -435,11 +441,11 @@ test.describe("LDC 商户配置", () => {
     );
     await openApp(page, "/merchant");
     await expect(
-      page.getByText("付款已暂停：今日 Credit 站发放额度已用完"),
+      page.getByText("发放已暂停：今日在 Credit 站的发放额度已用完"),
     ).toBeVisible();
     await expect(
       page.getByText(
-        "明天 0 点后自动继续，2 笔在排队，不需要在这里操作。领取不受影响。",
+        "系统将于明天 0 点后自动继续发放，2 笔在排队，无需在此操作。领取不受影响。",
       ),
     ).toBeVisible();
   });

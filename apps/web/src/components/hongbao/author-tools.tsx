@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import {
   AlertTriangle,
+  ArrowUpRight,
   CalendarClock,
   Download,
   Eye,
@@ -20,8 +21,11 @@ import { savedDraftAtom } from "../../lib/store";
 import { CancelScheduleDialog } from "../hongbao-form/cancel-schedule-dialog";
 import { Callout, Panel } from "../page/page";
 import { Button, buttonVariants } from "../ui/button";
-import { MoreLink } from "../ui/button-link";
+import { ButtonLink, MoreLink } from "../ui/button-link";
 import { SenderLinks } from "./sender-links";
+
+/** Where a sender tops up the 集市应用 that pays (LINUX DO Credit). */
+const CREDIT_MERCHANT_URL = "https://credit.linux.do/merchant";
 
 const failureKinds = {
   threw: "抛错",
@@ -70,15 +74,15 @@ function PointsStopNotice({ points }: { points: ActivityPoints }) {
   const words =
     points.stop === "insufficient"
       ? copy?.insufficient ||
-        `你在 ${points.host} 的余额不够了，没发出的不再发。`
+        `你在 ${points.host} 的余额不足，尚未发放的奖励已终止发放。`
       : points.stop === "key_invalid"
         ? copy?.keyInvalid ||
-          `${points.host} 说你的密钥失效了，没发出的不再发。`
+          `${points.host} 认为你的密钥已失效，尚未发放的奖励已终止发放。`
         : points.stop === "key_removed"
-          ? "你删掉了这个积分的密钥，没发出的不再发。"
-          : `${points.name}已经下架，没发出的不再发。`;
+          ? "你删除了这个积分的密钥，尚未发放的奖励已终止发放。"
+          : `${points.name}已下架，尚未发放的奖励已终止发放。`;
   return (
-    <Callout tone="danger" icon={AlertTriangle} title="红包已经提前结束">
+    <Callout tone="danger" icon={AlertTriangle} title="红包已提前结束">
       <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <span>{words}</span>
         {points.stop !== "retired" && (
@@ -183,6 +187,47 @@ export function AuthorTools({
         </Callout>
       )}
       {activity.points?.stop && <PointsStopNotice points={activity.points} />}
+      {/* 商户余额不足 (docs/payout-stop-design.md §4). */}
+      {activity.fundsPaused && !ended && (
+        <Callout
+          tone="warning"
+          icon={PauseCircle}
+          title="商户余额不足，奖励发放已暂停"
+        >
+          <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>
+              已有奖励因你的 Credit
+              余额不足暂未发放，新领取也已暂停。补足余额后，系统将自动继续发放，领取随之恢复。系统将自动重试至{" "}
+              {openingLabel(activity.fundsPaused.stopAt)}
+              ；届时仍未成功，未发放的奖励将终止发放，红包也将结束。
+            </span>
+            <ButtonLink href={CREDIT_MERCHANT_URL} className="gap-1.5">
+              前往 Credit 站
+              <ArrowUpRight aria-hidden="true" />
+            </ButtonLink>
+          </span>
+        </Callout>
+      )}
+      {activity.fundsStopped && (
+        <Callout
+          tone="danger"
+          icon={AlertTriangle}
+          title="商户余额不足，红包已结束"
+        >
+          <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>
+              你的 Credit 余额不足已持续 3
+              天，未发放的奖励已终止发放，不再重试。
+            </span>
+            <MoreLink
+              href="/payments"
+              onGo={() => void navigate({ to: "/payments" })}
+            >
+              付款记录
+            </MoreLink>
+          </span>
+        </Callout>
+      )}
       {draft && scheduled === undefined && (
         <Callout
           tone="warning"
@@ -208,7 +253,7 @@ export function AuthorTools({
             <span>
               {activity.fish
                 ? "开放后判定器不能换。提前结束后，剩下的退回你的🐟额。"
-                : "开放后判定器不能换。提前结束后，没领的份不再发。"}
+                : "开放后判定器不能换。提前结束后，未领取的部分不再发放。"}
             </span>
             <MoreLink
               href={senderPagePath(activity.id, "edit")}

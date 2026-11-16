@@ -1,8 +1,24 @@
 import type { MerchantPaymentDetail } from "@hb/contracts";
+import { openingLabel } from "./roster-time";
 
-/** 未发出, on a claim's payment: its recipient had no Credit account. */
+/** 发放失败, on a claim's payment: its recipient had no Credit account. */
 export const UNSENT_REASON =
-  "收款人没有 LINUX DO Credit 账户，没能发出，不再补发。";
+  "收款人没有 LINUX DO Credit 账户，重新发送期限已过，本次发放已终止。";
+
+/** 发放失败 for funds: three days short (docs/payout-stop-design.md §3). */
+export const FUNDS_STOPPED_NOTE =
+  "红包作者的 LDC 商户余额不足，系统自动重试 3 天仍未成功，本次奖励发放已终止。";
+
+/** 发放暂停 for funds: until when it is retried (payout-stop §3). */
+export function fundsWaitNote(stopAt: string) {
+  return `红包作者的 LDC 商户余额不足，奖励暂未发放。系统将自动重试，直至 ${openingLabel(Date.parse(stopAt))}；届时仍未成功，本次发放将终止。`;
+}
+
+/** 发放暂停 for the day's limit: when it goes on (payout-stop §3). */
+export function quotaNote(resumeAt?: string) {
+  const when = quotaResumeWords(resumeAt);
+  return `红包作者今日在 Credit 站的发放额度已用完，系统将${when === "稍后" ? "稍后" : `于${when}`}自动继续发放。`;
+}
 
 export function paymentAttemptOutcome(outcome: string) {
   const labels: Record<string, string> = {
@@ -25,9 +41,11 @@ export function paymentReason(
   if (!reason) return null;
   const labels: Record<string, string> = {
     unknown: "付款结果尚未明确，正在核对原订单。",
-    funds: "商户资金不足，等待补足后恢复。",
-    quota: "今日 Credit 站发放额度已用完，0 点额度恢复后自动继续。",
-    credentials: "商户凭证失效，等待红包作者更新。",
+    funds: "LDC 商户余额不足，奖励暂未发放，系统将自动重试。",
+    quota:
+      "今日在 Credit 站的发放额度已用完，系统将于明天 0 点后自动继续发放。",
+    credentials:
+      "商户的 Client ID 或密钥未通过检查，发放已暂停，等待红包作者更新。",
     conflict: "订单信息冲突，需要检查原订单。",
     query_unavailable: "查单暂不可用，系统会继续核对。",
     query_delayed: "订单查询有延迟，系统会继续核对。",
@@ -39,8 +57,8 @@ export function paymentReason(
     redirect: "上游返回重定向，系统未继续请求，将保留原订单核对。",
     invalid_response: "上游响应格式无法识别，付款结果仍需核对原订单。",
     recipient:
-      "收款人还没有 LINUX DO Credit 账户，发送已停止；领取者 5 分钟内可以注册后重新发送，过时不再补发。",
-    resend: "领取者已重新发送，先核对原订单再发出。",
+      "收款人还没有 LINUX DO Credit 账户，发放已暂停；领取者可在 5 分钟内注册后重新发送一次，逾期本次发放将终止。",
+    resend: "领取者已重新发送，系统先核对原订单再发放。",
     self_payment: "上游拒绝向同一付款账号发放，发送已暂停。",
     configuration: "上游付款配置不可用，发送已暂停。",
     validation: "上游拒绝订单参数，发送已暂停。",
@@ -134,23 +152,32 @@ export function quotaResumeWords(resumeAt?: string, now = Date.now()) {
 /** A merchant's sending is paused: why, briefly, and what happens next. */
 export function merchantPause(
   reason: string,
-  /** For the daily limit: when it sends again, and how many wait for it. */
-  quota: { resumeAt?: string; queued?: number } = {},
+  /**
+   * For the daily limit: when it sends again, and how many wait for it;
+   * for funds, when its unsent payments stop (payout-stop §4).
+   */
+  quota: { resumeAt?: string; queued?: number; stopAt?: string } = {},
 ) {
   const short: Record<string, string> = {
-    funds: "商户资金不足",
-    quota: "今日 Credit 站发放额度已用完",
-    credentials: "商户凭证失效",
-    credential_rejected: "商户凭证失效",
-    unknown: "付款结果尚未明确",
+    funds: "商户余额不足",
+    quota: "今日在 Credit 站的发放额度已用完",
+    credentials: "商户的 Client ID 或密钥未通过检查",
+    credential_rejected: "商户的 Client ID 或密钥未通过检查",
+    unknown: "发放结果尚未明确",
   };
+  const queued = quota.queued ? `，${quota.queued} 笔在排队` : "";
+  const when = quotaResumeWords(quota.resumeAt);
   return {
-    title: `付款已暂停：${short[reason] ?? (paymentReason(reason) ?? "").replace(/。$/u, "")}`,
+    title: `发放已暂停：${short[reason] ?? (paymentReason(reason) ?? "").replace(/。$/u, "")}`,
     text:
       reason === "funds"
-        ? "在 Credit 站补足资金后自动继续，不需要在这里操作。领取不受影响。"
+        ? `在 Credit 站补足余额后，系统将自动继续发放${queued}，无需在此操作。在此期间，用这个商户发的红包暂停领取，也不能开放新红包。${
+            quota.stopAt
+              ? `系统将自动重试至 ${openingLabel(Date.parse(quota.stopAt))}；届时仍未成功，未发放的奖励将终止发放，进行中的红包也将结束。`
+              : ""
+          }`
         : reason === "quota"
-          ? `${quotaResumeWords(quota.resumeAt)}自动继续${quota.queued ? `，${quota.queued} 笔在排队` : ""}，不需要在这里操作。领取不受影响。`
-          : "条件满足后自动继续，不需要在这里操作。领取不受影响。",
+          ? `系统将${when === "稍后" ? "稍后" : `于${when}`}自动继续发放${queued}，无需在此操作。领取不受影响。`
+          : "条件满足后系统将自动继续发放，无需在此操作。领取不受影响。",
   };
 }

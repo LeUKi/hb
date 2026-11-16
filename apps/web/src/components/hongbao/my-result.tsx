@@ -20,7 +20,12 @@ import { useResendPayment } from "../../lib/claims";
 import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
-import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
+import {
+  FUNDS_STOPPED_NOTE,
+  fundsWaitNote,
+  paymentReason,
+  quotaNote,
+} from "../../lib/payment-display";
 import { usePointsDetail } from "../../lib/points";
 import { pointsFailureWords } from "../../lib/points-words";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
@@ -79,9 +84,9 @@ function PaymentStatus({ state }: { state: PaymentState }) {
 // The claimant's side of a payment that is held up, when the server gives
 // no reason (or one with no words of its own).
 const paymentReasons: Partial<Record<PaymentState, string>> = {
-  reconciling: "付款结果尚未明确，正在核对原订单。",
-  waiting: "商户资金不足，等待补足后恢复。",
-  attention: "发送已暂停，等待红包作者处理。",
+  reconciling: "发放结果尚未明确，系统正在核对原订单。",
+  waiting: "奖励暂未发放，系统将自动重试。",
+  attention: "发放已暂停，等待红包作者处理。",
 };
 
 /** Under the status: why it waits, or when it was confirmed. */
@@ -101,9 +106,15 @@ function PaymentNote({
       : resending || payment.reason === "resend"
         ? "正在重新发送，稍等十几秒。"
         : payment.reason === "quota"
-          ? `红包作者今天在 Credit 站的发放额度用完了，${quotaResumeWords(payment.quotaResumeAt)}自动继续发放。`
-          : (paymentReason(payment.reason, null) ??
-            paymentReasons[payment.status]);
+          ? quotaNote(payment.quotaResumeAt)
+          : payment.reason === "funds"
+            ? payment.status === "failed"
+              ? FUNDS_STOPPED_NOTE
+              : payment.fundsStopAt
+                ? fundsWaitNote(payment.fundsStopAt)
+                : paymentReason("funds", null)
+            : (paymentReason(payment.reason, null) ??
+              paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
 }
 
@@ -164,7 +175,7 @@ function ResendButton({
         open={asking}
         onClose={() => setAsking(false)}
         title="确定重新发送？"
-        text={`只能重新发送一次。请先确认你${account}；如果还是找不到你的账户，这笔 ${amount} 就不再补发。`}
+        text={`重新发送仅限一次。请先确认你${account}；若仍未找到你的账户，本次 ${amount} 奖励发放将终止。`}
         actions={
           <>
             <Button onClick={() => setAsking(false)}>再等等</Button>
@@ -220,12 +231,12 @@ function NoCreditAccount({
     <Callout
       tone="warning"
       icon={UserRoundX}
-      title="还没有 LINUX DO Credit 账户"
+      title="未找到你的 LINUX DO Credit 账户"
       className="w-full text-left"
     >
       <p>
-        Credit 站里找不到你的账户，这笔 {amount} LDC 暂时发不出去。请先注册
-        Credit 账户，确认注册好了再回来点“重新发送”：只能重新发送一次。
+        LINUX DO Credit 站未找到你的账户，{amount} LDC 奖励暂未发放。请先注册
+        Credit 账户，确认注册完成后点击“重新发送”；重新发送仅限一次。
       </p>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <ButtonLink href={CREDIT_URL} variant="secondary" className="gap-1.5">
@@ -233,14 +244,14 @@ function NoCreditAccount({
           <ArrowUpRight aria-hidden="true" />
         </ButtonLink>
         <ResendButton
-          account="已经注册好 LINUX DO Credit 账户"
+          account="已注册 LINUX DO Credit 账户"
           amount={`${amount} LDC`}
           pending={resend.isPending}
           onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
         />
       </div>
       <p className="mt-2 text-xs">
-        还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。
+        请在 <ResendCountdown to={until} /> 内重新发送；逾期本次发放将终止。
       </p>
       {error && (
         <p role="alert" className="mt-1 text-danger">
@@ -254,13 +265,9 @@ function NoCreditAccount({
 /** Past its one 重新发送: it is not paid. */
 function NotResent() {
   return (
-    <Callout
-      icon={UserRoundX}
-      title="这笔没能发出"
-      className="w-full text-left"
-    >
-      Credit 站里找不到你的 LINUX DO Credit 账户。被拒后 5
-      分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+    <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
+      LINUX DO Credit 站未找到你的账户。重新发送仅限被拒后 5
+      分钟内一次，现已无法重新发送，本次奖励发放已终止。
     </Callout>
   );
 }
@@ -285,18 +292,19 @@ function NoCreditAccountHere({
     <Callout
       tone="warning"
       icon={UserRoundX}
-      title="还没有 LINUX DO Credit 账户"
+      title="未找到你的 LINUX DO Credit 账户"
       className="w-full text-left"
     >
       <p>
-        这笔 {amount} LDC 发不出去。先在 credit.linux.do
-        注册，再到红包站打开这个红包，登录后点“重新发送”，只能发一次。
+        LINUX DO Credit 站未找到你的账户，{amount} LDC 奖励暂未发放。请先在
+        credit.linux.do
+        注册账户，再到红包站打开这个红包，登录后点击“重新发送”；重新发送仅限一次。
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <SiteLink />
         <span className="text-xs">
-          还剩 <ResendCountdown to={until} />
-          ，过时不再补发
+          剩余 <ResendCountdown to={until} />
+          ，逾期本次发放将终止
         </span>
       </div>
     </Callout>
@@ -335,13 +343,9 @@ function NoPointsAccount({
   const unit = { unit: points.unit, step: points.step };
   if (!open || !identity.user || !identity.csrfToken)
     return (
-      <Callout
-        icon={UserRoundX}
-        title="这笔没能发出"
-        className="w-full text-left"
-      >
-        {points.host} 找不到你的账户。被拒后 5
-        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+      <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
+        {points.host} 未找到你的账户。重新发送仅限被拒后 5
+        分钟内一次，现已无法重新发送，本次奖励发放已终止。
       </Callout>
     );
   const error = resend.error
@@ -353,12 +357,12 @@ function NoPointsAccount({
     <Callout
       tone="warning"
       icon={UserRoundX}
-      title={`你在 ${points.host} 还没有账户`}
+      title={`未找到你在 ${points.host} 的账户`}
       className="w-full text-left"
     >
       <p>
-        这笔 {amountText(amount, unit)}{" "}
-        暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
+        {amountText(amount, unit)}{" "}
+        奖励暂未发放。请先在该网站开设账户，再点击“重新发送”；重新发送仅限一次。
       </p>
       {/* The issuer's words are read on their own: a bar while they are,
           then they open in (none written: nothing). */}
@@ -369,14 +373,14 @@ function NoPointsAccount({
       </IssuerWords>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <ResendButton
-          account={`已经在 ${points.host} 开好账户`}
+          account={`已在 ${points.host} 开设账户`}
           amount={amountText(amount, unit)}
           pending={resend.isPending}
           onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
         />
       </div>
       <p className="mt-2 text-xs">
-        还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。
+        请在 <ResendCountdown to={until} /> 内重新发送；逾期本次发放将终止。
       </p>
       {error && (
         <p role="alert" className="mt-1 text-danger">
@@ -408,25 +412,21 @@ function NoPointsAccountHere({
   const words = detail.data?.system.noRecipient;
   if (!open || !SiteLink)
     return (
-      <Callout
-        icon={UserRoundX}
-        title="这笔没能发出"
-        className="w-full text-left"
-      >
-        {points.host} 找不到你的账户。被拒后 5
-        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+      <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
+        {points.host} 未找到你的账户。重新发送仅限被拒后 5
+        分钟内一次，现已无法重新发送，本次奖励发放已终止。
       </Callout>
     );
   return (
     <Callout
       tone="warning"
       icon={UserRoundX}
-      title={`你在 ${points.host} 还没有账户`}
+      title={`未找到你在 ${points.host} 的账户`}
       className="w-full text-left"
     >
       <p>
-        这笔 {amountText(amount, { unit: points.unit, step: points.step })}{" "}
-        暂时发不出去。先在那边开好账户，再到红包站打开这个红包，登录后点“重新发送”，只能发一次。
+        {amountText(amount, { unit: points.unit, step: points.step })}{" "}
+        奖励暂未发放。请先在该网站开设账户，再到红包站打开这个红包，登录后点击“重新发送”；重新发送仅限一次。
       </p>
       {words ? (
         <NoteMarkdown className="mt-2 text-sm">{words}</NoteMarkdown>
@@ -434,8 +434,8 @@ function NoPointsAccountHere({
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <SiteLink />
         <span className="text-xs">
-          还剩 <ResendCountdown to={until} />
-          ，过时不再补发
+          剩余 <ResendCountdown to={until} />
+          ，逾期本次发放将终止
         </span>
       </div>
     </Callout>
@@ -692,7 +692,10 @@ export function MyResult({
       className="mx-auto grid w-full max-w-[36rem] justify-items-center gap-3 px-5 pt-6 text-center outline-none"
     >
       {amount ? (
-        <p className="flex items-baseline gap-2 text-success">
+        // 发放失败: grey, not the green of a share on its way (payout-stop §3).
+        <p
+          className={`flex items-baseline gap-2 ${payment?.status === "failed" ? "text-ink-3" : "text-success"}`}
+        >
           <span className="hb-result-amount text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
             <CountUp
               value={amount}
@@ -770,8 +773,8 @@ export function MyResult({
           {activity.fish
             ? "这份已退回你的🐟额。"
             : activity.points
-              ? `这份没有发出去，还在你在 ${activity.points.host} 的账户里。`
-              : "这份没有发出去，钱还在付款的商户账户里。"}
+              ? `自领的奖励不发放，仍在你在 ${activity.points.host} 的账户中。`
+              : "自领的奖励不发放，金额仍在你的 LDC 商户中。"}
         </p>
       ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
           1 🐟 it goes to Credit all at once, balance-design §5). */

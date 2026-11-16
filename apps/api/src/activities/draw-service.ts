@@ -83,6 +83,16 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
   if (existing) return existing;
   const activity = await findActivity(env, activityId);
   if (activity?.drawState !== "settling") return null;
+  // Ended because its merchant stayed short of funds (docs/payout-stop-
+  // design.md §1): no draw, as a 三方积分 one short of 额度.
+  if (activity.endReason === "funds") {
+    await env.DB.prepare(`UPDATE activities SET draw_state='empty',draw_published_at=${databaseNow},
+      version=version+1,updated_at=${databaseNow}
+      WHERE id=? AND end_reason='funds' AND draw_state='settling' AND claimed_count=0`)
+      .bind(activityId)
+      .run();
+    return null;
+  }
   const money = timedDrawMoney(activity);
   if (!money) throw new Error("Drawing activity has no timed configuration");
   const count = Math.min(activity.registeredCount, money.count);

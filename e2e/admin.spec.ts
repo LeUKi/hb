@@ -466,7 +466,7 @@ test.describe("网站管理", () => {
     await expect(
       page.getByRole("link", { name: /付款等待超过一小时/ }),
     ).toHaveCount(0);
-    await page.getByRole("link", { name: /付款异常待处理/ }).click();
+    await page.getByRole("link", { name: /发放异常待处理/ }).click();
     await expect(page).toHaveURL(/\/admin\/payments\?state=attention$/);
     await expect
       .poll(() => payments.map((query) => query.get("status")))
@@ -513,9 +513,7 @@ test.describe("网站管理", () => {
     await page.getByRole("button", { name: /周末红包/ }).click();
     const pane = page.getByRole("complementary", { name: "详情" });
     await expect(pane.getByText("口令 2 个 · 关闭首页领取")).toBeVisible();
-    await expect(
-      pane.getByText("1 笔 · 未确认 0 · 异常待处理 0"),
-    ).toBeVisible();
+    await expect(pane.getByText("1 笔 · 未确认 0 · 发放异常 0")).toBeVisible();
     await pane.getByRole("button", { name: "看它的付款" }).click();
     await expect(page).toHaveURL(
       new RegExp(`/admin/payments\\?activity=${activityId}$`),
@@ -700,7 +698,9 @@ test.describe("网站管理", () => {
     ).toBeVisible();
     await expect(pane.getByText("尚未观察到订单")).toBeVisible();
     await expect(
-      pane.getByText("商户凭证失效，等待红包作者更新。 · HTTP 400"),
+      pane.getByText(
+        "商户的 Client ID 或密钥未通过检查，发放已暂停，等待红包作者更新。 · HTTP 400",
+      ),
     ).toBeVisible();
     // 上次发送, however far back, and what the upstream said to it.
     await expect(pane.getByText(/结果未知 · HTTP 400/)).toBeVisible();

@@ -331,8 +331,9 @@ describe("durable simulated payments", () => {
     });
     expect(await orders()).toBe(0);
     const claimId = (await task(second)).claimId ?? "";
+    // Held behind it: 发放暂停 too (docs/payout-stop-design.md §3).
     expect((await getClaimDetail(env, claimId, later)).payment).toMatchObject({
-      status: "pending",
+      status: "waiting",
       reason: "quota",
       quotaResumeAt: new Date(head.nextRunAt).toISOString(),
     });

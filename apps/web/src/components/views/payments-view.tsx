@@ -84,7 +84,9 @@ function PaymentRow({
             </span>
             <span className="truncate text-xs text-ink-3">
               {payment.status === "failed"
-                ? UNSENT_REASON
+                ? payment.reason === "funds"
+                  ? "商户余额不足，自动重试 3 天仍未成功，本次发放已终止。"
+                  : UNSENT_REASON
                 : payment.status !== "confirmed" && payment.reason
                   ? paymentReason(payment.reason)
                   : `${clockSeconds(Date.parse(payment.createdAt))} ${verb}`}
@@ -343,7 +345,7 @@ function Payments({
                           : `${summary.openCount} 笔，系统会继续处理`,
                     },
                     {
-                      label: "异常待处理",
+                      label: "发放异常",
                       value: `${summary.attentionCount} 笔`,
                       note: summary.attentionCount > 0 ? "发送已暂停" : "没有",
                     },
@@ -402,12 +404,12 @@ function Payments({
                     label: "已发放",
                     count: summary.confirmedCount,
                   },
-                  // 未发出 is over: shown only when there is some (07 §8).
+                  // 发放失败 is over: shown only when there is some (07 §8).
                   ...(summary.failedCount > 0 || filter === "failed"
                     ? [
                         {
                           value: "failed" as const,
-                          label: "未发出",
+                          label: "发放失败",
                           count: summary.failedCount,
                         },
                       ]

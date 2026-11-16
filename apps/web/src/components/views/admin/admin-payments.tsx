@@ -158,7 +158,7 @@ function DetailBody({
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>
               平台应用把🐟额转回这个人自己的 Credit
-              账户。发放中、已发放或未发出，以🐟额里的这笔转出为准。
+              账户。发放中、已发放或转出失败，以🐟额里的这笔转出为准。
             </span>
             <MoreLink
               className="-my-1"

@@ -598,9 +598,9 @@ function CardOption({
 
 const statusText: Partial<Record<Tip["status"], string>> = {
   pending: "等付款",
-  unpaid: "没付",
+  unpaid: "未付款",
   sending: "发放中",
-  not_sent: "没发出",
+  not_sent: "发放失败",
 };
 
 function TipRow({ tip, onHide }: { tip: Tip; onHide?: () => void }) {

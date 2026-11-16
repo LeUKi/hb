@@ -65,7 +65,7 @@ const payoutStatus: Record<
   held: { text: "等领取者开户", tone: "warning" },
   unknown: { text: "结果不明", tone: "danger" },
   confirmed: { text: "已到账", tone: "success" },
-  failed: { text: "没发出", tone: "danger" },
+  failed: { text: "发放失败", tone: "danger" },
 };
 
 const callKinds: Record<CallRecord["kind"], string> = {
@@ -238,7 +238,7 @@ function Totals({
           span.failed.count > 0 && "text-danger",
         )}
       >
-        没发出 {span.failed.count} 笔
+        发放失败 {span.failed.count} 笔
       </span>
     </>
   );
@@ -322,7 +322,7 @@ function Attention({ scope, systemId, unit }: Props) {
       empty={
         <EmptyNote
           title="没有要处理的发放"
-          text="结果不明的、在等领取者开户的、近 7 天没发出的会列在这里。"
+          text="结果不明的、等待领取者开户的、近 7 天发放失败的会列在这里。"
         />
       }
     >
@@ -442,7 +442,7 @@ function HongbaoSummary({
         {hongbao.failed.count > 0 && (
           <span className="text-danger">
             {" "}
-            · 没发出 {hongbao.failed.count} 笔
+            · 发放失败 {hongbao.failed.count} 笔
           </span>
         )}
       </span>
@@ -520,7 +520,7 @@ function HongbaoPayouts({
           { value: "all", label: "全部" },
           { value: "confirmed", label: "已到账" },
           { value: "waiting", label: "处理中" },
-          { value: "failed", label: "没发出" },
+          { value: "failed", label: "发放失败" },
         ]}
       />
       <ListArea
@@ -630,7 +630,7 @@ function SettleButtons({ id }: { id: string }) {
           if (!busy) actions.payout.mutate({ id, action: "fail" });
         }}
       >
-        标为未发出
+        标为发放失败
       </Button>
       {error && (
         <span role="alert" className="text-xs text-danger">

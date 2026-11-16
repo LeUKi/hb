@@ -75,6 +75,7 @@ import {
   sealSeedStatement,
 } from "../judge/storage";
 import { noticeOpened, noticeSquareOpened } from "../notices/events";
+import { fundsPausedOf } from "../payments/funds-stop";
 import { ownedMerchant } from "../payments/merchants";
 import {
   PUBLICATION_VERIFICATION_MS,
@@ -319,6 +320,7 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
+    ...(row.endReason === "funds" ? { fundsStopped: true as const } : {}),
     ...scheduleOf(row),
   };
 }
@@ -549,11 +551,13 @@ export async function getPublicActivity(
   // A draft too, for whoever has its link (05 §5): 未开放.
   if (!row) activityNotFound();
   const sender = row.authorId === viewerId;
-  const [drawProof, scope, judge, pool] = await Promise.all([
+  const [drawProof, scope, judge, pool, funds] = await Promise.all([
     publicDrawProof(env, row),
     publicScopeWithPeople(env, configuration(row).scope),
     publicJudge(env, row),
     row.participationMode === "code" ? ledgerPool(env, row.id) : null,
+    // 商户余额不足: claims wait (docs/payout-stop-design.md §6).
+    fundsPausedOf(env, row),
   ]);
   return {
     ...(await withPageSwitch(
@@ -565,6 +569,7 @@ export async function getPublicActivity(
       ? { quantity: { mode: "pool" as const, left: formatSignedAmount(pool) } }
       : {}),
     ...(drawProof ? { drawProof } : {}),
+    ...funds,
     ...(judge ? { judge: sender ? judge : publicJudgeOf(row, judge) } : {}),
     ...(scope ? { scope } : {}),
     // Why it cannot open yet is its sender's.
@@ -625,6 +630,7 @@ export function projectPublicActivity(
       : {}),
     ...(config.scope ? { scope: publicScope(config.scope) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
+    ...(row.endReason === "funds" ? { fundsStopped: true as const } : {}),
     // 附带网页: not once the 站长 stopped it; the switch is the reader's
     // (withPageSwitch).
     ...(config.pageUrl && row.pageStoppedAt === null

@@ -16,7 +16,7 @@ import { Timeline } from "./payment-view";
 export const withdrawalStatusText = {
   sending: "发放中",
   sent: "已发放",
-  failed: "未发出",
+  failed: "转出失败",
 } as const;
 export const withdrawalStatusTone = {
   sending: "warning",
@@ -72,7 +72,7 @@ function withdrawalSteps(withdrawal: BalanceWithdrawal): PaymentStep[] {
   else if (withdrawal.status === "failed" && withdrawal.failedAt !== null)
     steps.push({
       at: withdrawal.failedAt,
-      title: "没有发出去",
+      title: "转出失败",
       detail: "🐟 已退回可用",
       tone: "warn",
     });
@@ -117,7 +117,7 @@ function Withdrawal({ user, id }: { user: SessionUser; id: string }) {
           />
           <Panel className="grid gap-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              {/* 未发出: nothing left 🐟额, so it reads as nothing taken. */}
+              {/* 转出失败: nothing left 🐟额, so it reads as nothing taken. */}
               <p
                 className={
                   withdrawal.status === "failed"
@@ -136,7 +136,7 @@ function Withdrawal({ user, id }: { user: SessionUser; id: string }) {
                 {withdrawal.status === "sent"
                   ? `已发到你的 Credit 账户 @${withdrawal.recipientUsername}。`
                   : withdrawal.status === "failed"
-                    ? `没有发出去，🐟 已退回。${withdrawal.failure ? failureText[withdrawal.failure] : ""}`
+                    ? `转出失败，🐟 已退回你的🐟额。${withdrawal.failure ? failureText[withdrawal.failure] : ""}`
                     : withdrawalWaitText(withdrawal)}
               </MorphLabel>
             </p>

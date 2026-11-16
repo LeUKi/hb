@@ -569,7 +569,7 @@ test.describe("账号资料", () => {
     const shop = page.getByRole("region", { name: "LDC 商户" });
     await expect(shop).toContainText("我的商户");
     await expect(shop).toContainText("凭证检查通过");
-    await expect(shop).toContainText("付款已暂停：商户资金不足");
+    await expect(shop).toContainText("发放已暂停：商户余额不足");
     await expect(shop.getByRole("link", { name: "商户" })).toHaveAttribute(
       "href",
       "/merchant",

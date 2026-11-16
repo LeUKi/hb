@@ -6,6 +6,7 @@ import { sweepKeys } from "./judge/keys";
 import { refreshJudgeStats } from "./judge/square";
 import { pruneJudgeUsage } from "./judge/usage";
 import { sweepNotices } from "./notices/outbox";
+import { sweepFundsWaits } from "./payments/funds-stop";
 import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
@@ -57,6 +58,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
         await settleEndedWithdrawals(env);
         // A payment refused for want of a Credit account, past its resend.
         await endLapsedResends(env);
+        // A merchant short of funds: its wait, and three days on its stop.
+        await sweepFundsWaits(env);
         // 三方积分's payouts: due, stale leases, lapsed resends.
         await sweepPointsPayments(env);
         return woken;

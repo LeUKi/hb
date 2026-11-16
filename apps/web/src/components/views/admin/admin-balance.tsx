@@ -264,7 +264,7 @@ function WithdrawalDetail({ id }: { id: string }) {
                 ...(withdrawal.failedAt !== null
                   ? [
                       {
-                        label: "未发出",
+                        label: "转出失败",
                         value: `${clockSeconds(withdrawal.failedAt)}，${withdrawal.failure ? failureText[withdrawal.failure] : "Credit 站拒绝了"}；🐟 已退回`,
                       },
                     ]
@@ -915,7 +915,7 @@ function TransferDetail({ item }: { item: AdminTransferItem }) {
                     </StatusChip>
                     <span className="text-xs text-ink-3">
                       {item.status === "not_sent"
-                        ? "没有发出去，🐟 已退回。原因在“转出”里的这一笔。"
+                        ? "转出失败，🐟 已退回。原因见“转出”里的这一笔。"
                         : "和转出一样排队发放，经过在“转出”里的这一笔。"}
                     </span>
                   </span>

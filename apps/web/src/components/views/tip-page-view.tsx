@@ -63,11 +63,11 @@ export function TipCardPageView({ code }: { code: string }) {
 }
 
 const statusText = {
-  pending: "等你在 Credit 站付款",
+  pending: "等待你在 Credit 站付款",
   done: "已打赏，谢谢。",
-  unpaid: "没有查到这笔付款",
-  sending: "正在发放",
-  not_sent: "没有发出去",
+  unpaid: "未查到这笔付款",
+  sending: "发放中",
+  not_sent: "发放失败",
 } as const;
 
 const tone = {

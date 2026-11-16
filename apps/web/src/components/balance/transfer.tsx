@@ -43,7 +43,7 @@ import { PlusBadge } from "./plus";
 export const transferStatusText = {
   sent: "已发放",
   sending: "发放中",
-  not_sent: "未发出",
+  not_sent: "发放失败",
 } as const;
 const transferStatusTone = {
   sent: "success",
@@ -682,7 +682,7 @@ export function TransferDetailDialog({
                     )}
                     {transfer.status === "not_sent" && (
                       <span className="text-xs text-ink-3">
-                        没有发出去，🐟 已退回。
+                        发放失败，🐟 已退回你的🐟额。
                         {transfer.withdrawal?.failure
                           ? notSentText[transfer.withdrawal.failure]
                           : ""}

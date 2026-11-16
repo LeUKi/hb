@@ -72,7 +72,7 @@ function checksOf(overview: Overview): Check[] {
     },
     {
       key: "attention",
-      label: "付款异常待处理",
+      label: "发放异常待处理",
       count: warnings.attentionPayments,
       severe: true,
       // A payment state of its own: the list's state filter.
@@ -385,7 +385,7 @@ function NoticeStats() {
                 { label: "发出", value: stats.today.sent },
                 { label: "正在发", value: stats.today.queued },
                 { label: "跳过", value: stats.today.skipped },
-                { label: "没发出去", value: stats.today.failed },
+                { label: "发放失败", value: stats.today.failed },
               ]}
             />
             {stats.failures.length > 0 && (

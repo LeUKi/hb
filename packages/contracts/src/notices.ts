@@ -7,7 +7,9 @@ import { z } from "zod";
 
 export const NOTICE_CATEGORIES = [
   "draw_won",
+  "payout_failed",
   "payout_stuck",
+  "payout_stopped",
   "schedule_failed",
   "hongbao_stopped",
   "points_hongbao_ended",
@@ -50,10 +52,22 @@ export const NOTICE_SWITCHES: {
     hint: "你报名的限时开奖开奖了，而且你中了。",
   },
   {
+    id: "payout_failed",
+    group: "claim",
+    title: "领到的奖励发放失败",
+    hint: "你领到的奖励因红包作者的 Credit 余额不足，自动重试 3 天仍未成功，发放已终止。",
+  },
+  {
     id: "payout_stuck",
     group: "send",
-    title: "红包分发暂停",
-    hint: "有人领了，但你的 Credit 余额不够或今天的额度用完了，分发暂停。一个红包只提醒一次。",
+    title: "奖励发放暂停",
+    hint: "有人领取后，因你的 Credit 余额不足或今日额度已用完，奖励暂未发放。余额不足时写明自动重试到何时；每次暂停只提醒一次。",
+  },
+  {
+    id: "payout_stopped",
+    group: "send",
+    title: "奖励发放已终止",
+    hint: "你的 Credit 余额不足持续 3 天，未发放的奖励终止发放，用这个商户发的进行中红包结束。",
   },
   {
     id: "schedule_failed",

@@ -353,7 +353,7 @@ describe("sending a payment again for its claimant", () => {
     ).toEqual({
       status: 409,
       code: "PAYMENT_RESEND_CLOSED",
-      message: "重新发送的时间已过（被拒后 5 分钟内有效），这笔不再补发。",
+      message: "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
     });
     expect((await task(f)).status).toBe("attention");
   });
@@ -418,7 +418,7 @@ describe("sending a payment again for its claimant", () => {
       await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
     ).toMatchObject({
       code: "PAYMENT_RESEND_CLOSED",
-      message: "已经重新发送过一次，这笔不再补发。",
+      message: "已重新发送过一次，本次发放已终止。",
     });
   });
 
@@ -460,7 +460,7 @@ describe("a payment past its resend", () => {
       await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
     ).toMatchObject({
       code: "PAYMENT_RESEND_CLOSED",
-      message: "重新发送的时间已过（被拒后 5 分钟内有效），这笔不再补发。",
+      message: "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
     });
     // Its sender: over, not 未完成 and not 异常待处理.
     const all = await listAccountPayments(f.bindings, f.owner);
@@ -505,7 +505,7 @@ describe("a payment past its resend", () => {
       await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
     ).toMatchObject({
       code: "PAYMENT_RESEND_CLOSED",
-      message: "已经重新发送过一次，这笔不再补发。",
+      message: "已重新发送过一次，本次发放已终止。",
     });
   });
 

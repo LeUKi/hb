@@ -1009,11 +1009,13 @@ async function finishAttempt(
       merchant.id,
       token,
     ),
+    // A payment through ends a wait on funds (docs/payout-stop-design.md §1).
     env.DB.prepare(
-      "UPDATE merchants SET active_task_id=?,lease_token=NULL,lease_until=NULL,paused_reason=?,updated_at=? WHERE id=? AND lease_token=?",
+      "UPDATE merchants SET active_task_id=?,lease_token=NULL,lease_until=NULL,paused_reason=?,funds_wait_since=CASE WHEN ?='confirmed' THEN NULL ELSE funds_wait_since END,updated_at=? WHERE id=? AND lease_token=?",
     ).bind(
       retain ? task.id : null,
       retain ? reason || "unknown" : null,
+      status,
       now,
       merchant.id,
       token,

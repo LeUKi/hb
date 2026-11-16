@@ -502,7 +502,7 @@ test("没有 Credit 账户：领取被拒，注册后自己重新发送一次就
   await waitForBoot(latecomer.page);
   await latecomer.page.getByRole("button", { name: "领取红包" }).click();
   const main = latecomer.page.locator("main");
-  await expect(main.getByText("还没有 LINUX DO Credit 账户")).toBeVisible({
+  await expect(main.getByText("未找到你的 LINUX DO Credit 账户")).toBeVisible({
     timeout: 15_000,
   });
   const held = await participation(latecomer.context, activity.id);

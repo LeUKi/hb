@@ -1,9 +1,10 @@
-import type {
-  CreateMerchantInput,
-  Merchant,
-  MerchantList,
-  RepairPaymentCredentialInput,
-  UpdateMerchantInput,
+import {
+  type CreateMerchantInput,
+  type Merchant,
+  type MerchantList,
+  PAYOUT_FUNDS_WAIT_MS,
+  type RepairPaymentCredentialInput,
+  type UpdateMerchantInput,
 } from "@hb/contracts";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { ActivityError, activityNotFound } from "../activities/errors";
@@ -90,6 +91,13 @@ export async function merchantView(
     ...(quotaResumeAt === undefined
       ? {}
       : { quotaResumeAt: new Date(quotaResumeAt).toISOString() }),
+    ...(row.fundsWaitSince === null
+      ? {}
+      : {
+          fundsStopAt: new Date(
+            row.fundsWaitSince + PAYOUT_FUNDS_WAIT_MS,
+          ).toISOString(),
+        }),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
   };

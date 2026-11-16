@@ -40,7 +40,7 @@ const boards: readonly RankBoard[] = ["sent", "received"];
 const ranges: readonly RankRange[] = ["week", "all"];
 
 const descriptions: Record<RankBoard, string> = {
-  sent: "按发出的金额和领取的人数一起算：分数 = √(金额 × 人数)。退回和没发出的不算。",
+  sent: "按发出的金额和领取的人数一起算：分数 = √(金额 × 人数)。退回和发放失败的不算。",
   received:
     "按领到的金额和红包作者的人数一起算：分数 = √(金额 × 人数)。领取和中奖都算，默认匿名。",
 };

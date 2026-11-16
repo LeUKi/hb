@@ -133,6 +133,11 @@ export type Merchant = {
   pausedReason: string | null;
   /** Stopped by Credit's daily limit: when it sends again (ISO). */
   quotaResumeAt?: string;
+  /**
+   * Short of funds: when its unsent payments stop if still short (ISO,
+   * docs/payout-stop-design.md §4).
+   */
+  fundsStopAt?: string;
   createdAt: string;
   updatedAt: string;
   credentialVerification: CredentialVerification;
@@ -181,6 +186,8 @@ export type LdcOpeningBlockedReason =
   | "TIMED_DRAW_NOT_ENABLED"
   /** 商户直发 saved as a draft before its sender had a merchant. */
   | "MERCHANT_NEEDED"
+  /** Its merchant's Credit balance ran short; payments wait (payout-stop §6). */
+  | "MERCHANT_FUNDS_PAUSED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"
   | "MERCHANT_CREDENTIALS_CHECKING"
@@ -215,6 +222,12 @@ export type PaymentView = {
    * it sends again (ISO). The payments queued behind wait for it too.
    */
   quotaResumeAt?: string;
+  /**
+   * Its merchant's Credit balance ran short (reason "funds"): retried until
+   * then (ISO), when it stops if still short. The payments queued behind
+   * wait for it too (docs/payout-stop-design.md §1).
+   */
+  fundsStopAt?: string;
 };
 export type MerchantPayment = PaymentView & {
   amount: string;
@@ -318,15 +331,27 @@ export type MerchantPaymentList = {
   items: MerchantPayment[];
   nextCursor: string | null;
 };
+/**
+ * A reward's 发放, one set of words everywhere: the site, the 社区小程序,
+ * the share image, 私信 and the 站长's pages (docs/payout-stop-design.md §2).
+ */
 export const PAYMENT_LABELS: Record<PaymentState, string> = {
   pending: "待发放",
-  sending: "发送中",
-  reconciling: "核对中",
-  waiting: "等待恢复",
+  sending: "发放中",
+  reconciling: "结果核对中",
+  waiting: "发放暂停",
   confirmed: "已发放",
-  attention: "异常待处理",
-  failed: "未发出",
+  attention: "发放异常",
+  failed: "发放失败",
 };
+
+/**
+ * A merchant whose Credit balance ran short: its payments are retried this
+ * long from the first 余额不足 after its last payment through; then the
+ * ones never sent are stopped (failed, reason "funds") and its open 红包
+ * end (docs/payout-stop-design.md §1).
+ */
+export const PAYOUT_FUNDS_WAIT_MS = 3 * 86_400_000;
 
 export function paymentLabel(mode: PaymentMode, status: PaymentState): string {
   if (status === "confirmed") {

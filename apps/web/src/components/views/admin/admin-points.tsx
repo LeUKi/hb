@@ -539,7 +539,7 @@ function Actions({ row }: { row: AdminPointsRow }) {
         onClose={() => setRetiring(false)}
         busy={busy}
         title={`下架「${row.name}」`}
-        text={`下架后不能再用它发红包，开放中的 ${row.openHongbao} 个红包立即结束，没发出的不再发。下架不能撤回。`}
+        text={`下架后不能再用它发红包，开放中的 ${row.openHongbao} 个红包将立即结束，尚未发放的奖励将终止发放。下架不能撤回。`}
         error={
           error
             ? error instanceof ActivityRequestError

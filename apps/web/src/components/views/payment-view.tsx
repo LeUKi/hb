@@ -221,15 +221,17 @@ function StateNoteBody({
   if (payment.status === "attention")
     return (
       <Callout tone="danger" icon={AlertTriangle} title={reason}>
-        这笔付款不会自动重发，也不会重复付款。
+        这笔付款不会自动重新发送，也不会重复付款。
       </Callout>
     );
-  // 未发出: a claim's payment past its resend (docs/redesign/07 §8).
+  // 发放失败: a claim's payment past its resend (docs/redesign/07 §8), or
+  // three days short of funds (docs/payout-stop-design.md §4).
   if (payment.status === "failed")
     return (
-      <Callout icon={UserRoundX} title="这笔没能发出">
-        收款人没有 LINUX DO Credit
-        账户，过了重新发送的时间，不再补发。钱没有付出去，还在付款的商户账户里。
+      <Callout icon={UserRoundX} title="发放失败">
+        {payment.reason === "funds"
+          ? "商户余额不足，系统自动重试 3 天仍未成功，本次发放已终止，不再重试。这笔 LDC 未付出，仍在付款的商户中。"
+          : "收款人没有 LINUX DO Credit 账户，重新发送期限已过，本次发放已终止。这笔 LDC 未付出，仍在付款的商户中。"}
       </Callout>
     );
   if (payment.status === "waiting" && payment.config?.canRepairCredentials)

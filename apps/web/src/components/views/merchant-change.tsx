@@ -36,7 +36,7 @@ const impactLabels: [keyof MerchantChangeImpact, string][] = [
   ["activeActivities", "进行中的红包"],
   ["unfinishedDraws", "未完成的开奖"],
   ["pendingPayments", "待发放"],
-  ["sendingPayments", "发送中"],
+  ["sendingPayments", "发放中"],
   ["reconcilingPayments", "核对中"],
 ];
 

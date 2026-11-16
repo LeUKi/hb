@@ -9,27 +9,27 @@ export function pointsFailureWords(
 ) {
   switch (reason) {
     case "insufficient":
-      return `红包作者在 ${system.host} 的余额不够了，这笔没发出去，红包也结束了。`;
+      return `红包作者在 ${system.host} 的余额不足，红包已结束，本次奖励发放已终止。`;
     case "key_invalid":
     case "key_removed":
-      return `红包作者在 ${system.host} 的密钥失效了，这笔没发出去，红包也结束了。`;
+      return `红包作者在 ${system.host} 的密钥已失效，红包已结束，本次奖励发放已终止。`;
     case "stopped":
-      return "这个红包因为发不出去已经结束，这笔没有发出。";
+      return "这个红包因无法继续发放已结束，本次奖励发放已终止。";
     case "retired":
-      return `「${system.name}」已经下架，这笔没有发出。`;
+      return `「${system.name}」已下架，本次奖励发放已终止。`;
     case "not_allowed":
-      return system.notAllowed || `${system.host} 不允许给你发这笔。`;
+      return system.notAllowed || `${system.host} 拒绝向你发放本次奖励。`;
     case "bad_request":
     case "conflict":
-      return `${system.host} 拒绝了这笔，站长会去核对。`;
+      return `${system.host} 拒绝了本次发放，站长将进行核对。`;
     case "network":
-      return `一直连不上 ${system.host}，这笔没发出去。`;
+      return `持续无法连接 ${system.host}，本次奖励发放已终止。`;
     case "recipient":
-      return `${system.host} 找不到你的账户，这笔不再补发。`;
+      return `${system.host} 未找到你的账户，本次奖励发放已终止。`;
     case "admin":
-      return "站长核对后确认这笔没有发出。";
+      return "站长核对后确认本次奖励未发放，发放已终止。";
     case "unknown":
-      return `还不知道 ${system.host} 有没有收到这笔，站长会去核对。`;
+      return `尚未确认 ${system.host} 是否已收到本次发放，站长将进行核对。`;
     default:
       return null;
   }

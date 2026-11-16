@@ -92,7 +92,7 @@ const transfer = {
       type: "string",
       enum: ["sent", "sending", "not_sent"],
       description:
-        "到🐟额的当场就是 sent；到 Credit 的是 sending（发放中）、sent（已发放）或 not_sent（未发出，🐟已退回）",
+        "到🐟额的当场就是 sent；到 Credit 的是 sending（发放中）、sent（已发放）或 not_sent（发放失败，🐟已退回）",
     },
     notSentReason: {
       type: ["string", "null"],

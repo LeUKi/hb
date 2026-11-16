@@ -156,7 +156,9 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
           </span>
           <span className="grid shrink-0 justify-items-end gap-1">
             {outcome.amount ? (
-              <span className="text-base font-semibold text-success tabular-nums">
+              <span
+                className={`text-base font-semibold tabular-nums ${payment === "failed" ? "text-ink-3" : "text-success"}`}
+              >
                 +{shownAmount(outcome.amount, item.unit).text}
                 <span className="ml-0.5 text-xs font-medium">
                   {item.unit.unit}

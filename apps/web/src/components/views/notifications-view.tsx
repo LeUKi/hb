@@ -109,7 +109,7 @@ function Notifications({ view }: { view: NoticeSettingsView }) {
                         <StatusChip
                           tone={item.status === "failed" ? "danger" : "neutral"}
                         >
-                          {item.status === "failed" ? "没发出去" : "正在发"}
+                          {item.status === "failed" ? "发送失败" : "发送中"}
                         </StatusChip>
                       )}
                       <time

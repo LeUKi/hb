@@ -246,10 +246,19 @@ export const activities = sqliteTable(
     endedAt: integer("ended_at"),
     /**
      * stopped: a 代码判定红包's 停用 by the 站长; judge: its code ended it
-     * (docs/judge-page-design.md §2 end).
+     * (docs/judge-page-design.md §2 end); funds: its merchant's Credit
+     * balance stayed short three days (docs/payout-stop-design.md §1).
      */
     endReason: text("end_reason", {
-      enum: ["expired", "exhausted", "manual", "stopped", "judge", "points"],
+      enum: [
+        "expired",
+        "exhausted",
+        "manual",
+        "stopped",
+        "judge",
+        "points",
+        "funds",
+      ],
     }),
     archivedAt: integer("archived_at"),
     /**
@@ -680,6 +689,14 @@ export const merchants = sqliteTable(
     version: integer("version").notNull().default(1),
     credentialVersion: integer("credential_version").notNull().default(1),
     pausedReason: text("paused_reason"),
+    /**
+     * Its Credit balance ran short: when the wait began, the first 余额不足
+     * after its last payment through (docs/payout-stop-design.md §7). Kept
+     * by the payments job; three days on, its unsent payments stop.
+     */
+    fundsWaitSince: integer("funds_wait_since"),
+    /** The wait its sender was told of (the 奖励发放暂停 私信), once each. */
+    fundsNoticedAt: integer("funds_noticed_at"),
     recoveryScannedAt: integer("recovery_scanned_at").notNull().default(0),
     manualCheckAt: integer("manual_check_at"),
     activeTaskId: text("active_task_id"),
@@ -690,6 +707,10 @@ export const merchants = sqliteTable(
   },
   (table) => [
     uniqueIndex("merchants_client_unique").on(table.clientId),
+    // The payments job's each-minute look (payments/funds-stop.ts).
+    index("merchants_funds_wait_idx")
+      .on(table.fundsWaitSince)
+      .where(sql`${table.fundsWaitSince} IS NOT NULL`),
     uniqueIndex("merchants_author_current_unique")
       .on(table.authorId)
       .where(

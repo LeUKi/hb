@@ -183,7 +183,7 @@ export type HbMe =
       claim: {
         amount: string;
         unit: string;
-        /** paid 已到账，paying 正在付，failed 没发出，none 不付款（发红包的人自己领的） */
+        /** paid 已发放，paying 发放中，failed 发放失败，none 不发放（发红包的人自己领的） */
         payment: "paid" | "paying" | "failed" | "none";
       } | null;
       /** 限时开奖：已经报了名 */

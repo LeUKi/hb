@@ -497,7 +497,7 @@ describe("activity image APIs", () => {
     const privateBody = await privateImage.text();
     expect(privateBody).toContain("你已领取");
     expect(privateBody).toContain("1.00 LDC");
-    expect(privateBody).toContain("付款处理中");
+    expect(privateBody).toContain("待发放");
     expect(privateBody).toContain("领取于");
     // The opening plays once as the image loads.
     expect(privateBody).toContain('class="flap motion"');

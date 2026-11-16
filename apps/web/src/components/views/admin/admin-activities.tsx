@@ -135,7 +135,7 @@ function StopCode({ row, title }: { row: Row; title: string }) {
         text={
           row.summary.funding === "balance"
             ? "停用后不能再领，剩下的退回红包作者的🐟额。"
-            : "停用后不能再领，没领的份不再发。"
+            : "停用后不能再领，未领取的部分不再发放。"
         }
         error={error}
         actions={
@@ -377,7 +377,7 @@ function Detail({ row }: { row: Row }) {
                       [
                         `${payments.total} 笔`,
                         `未确认 ${payments.pending}`,
-                        `异常待处理 ${payments.attention}`,
+                        `发放异常 ${payments.attention}`,
                         ...(payments.unknown
                           ? [`结果未知 ${payments.unknown}`]
                           : []),

@@ -697,7 +697,7 @@ test.describe("红包页", () => {
     await expect.poll(() => state.reads.passwords).toBe(before + 1);
   });
 
-  test("没有 Credit 账户：5 分钟内注册后自己重新发送一次，过时不再补发", async ({
+  test("没有 Credit 账户：5 分钟内注册后自己重新发送一次，逾期发放终止", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -727,21 +727,21 @@ test.describe("红包页", () => {
     });
     await openApp(page, path);
     const main = page.locator("main");
-    await expect(main.getByText("还没有 LINUX DO Credit 账户")).toBeVisible();
+    await expect(
+      main.getByText("未找到你的 LINUX DO Credit 账户"),
+    ).toBeVisible();
     // Where to open one: a new tab, never followed here.
     const register = main.getByRole("link", { name: /注册 Credit 账户/ });
     await expect(register).toHaveAttribute("href", "https://credit.linux.do");
     await expect(register).toHaveAttribute("target", "_blank");
-    await expect(main.getByText(/还剩 [34]:\d\d 可以重新发送/)).toBeVisible();
-    await expect(main.getByText(/只能重新发送一次/)).toBeVisible();
+    await expect(main.getByText(/请在 [34]:\d\d 内重新发送/)).toBeVisible();
+    await expect(main.getByText(/重新发送仅限一次/)).toBeVisible();
 
     // Once only, so it asks first; 再等等 sends nothing.
     await main.getByRole("button", { name: "重新发送" }).click();
     const ask = page.getByRole("dialog", { name: "确定重新发送？" });
     await expect(
-      ask.getByText(
-        /只能重新发送一次。请先确认你已经注册好 LINUX DO Credit 账户/,
-      ),
+      ask.getByText(/重新发送仅限一次。请先确认你已注册 LINUX DO Credit 账户/),
     ).toBeVisible();
     await ask.getByRole("button", { name: "再等等" }).click();
     await expect(ask).toHaveCount(0);
@@ -752,7 +752,7 @@ test.describe("红包页", () => {
       .getByRole("button", { name: "重新发送" })
       .click();
     await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
-    await expect(main.getByText("核对中")).toBeVisible();
+    await expect(main.getByText("结果核对中")).toBeVisible();
     expect(resends).toEqual([csrfToken]);
 
     // Through: the 红包's DO says only the viewer's part moved.
@@ -775,18 +775,20 @@ test.describe("红包页", () => {
       resendUntil: undefined,
     };
     await page.reload();
-    await expect(main.getByText("这笔没能发出")).toBeVisible();
+    await expect(main.getByText("发放失败", { exact: true })).toBeVisible();
     await expect(
-      main.getByText(/5 分钟内可以重新发送一次，现在已经不能再发/),
+      main.getByText(/现已无法重新发送，本次奖励发放已终止/),
     ).toBeVisible();
     await expect(main.getByRole("button", { name: "重新发送" })).toHaveCount(0);
 
-    // Past it, the payments job ends it 未发出: said the same way.
+    // Past it, the payments job ends it 发放失败: said the same way.
     claim.payment = { ...claim.payment, status: "failed" };
     await page.reload();
-    await expect(main.getByText("未发出", { exact: true })).toBeVisible();
-    await expect(main.getByText("这笔没能发出")).toBeVisible();
-    await expect(main.getByText("异常待处理")).toHaveCount(0);
+    await expect(main.getByText("发放失败", { exact: true })).toHaveCount(2);
+    await expect(
+      main.getByText(/现已无法重新发送，本次奖励发放已终止/),
+    ).toBeVisible();
+    await expect(main.getByText("发放异常")).toHaveCount(0);
     expect(resends).toHaveLength(1);
   });
 
@@ -1591,13 +1593,67 @@ test.describe("红包页", () => {
     };
     await openApp(page, path);
     const result = page.locator("[data-hb-part=result]");
-    await expect(result.getByText("等待恢复")).toBeVisible();
+    await expect(result.getByText("发放暂停")).toBeVisible();
     await expect(
       result.getByText(
-        "红包作者今天在 Credit 站的发放额度用完了，明天 0 点后自动继续发放。",
+        "红包作者今日在 Credit 站的发放额度已用完，系统将于明天 0 点后自动继续发放。",
       ),
     ).toBeVisible();
     await expect(result.getByText("quota")).toHaveCount(0);
+  });
+
+  test("商户余额不足：发放暂停写明重试到何时，领取暂停；到期写发放失败（docs/payout-stop-design.md）", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const stopAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    state.activity = { ...state.activity, fundsPaused: { stopAt } };
+    state.claim = {
+      id: "claim-mine",
+      activity: { id, title: "周末红包", status: "active" },
+      rewardType: "ldc",
+      claimedAt: new Date().toISOString(),
+      sourcePassword: passwordOf.mine,
+      amount: "0.10",
+      afterClaimInfo: "",
+      payment: {
+        id: "payment-mine",
+        mode: "real",
+        status: "waiting",
+        reason: "funds",
+        confirmedAt: null,
+        fundsStopAt: stopAt,
+      },
+    };
+    await openApp(page, path);
+    const result = page.locator("[data-hb-part=result]");
+    await expect(result.getByText("发放暂停")).toBeVisible();
+    await expect(
+      result.getByText(
+        /^红包作者的 LDC 商户余额不足，奖励暂未发放。系统将自动重试，直至 .+；届时仍未成功，本次发放将终止。$/,
+      ),
+    ).toBeVisible();
+    await expect(result.getByText("funds")).toHaveCount(0);
+
+    // Three days on: 发放失败, and why.
+    state.claim = {
+      ...state.claim,
+      payment: {
+        id: "payment-mine",
+        mode: "real",
+        status: "failed",
+        reason: "funds",
+        confirmedAt: null,
+      },
+    };
+    await page.reload();
+    await expect(result.getByText("发放失败")).toBeVisible();
+    await expect(
+      result.getByText(
+        "红包作者的 LDC 商户余额不足，系统自动重试 3 天仍未成功，本次奖励发放已终止。",
+      ),
+    ).toBeVisible();
   });
 
   test("红包作者：看到全部口令；也能自领，先确认一次，不付款，名单上是自领的屑", async ({
@@ -1769,7 +1825,7 @@ test.describe("红包页", () => {
     const result = page.locator("[data-hb-part=result]");
     await expect(result.getByText("自领", { exact: true })).toBeVisible();
     await expect(
-      result.getByText("这份没有发出去，钱还在付款的商户账户里。"),
+      result.getByText("自领的奖励不发放，金额仍在你的 LDC 商户中。"),
     ).toBeVisible();
     await expect(result.getByText("自领的屑")).toBeVisible();
     await expect(result.getByText("待发放")).toHaveCount(0);

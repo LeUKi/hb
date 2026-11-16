@@ -47,40 +47,94 @@ export function drawWon(
   };
 }
 
-/** 红包分发暂停: once a 红包, the reason it stopped first. */
+/** 奖励发放暂停 for the day's limit: once a 红包 (payout-stop §4). */
 export function payoutStuck(
   env: ApiBindings,
-  input: {
-    activityId: string;
-    title: string;
-    waiting: number;
-    reason: "funds" | "quota";
-  },
+  input: { activityId: string; title: string; waiting: number },
 ): Notice {
   const name = nameOf(input.title);
-  const people =
-    input.waiting > 1 ? `有 ${input.waiting} 个人领了` : "有人领了";
-  return input.reason === "funds"
-    ? {
-        subject: subjectOf(`${name}分发暂停：Credit 余额不够`),
-        body: bodyOf(
-          [
-            `${name}${people}，还没分发：你的 Credit 余额不够。补上以后会自动接着分发。这个红包只提醒这一次。`,
-          ],
-          { label: "去看看", url: hongbaoUrl(env, input.activityId) },
-          off(env),
-        ),
-      }
-    : {
-        subject: subjectOf(`${name}分发暂停：今天的额度用完了`),
-        body: bodyOf(
-          [
-            `${name}${people}，还没分发：你的 Credit 今天能分发的额度用完了。明天 0 点过后会自动接着分发。这个红包只提醒这一次。`,
-          ],
-          { label: "去看看", url: hongbaoUrl(env, input.activityId) },
-          off(env),
-        ),
-      };
+  return {
+    subject: subjectOf(`${name}奖励发放暂停：今日额度已用完`),
+    body: bodyOf(
+      [
+        `${name}已有 ${input.waiting} 人领取，你在 Credit 站今日的发放额度已用完，奖励暂未发放。系统将于明日 0 点后自动继续发放。这个红包只提醒这一次。`,
+      ],
+      { label: "查看红包", url: hongbaoUrl(env, input.activityId) },
+      off(env),
+    ),
+  };
+}
+
+/**
+ * 奖励发放暂停 for want of funds: once a wait, over every 红包 of the
+ * merchant, with when it is retried until (payout-stop §4).
+ */
+export function payoutWaiting(
+  env: ApiBindings,
+  input: { payments: number; amount: string; stopAt: number },
+): Notice {
+  return {
+    subject: subjectOf("奖励发放暂停：Credit 余额不足"),
+    body: bodyOf(
+      [
+        `你用 LDC 商户发的红包有 ${input.payments} 笔奖励（共 ${input.amount}）因你的 Credit 余额不足暂未发放，这些红包的新领取也已暂停。补足余额后，系统将自动继续发放，领取随之恢复。`,
+        `系统将自动重试至 ${timeOf(input.stopAt)}；届时仍未成功，未发放的奖励将终止发放，用这个商户发的进行中红包也将结束。`,
+      ],
+      { label: "付款记录", url: `${originOf(env)}/payments` },
+      off(env),
+    ),
+  };
+}
+
+/**
+ * 奖励发放已终止, to the sender: three days short, what stopped, over
+ * every 红包 of the merchant (payout-stop §4).
+ */
+export function payoutStopped(
+  env: ApiBindings,
+  input: {
+    /** The 红包 with the most stopped, and how many 红包 in all. */
+    firstTitle: string;
+    activities: number;
+    payments: number;
+    amount: string;
+  },
+): Notice {
+  const which =
+    input.activities > 1
+      ? `${nameOf(input.firstTitle)}等 ${input.activities} 个红包`
+      : nameOf(input.firstTitle);
+  return {
+    subject: subjectOf("奖励发放已终止：Credit 余额不足"),
+    body: bodyOf(
+      [
+        `你的 Credit 余额不足已持续 3 天，${which}中 ${input.payments} 笔奖励（共 ${input.amount}）的发放已终止，不再重试。用这个商户发的进行中红包已结束。`,
+      ],
+      { label: "付款记录", url: `${originOf(env)}/payments` },
+      off(env),
+    ),
+  };
+}
+
+/**
+ * 奖励发放失败, to a claimant: what they were to get from this 红包, and
+ * that it stopped for the sender's balance (payout-stop §6, point 2).
+ */
+export function payoutFailed(
+  env: ApiBindings,
+  input: { activityId: string; title: string; amount: string },
+): Notice {
+  const name = nameOf(input.title);
+  return {
+    subject: subjectOf(`${name}的奖励发放失败`),
+    body: bodyOf(
+      [
+        `你在${name}领到的 ${input.amount}，因红包作者的 Credit 余额不足，系统自动重试 3 天仍未成功，发放已终止。`,
+      ],
+      { label: "查看红包", url: hongbaoUrl(env, input.activityId) },
+      off(env),
+    ),
+  };
 }
 
 /** 定时开放没开成: why, as the 红包 page says it. */

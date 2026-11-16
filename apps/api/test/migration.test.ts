@@ -582,6 +582,9 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       usage_status: "current",
       // 0029: every merchant before the 🐟额 platform app is an author's.
       kind: "author",
+      // 0070: none waiting on funds (docs/payout-stop-design.md §7).
+      funds_wait_since: null,
+      funds_noticed_at: null,
     })),
   );
   expect(after[1]?.results).toEqual(
@@ -1017,6 +1020,8 @@ it("selects one preferred current merchant while preserving legacy credentials a
       ...row,
       usage_status: current.has(String(row.id)) ? "current" : "legacy",
       kind: "author",
+      funds_wait_since: null,
+      funds_noticed_at: null,
     })),
   );
   expect(after[1]?.results).toEqual(

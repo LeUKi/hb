@@ -891,6 +891,11 @@ export type ActivitySummary = {
   draw?: DrawSummary;
   /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
   stopped?: true;
+  /**
+   * Ended because its merchant's Credit balance stayed short for three days
+   * (docs/payout-stop-design.md §1).
+   */
+  fundsStopped?: true;
   /** 定时开放 (docs/scheduled-opening-design.md): a draft opening then. */
   scheduledOpenAt?: string;
   /** Its last timing did not open it: when, and why in words. */
@@ -962,6 +967,16 @@ export type PublicActivity = {
   judge?: PublicJudge;
   /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
   stopped?: true;
+  /**
+   * Ended because its merchant's Credit balance stayed short for three days
+   * (docs/payout-stop-design.md §1).
+   */
+  fundsStopped?: true;
+  /**
+   * Open, and its merchant's Credit balance ran short: claims and sign-ups
+   * wait; at stopAt (ISO) it ends if still short (payout-stop §6).
+   */
+  fundsPaused?: { stopAt: string };
   /**
    * 附带网页: absent when none, the switch is off or the 站长 stopped it
    * (docs/attached-page-design.md §1).

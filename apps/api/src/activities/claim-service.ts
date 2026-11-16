@@ -19,6 +19,7 @@ import type { ApiBindings } from "../env";
 import { judgedResult } from "../judge/ledger";
 import type { JudgeHooks } from "../judge/session";
 import { paymentBusinessNo } from "../payments/business-no";
+import { assertMerchantFunded } from "../payments/funds-stop";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import {
@@ -356,6 +357,7 @@ export async function admitClaim(
     );
     if (blocked) throw new ActivityError(409, "POINTS_UNAVAILABLE", blocked);
   }
+  await assertMerchantFunded(env, activity);
   // 领取范围: someone outside never reaches the 口令 or its cooldown.
   checkInScope(activity, read.viewer);
   checkAttempt(read.attempt, "activity", continuation);

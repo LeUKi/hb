@@ -72,8 +72,8 @@ export async function resendClaimPayment(
       409,
       "PAYMENT_RESEND_CLOSED",
       rejections && rejections.count > PAYMENT_RESEND_LIMIT
-        ? "已经重新发送过一次，这笔不再补发。"
-        : "重新发送的时间已过（被拒后 5 分钟内有效），这笔不再补发。",
+        ? "已重新发送过一次，本次发放已终止。"
+        : "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
     );
   }
   // It goes out only as it first went: under the same merchant application.

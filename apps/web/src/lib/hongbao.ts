@@ -95,6 +95,13 @@ export type HongbaoActivity = {
   senderCode?: string;
   /** 附带网页 (docs/attached-page-design.md): absent when none or not shown. */
   page?: AttachedPage;
+  /**
+   * Its merchant's Credit balance ran short: claims wait until its
+   * payments go through, or it ends at this time (docs/payout-stop-design.md §6).
+   */
+  fundsPaused?: { stopAt: number };
+  /** Ended for that: three days short (payout-stop §1). */
+  fundsStopped?: true;
 };
 
 export type DurationUnit = "seconds" | "minutes" | "hours" | "days";
@@ -132,7 +139,9 @@ export type EndReason =
   /** 代码判定红包 its code ended (docs/judge-page-design.md §11.3). */
   | "judge"
   /** 代码判定, protocol 5: ended, everyone being settled (multi-prize §2). */
-  | "settle";
+  | "settle"
+  /** Its merchant stayed short of funds three days (payout-stop §1). */
+  | "funds";
 
 export const endLabels: Record<EndReason, string> = {
   sold_out: "已领完",
@@ -144,6 +153,7 @@ export const endLabels: Record<EndReason, string> = {
   stopped: "已停用",
   judge: "判定器结束",
   settle: "结算中",
+  funds: "已提前结束",
 };
 
 export type FuzzyLevel = "plenty" | "limited" | "low" | "empty";
@@ -244,6 +254,10 @@ export function hongbaoOf(
     ...(managed?.openingBlockedReason
       ? { openingBlocked: managed.openingBlockedReason }
       : {}),
+    ...(activity.fundsPaused
+      ? { fundsPaused: { stopAt: Date.parse(activity.fundsPaused.stopAt) } }
+      : {}),
+    ...(activity.fundsStopped ? { fundsStopped: true as const } : {}),
     ...(managed?.scheduleFailure
       ? {
           scheduleFailure: {
@@ -298,6 +312,7 @@ function soldOut(activity: PublicActivity) {
 
 function endReasonOf(activity: PublicActivity, now: number): EndReason | null {
   if (activity.status === "draft") return null;
+  if (activity.fundsStopped) return "funds";
   const draw = activity.draw;
   if (draw) {
     if (draw.state === "settling") return "settling";
@@ -403,6 +418,7 @@ export function endHint(view: PublicView) {
     stopped: "红包已被站长停用",
     judge: "判定器结束了这个红包",
     settle: "红包已结束，正在给大家结算…",
+    funds: "红包作者的商户余额不足，红包已结束",
   }[view.endReason ?? "expired"];
 }
 

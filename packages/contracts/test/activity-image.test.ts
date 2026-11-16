@@ -169,7 +169,7 @@ describe("activity image", () => {
     expect(claimed).toMatch(/<g class="pop motion">/);
     expect(claimed).toContain("你已领取");
     expect(claimed).toContain("<tspan>+1.00</tspan>");
-    expect(claimed).toContain("付款处理中");
+    expect(claimed).toContain("待发放");
     expect(claimed).toContain("领取于 10月13日 15:59:30");
     expect(claimed).toContain('class="flap motion"');
     expect(claimed).toContain("数据可能过期");
@@ -189,7 +189,7 @@ describe("activity image", () => {
         claimedAt: renderedAt,
         paymentStatus: "reconciling",
       }),
-    ).toContain("正在核对原订单");
+    ).toContain("结果核对中");
     expect(
       image({
         kind: "claimed",
@@ -197,7 +197,7 @@ describe("activity image", () => {
         claimedAt: renderedAt,
         paymentStatus: "attention",
       }),
-    ).toContain("需要关注");
+    ).toContain("发放异常");
 
     const won = image(
       { kind: "claimed", amount: "2.50", claimedAt: renderedAt },

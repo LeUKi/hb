@@ -433,10 +433,10 @@ function Editor({
             preview={
               <div className="grid justify-items-center gap-1 text-center">
                 <StatusChip tone="danger" dot>
-                  未发出
+                  发放失败
                 </StatusChip>
                 <p className="text-sm text-ink-2">
-                  {config.notAllowed || `${host} 不允许给你发这笔。`}
+                  {config.notAllowed || `${host} 拒绝向你发放本次奖励。`}
                 </p>
               </div>
             }
@@ -458,7 +458,7 @@ function Editor({
                 title="红包已经提前结束"
               >
                 {config.insufficient ||
-                  `你在 ${host} 的余额不够了，没发出的不再发。`}
+                  `你在 ${host} 的余额不足，尚未发放的奖励已终止发放。`}
               </Callout>
             }
           >
@@ -479,7 +479,7 @@ function Editor({
                 title="红包已经提前结束"
               >
                 {config.keyInvalid ||
-                  `${host} 说你的密钥失效了，没发出的不再发。`}
+                  `${host} 认为你的密钥已失效，尚未发放的奖励已终止发放。`}
               </Callout>
             }
           >
@@ -720,10 +720,14 @@ function NoRecipientPreview({
   amount: string;
 }) {
   return (
-    <Callout tone="warning" icon={UserRoundX} title={`你在 ${host} 还没有账户`}>
+    <Callout
+      tone="warning"
+      icon={UserRoundX}
+      title={`未找到你在 ${host} 的账户`}
+    >
       <p>
-        这笔 {amount}{" "}
-        暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
+        {amount}{" "}
+        奖励暂未发放。请先在该网站开设账户，再点击“重新发送”；重新发送仅限一次。
       </p>
       {config.noRecipient && (
         <NoteMarkdown className="mt-2 text-sm">
@@ -736,7 +740,7 @@ function NoRecipientPreview({
         </Button>
       </div>
       <p className="mt-2 text-xs">
-        还剩 <Ticking /> 可以重新发送，过时不再补发。
+        请在 <Ticking /> 内重新发送；逾期本次发放将终止。
       </p>
     </Callout>
   );
@@ -903,7 +907,7 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
         onClose={() => setRetiring(false)}
         busy={busy}
         title={`下架「${system.name}」`}
-        text="下架以后不能再用它发红包，还开着的红包立即结束，没发出的不再发。下架不能撤回。"
+        text="下架后不能再用它发红包，进行中的红包将立即结束，尚未发放的奖励将终止发放。下架不能撤回。"
         error={pressed === "retire" ? failed("下架") : null}
         actions={
           <>
