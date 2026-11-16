@@ -225,28 +225,25 @@ export function createAppQueryClient() {
         return;
       }
       const access = activityAccess(query.queryKey);
-      if (
-        access &&
-        error instanceof ActivityRequestError &&
-        error.status === 404
-      ) {
+      const gone =
+        access && error instanceof ActivityRequestError && error.status === 404;
+      if (gone && query.queryKey[0] !== "activity-public") {
         // Only the 红包's own read says whether it is there (05 §5). Any
         // other read of it answering 404 asks that one again instead of
         // declaring the 红包 gone: a draft's 口令 (2026-11-04) and a
         // scheduled 限时开奖's participation (2026-11-16) answered 404,
         // and the page flashed 未找到红包 in a loop. A 红包 really gone
-        // answers 404 there too, and is cleared below.
-        if (query.queryKey[0] !== "activity-public") {
-          const now = Date.now();
-          if (now - (rechecked.get(access.activityId) ?? 0) >= RECHECK_MS) {
-            rechecked.set(access.activityId, now);
-            void queryClient.refetchQueries({
-              queryKey: ["activity-public", access.activityId],
-              type: "active",
-            });
-          }
-          return;
+        // answers 404 there too, and is cleared next. The read that failed
+        // still clears its own pages, as for 401 and 403 further on.
+        const now = Date.now();
+        if (now - (rechecked.get(access.activityId) ?? 0) >= RECHECK_MS) {
+          rechecked.set(access.activityId, now);
+          void queryClient.refetchQueries({
+            queryKey: ["activity-public", access.activityId],
+            type: "active",
+          });
         }
+      } else if (gone) {
         for (const related of queryCache.findAll({
           predicate: (candidate) => {
             const candidateAccess = activityAccess(candidate.queryKey);
