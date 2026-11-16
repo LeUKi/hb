@@ -117,6 +117,14 @@ async function mockHistory(page: Page) {
           ]
         : [
             sent("11111111-1111-4111-8111-111111111111", "周末红包"),
+            // 代码判定, protocol 5: a pool (totalCount in 分), no shares.
+            sent("66666666-6666-4666-8666-666666666666", "猜数字", {
+              participationMode: "code",
+              totalCount: 2000,
+              claimedCount: 8,
+              poolLeft: "12.00",
+              reward: { mode: "code", totalAmount: "20.00" },
+            }),
             sent("22222222-2222-4222-8222-222222222222", "还在写的", {
               status: "draft",
               openedAt: null,
@@ -406,6 +414,11 @@ test.describe("红包记录", () => {
       page.getByText("已发 3 个，发出 11.00 LDC · 参与过 2 个，领到 3.54 LDC"),
     ).toBeVisible();
     await expect(page.getByText("还没开放，拿到链接的人能看到")).toBeVisible();
+    // 代码判定 with a pool: how many people got something, then what is
+    // left (the 奖池 named just before).
+    await expect(
+      page.getByRole("listitem").filter({ hasText: "猜数字" }),
+    ).toContainText("代码判定 · 20.00 LDC 奖池 · 已领 8 人 · 还剩 12.00 LDC");
     // 定时开放: 待开放 and when; one that did not open says why.
     const timed = page.getByRole("listitem").filter({ hasText: "明晚的红包" });
     await expect(timed).toContainText("待开放");

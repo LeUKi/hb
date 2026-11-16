@@ -15,7 +15,7 @@ import {
 } from "../../lib/records";
 import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
-import { shownAmount } from "../../lib/units";
+import { amountText, shownAmount } from "../../lib/units";
 import { quantityLine, statusOf } from "../hongbao/hongbao-card";
 import { SenderLinks } from "../hongbao/sender-links";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -56,6 +56,16 @@ function sentStatus({ activity, view, archived }: SentRecord) {
   return { ...tag, ended };
 }
 
+/**
+ * What is taken: "已领 1 / 3 份"; 代码判定's pool says who got something
+ * and what is left, its whole named just before it (no share needed).
+ */
+function sentQuantity({ activity, view, claimants }: SentRecord) {
+  if (view.quantity.kind !== "pool" || claimants === undefined)
+    return quantityLine(activity, view);
+  return `已领 ${claimants} 人 · 还剩 ${amountText(view.quantity.left, activity.unit)}`;
+}
+
 function SentRow({ record }: { record: SentRecord }) {
   const { leaveTo } = useOmniboxController();
   const { compact } = useWindowInfo();
@@ -93,7 +103,7 @@ function SentRow({ record }: { record: SentRecord }) {
             </span>
             <span className="truncate text-sm text-ink-2">
               {activity.rewardSummary}
-              {!activity.draft && ` · ${quantityLine(activity, view)}`}
+              {!activity.draft && ` · ${sentQuantity(record)}`}
             </span>
             <span className="truncate text-xs text-ink-3">
               {activity.draft

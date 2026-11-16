@@ -61,6 +61,11 @@ export type SentRecord = {
   view: PublicView;
   archived: boolean;
   scheduleFailure?: { at: string; reason: string };
+  /**
+   * 代码判定, protocol 5: how many people got something (one settlement,
+   * one claim each). Its pool has no shares to count them by.
+   */
+  claimants?: number;
 };
 
 export function sentRecordOf(
@@ -105,6 +110,9 @@ export function sentRecordOf(
     activity: hongbaoOf(activity),
     view: publicViewOf(activity),
     archived: summary.status === "archived",
+    ...(summary.poolLeft !== undefined
+      ? { claimants: summary.claimedCount }
+      : {}),
     // 定时开放 that did not open (scheduled-opening §5): said on its row.
     ...(summary.scheduleFailure
       ? { scheduleFailure: summary.scheduleFailure }
