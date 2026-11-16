@@ -1,3 +1,4 @@
+import { PAYMENT_RESEND_MINUTES } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
 import {
   Braces,
@@ -72,7 +73,7 @@ const questions: { q: string; a: string }[] = [
   {
     // 三方积分 (docs/third-party-points-design.md §9).
     q: "标着“三方”的红包是什么？",
-    a: "用别的网站的积分发的红包。领到的直接存进你在那个网站的账户，要先在那个网站开户；没开户会提示你怎么开，开好以后 5 分钟内可以重新发送一次。积分能做什么、值多少由那个网站决定，红包站不核对，也不兑换。点红包皮上的“三方”标签，能看到是哪个网站的。",
+    a: `用别的网站的积分发的红包。领到的直接存进你在那个网站的账户，要先在那个网站开户；没开户会提示你怎么开，开好以后 ${PAYMENT_RESEND_MINUTES} 分钟内可以重新发送一次。积分能做什么、值多少由那个网站决定，红包站不核对，也不兑换。点红包皮上的“三方”标签，能看到是哪个网站的。`,
   },
   {
     // 打赏 (docs/tip-design.md).

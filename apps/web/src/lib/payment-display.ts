@@ -1,4 +1,7 @@
-import type { MerchantPaymentDetail } from "@hb/contracts";
+import {
+  type MerchantPaymentDetail,
+  PAYMENT_RESEND_MINUTES,
+} from "@hb/contracts";
 import { openingLabel } from "./roster-time";
 
 /** 发放失败, on a claim's payment: its recipient had no Credit account. */
@@ -56,8 +59,7 @@ export function paymentReason(
     http: "上游返回非成功 HTTP 状态，付款结果仍需核对原订单。",
     redirect: "上游返回重定向，系统未继续请求，将保留原订单核对。",
     invalid_response: "上游响应格式无法识别，付款结果仍需核对原订单。",
-    recipient:
-      "收款人还没有 LINUX DO Credit 账户，发放已暂停；领取者可在 5 分钟内注册后重新发送一次，逾期本次发放将终止。",
+    recipient: `收款人还没有 LINUX DO Credit 账户，发放已暂停；领取者可在 ${PAYMENT_RESEND_MINUTES} 分钟内注册后重新发送一次，逾期本次发放将终止。`,
     resend: "领取者已重新发送，系统先核对原订单再发放。",
     self_payment: "上游拒绝向同一付款账号发放，发送已暂停。",
     configuration: "上游付款配置不可用，发送已暂停。",

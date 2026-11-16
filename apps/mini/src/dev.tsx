@@ -26,7 +26,7 @@ if (sample) {
   if (title !== null) sample.read.activity.title = title;
   if (note !== null) sample.read.activity.beforeInfo = note;
   // `&after=`: the 附言 a claim here shows. `&pay=recipient`: its payment
-  // refused, no Credit account (5 minutes to send it again); `&pay=unsent`:
+  // refused, no Credit account (PAYMENT_RESEND_MINUTES to send it again); `&pay=unsent`:
   // past that, 未发出.
   const after = query.get("after");
   const pay = query.get("pay");
@@ -42,7 +42,7 @@ if (sample) {
           status: pay === "recipient" ? "attention" : "failed",
           reason: "recipient",
           ...(pay === "recipient"
-            ? { resendUntil: new Date(Date.now() + 300_000).toISOString() }
+            ? { resendUntil: new Date(Date.now() + 15 * 60_000).toISOString() }
             : {}),
         };
       return result;

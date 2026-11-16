@@ -35,7 +35,7 @@ import { resetMerchantHistory } from "./reset-merchant-history";
 
 // A claim's payment the upstream turned down with 收款人不存在 (the recipient
 // has no LINUX DO Credit account): its claimant may send it again within
-// five minutes, once; nothing retries it by itself.
+// fifteen minutes, once; nothing retries it by itself.
 
 let now: number;
 const realFetch = globalThis.fetch;
@@ -304,7 +304,7 @@ async function turnedDown() {
 }
 
 describe("sending a payment again for its claimant", () => {
-  it("looks the order up, then sends it under the same 业务号, within five minutes", async () => {
+  it("looks the order up, then sends it under the same 业务号, within fifteen minutes", async () => {
     const { f, rejectedAt } = await turnedDown();
     expect(await resendUntil(f)).toBe(
       new Date(rejectedAt + PAYMENT_RESEND_WINDOW_MS).toISOString(),
@@ -344,7 +344,7 @@ describe("sending a payment again for its claimant", () => {
     expect((await task(f)).status).toBe("confirmed");
   });
 
-  it("is not paid once five minutes have passed", async () => {
+  it("is not paid once fifteen minutes have passed", async () => {
     const { f, rejectedAt } = await turnedDown();
     now = rejectedAt + PAYMENT_RESEND_WINDOW_MS;
     expect(await resendUntil(f)).toBeUndefined();
@@ -353,7 +353,7 @@ describe("sending a payment again for its claimant", () => {
     ).toEqual({
       status: 409,
       code: "PAYMENT_RESEND_CLOSED",
-      message: "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
+      message: "重新发送期限已过（被拒后 15 分钟内有效），本次发放已终止。",
     });
     expect((await task(f)).status).toBe("attention");
   });
@@ -436,7 +436,7 @@ describe("sending a payment again for its claimant", () => {
 });
 
 describe("a payment past its resend", () => {
-  it("ends 未发出 once five minutes have passed, and reads so everywhere", async () => {
+  it("ends 未发出 once fifteen minutes have passed, and reads so everywhere", async () => {
     const { f, rejectedAt } = await turnedDown();
     now = rejectedAt + PAYMENT_RESEND_WINDOW_MS - 1;
     expect(await endLapsedResends(f.bindings)).toBe(0);
@@ -460,7 +460,7 @@ describe("a payment past its resend", () => {
       await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
     ).toMatchObject({
       code: "PAYMENT_RESEND_CLOSED",
-      message: "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
+      message: "重新发送期限已过（被拒后 15 分钟内有效），本次发放已终止。",
     });
     // Its sender: over, not 未完成 and not 异常待处理.
     const all = await listAccountPayments(f.bindings, f.owner);

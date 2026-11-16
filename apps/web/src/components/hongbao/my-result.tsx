@@ -1,6 +1,7 @@
 import {
   type ActivityPoints,
   PAYMENT_LABELS,
+  PAYMENT_RESEND_MINUTES,
   type PaymentState,
   type PaymentView,
 } from "@hb/contracts";
@@ -196,8 +197,8 @@ function ResendButton({
 }
 
 /**
- * No Credit account yet: within five minutes of the upstream's answer the
- * viewer may open one and send the payment again, once (api:
+ * No Credit account yet: within PAYMENT_RESEND_MINUTES of the upstream's
+ * answer the viewer may open one and send the payment again, once (api:
  * payments/resend.ts, user's rule); past that it is not paid.
  */
 function NoCreditAccount({
@@ -266,7 +267,8 @@ function NoCreditAccount({
 function NotResent() {
   return (
     <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
-      LINUX DO Credit 站未找到你的账户。重新发送仅限被拒后 5
+      LINUX DO Credit 站未找到你的账户。重新发送仅限被拒后{" "}
+      {PAYMENT_RESEND_MINUTES}{" "}
       分钟内一次，现已无法重新发送，本次奖励发放已终止。
     </Callout>
   );
@@ -313,7 +315,7 @@ function NoCreditAccountHere({
 
 /**
  * 三方积分 (docs/third-party-points-design.md §9): no account at the
- * issuer. The issuer's own words, the five minutes, and one 重新发送.
+ * issuer. The issuer's own words, the countdown, and one 重新发送.
  */
 function NoPointsAccount({
   activityId,
@@ -344,7 +346,8 @@ function NoPointsAccount({
   if (!open || !identity.user || !identity.csrfToken)
     return (
       <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
-        {points.host} 未找到你的账户。重新发送仅限被拒后 5
+        {points.host} 未找到你的账户。重新发送仅限被拒后{" "}
+        {PAYMENT_RESEND_MINUTES}{" "}
         分钟内一次，现已无法重新发送，本次奖励发放已终止。
       </Callout>
     );
@@ -413,7 +416,8 @@ function NoPointsAccountHere({
   if (!open || !SiteLink)
     return (
       <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
-        {points.host} 未找到你的账户。重新发送仅限被拒后 5
+        {points.host} 未找到你的账户。重新发送仅限被拒后{" "}
+        {PAYMENT_RESEND_MINUTES}{" "}
         分钟内一次，现已无法重新发送，本次奖励发放已终止。
       </Callout>
     );

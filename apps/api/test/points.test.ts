@@ -480,7 +480,7 @@ describe("三方积分红包", () => {
     expect(issuer.calls.length).toBe(calls);
   });
 
-  it("gives 找不到收款人 one resend within five minutes", async () => {
+  it("gives 找不到收款人 one resend within fifteen minutes", async () => {
     await online();
     const hongbao = await opened({
       mode: "fixed",

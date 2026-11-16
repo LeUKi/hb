@@ -204,9 +204,11 @@ export type MerchantList = {
  * A claim's payment turned down for want of the recipient's LINUX DO Credit
  * account can be sent again by its claimant, once they have one: within
  * this long of the first such answer, this many times (once). Nothing
- * retries it by itself, and past that it is not paid (user's rule).
+ * retries it by itself, and past that it is not paid (user's rule; 5
+ * minutes until 2026-11-16, then 15). 三方积分's 找不到收款人 uses the same.
  */
-export const PAYMENT_RESEND_WINDOW_MS = 5 * 60_000;
+export const PAYMENT_RESEND_MINUTES = 15;
+export const PAYMENT_RESEND_WINDOW_MS = PAYMENT_RESEND_MINUTES * 60_000;
 export const PAYMENT_RESEND_LIMIT = 1;
 
 export type PaymentView = {

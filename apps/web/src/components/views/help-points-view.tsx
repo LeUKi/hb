@@ -1,4 +1,4 @@
-import { POINTS_LIMITS } from "@hb/contracts";
+import { PAYMENT_RESEND_MINUTES, POINTS_LIMITS } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
@@ -69,7 +69,7 @@ const handling = [
   ],
   [
     "no_recipient",
-    "领取者看到你写的说明和 5 分钟倒计时，开户后可以重新发送一次；逾期算发放失败",
+    `领取者看到你写的说明和 ${PAYMENT_RESEND_MINUTES} 分钟倒计时，开户后可以重新发送一次；逾期算发放失败`,
   ],
   ["not_allowed", "这一份发放失败，领取者看到你写的一句话"],
   [

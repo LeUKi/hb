@@ -157,7 +157,7 @@ export function caseOf(name: string): Case | null {
                 status: "attention",
                 reason: "recipient",
                 confirmedAt: null,
-                resendUntil: new Date(Date.now() + 300_000).toISOString(),
+                resendUntil: new Date(Date.now() + 15 * 60_000).toISOString(),
               },
             },
           };

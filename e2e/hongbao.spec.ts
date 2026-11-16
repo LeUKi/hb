@@ -697,7 +697,7 @@ test.describe("红包页", () => {
     await expect.poll(() => state.reads.passwords).toBe(before + 1);
   });
 
-  test("没有 Credit 账户：5 分钟内注册后自己重新发送一次，逾期发放终止", async ({
+  test("没有 Credit 账户：15 分钟内注册后自己重新发送一次，逾期发放终止", async ({
     page,
   }) => {
     await mockSession(page, viewer);

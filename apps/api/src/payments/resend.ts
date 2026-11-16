@@ -1,4 +1,8 @@
-import { PAYMENT_RESEND_LIMIT, PAYMENT_RESEND_WINDOW_MS } from "@hb/contracts";
+import {
+  PAYMENT_RESEND_LIMIT,
+  PAYMENT_RESEND_MINUTES,
+  PAYMENT_RESEND_WINDOW_MS,
+} from "@hb/contracts";
 import { and, eq } from "drizzle-orm";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { tellPaymentWatchers } from "../activities/live";
@@ -73,7 +77,7 @@ export async function resendClaimPayment(
       "PAYMENT_RESEND_CLOSED",
       rejections && rejections.count > PAYMENT_RESEND_LIMIT
         ? "已重新发送过一次，本次发放已终止。"
-        : "重新发送期限已过（被拒后 5 分钟内有效），本次发放已终止。",
+        : `重新发送期限已过（被拒后 ${PAYMENT_RESEND_MINUTES} 分钟内有效），本次发放已终止。`,
     );
   }
   // It goes out only as it first went: under the same merchant application.
