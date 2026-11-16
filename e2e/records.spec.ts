@@ -330,6 +330,41 @@ test.describe("红包广场", () => {
       `/🧧/${encodeActivityEmoji("66666666-6666-4666-8666-666666666666")}`,
     );
   });
+
+  test("手机上筛选单独一行，四项放不下时在自己里面横着滚，页面不变宽", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 760 });
+    await mockSession(page, null);
+    await page.route("**/api/discovery/activities?**", (route) =>
+      route.fulfill({
+        json: {
+          items: [],
+          nextCursor: null,
+          total: 1234,
+        },
+      }),
+    );
+    await openApp(page, "/square");
+    const filter = page.getByRole("group", { name: "筛选" });
+    await expect(filter).toBeVisible();
+    const box = await filter.boundingBox();
+    expect(box && box.x + box.width).toBeLessThanOrEqual(320);
+    // Under the title, not beside it, and nothing wider than the window.
+    const title = await page
+      .getByRole("heading", { name: "红包广场" })
+      .boundingBox();
+    expect(box && title && box.y > title.y + title.height).toBe(true);
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll("main, main *")].every(
+          (element) =>
+            element.getBoundingClientRect().right <= innerWidth + 1 ||
+            element.closest("[aria-label=筛选]") !== null,
+        ),
+      ),
+    ).toBe(true);
+  });
   test("即将开放：加入广场的定时红包单独一栏，卡片写几点开放；空着时这样写", async ({
     page,
   }) => {

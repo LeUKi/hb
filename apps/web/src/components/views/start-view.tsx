@@ -1,7 +1,7 @@
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { type LucideIcon, SquareSlash } from "lucide-react";
 import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useBootDone } from "../../lib/boot";
 import { brand } from "../../lib/brand";
 import { cn } from "../../lib/cn";
@@ -14,6 +14,7 @@ import {
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useRecentInputs } from "../../lib/recent-inputs";
 import { useSessionUser } from "../../lib/session";
+import { ClearRecentDialog } from "../omnibox/clear-recent";
 import {
   messageAtom,
   omniboxMetrics,
@@ -26,6 +27,7 @@ import { focusOmniboxInput } from "../omnibox/use-omnibox-controller";
 import { CommandLink } from "../shell/command-link";
 import { useSlot } from "../shell/slots";
 import { useWindowInfo } from "../shell/window-info";
+import { Button } from "../ui/button";
 import { radius, Squircle } from "../ui/squircle";
 
 const statusDot = {
@@ -176,7 +178,9 @@ export function StartView() {
   const setHint = useSetAtom(startHintElementAtom);
   const lines = useAtomValue(startLinesAtom);
   const user = useSessionUser();
-  const recent = useRecentInputs(user?.id ?? null).entries;
+  const history = useRecentInputs(user?.id ?? null);
+  const recent = history.entries;
+  const [confirmClear, setConfirmClear] = useState(false);
   const setDraft = useSetAtom(startDraftAtom);
   const setMessage = useSetAtom(messageAtom);
   const held = useAtomValue(heldAtom);
@@ -232,9 +236,28 @@ export function StartView() {
                     </button>
                   </Squircle>
                 ))}
+                {/* After the last one, level with the chips (07 §1). */}
+                {/* Plain words, not a chip: never taken for one of them. */}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="h-[34px] text-ink-3"
+                  onClick={() => setConfirmClear(true)}
+                >
+                  清空
+                </Button>
               </Row>
             </Reveal>
           )}
+          <ClearRecentDialog
+            open={confirmClear}
+            count={recent.length}
+            onClose={() => setConfirmClear(false)}
+            onClear={() => {
+              history.clear();
+              setConfirmClear(false);
+            }}
+          />
           <Reveal index={1}>
             {/* The cards say what they are: no label, the whole line
                 theirs (a screen reader still hears its name). */}

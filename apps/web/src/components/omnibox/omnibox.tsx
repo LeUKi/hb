@@ -37,7 +37,6 @@ import {
 import { useSessionUser } from "../../lib/session";
 import { viewEdgeAtom, windowDialogsAtom } from "../../lib/store";
 import { JudgmentRecord } from "../hongbao/my-judgments";
-import { ConfirmDialog } from "../shell/confirm-dialog";
 import { keyboardInsetAtom } from "../shell/keyboard";
 import { MORPH_MS } from "../shell/layout-morph";
 import { type SlotRect, useSlotRect } from "../shell/slots";
@@ -55,12 +54,14 @@ import { Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
 import { AddressRoller, useAddress } from "./address";
 import { SchemeChip } from "./chips";
+import { ClearRecentDialog } from "./clear-recent";
 import { OmniboxField } from "./field";
 import { IdleHintText, useIdleHint } from "./idle-hint";
 import { MessageLine, resolveMessage } from "./message";
 import {
   boxInset,
   ScopeBadgeSpace,
+  type ScopeLeave,
   ScopeTag,
   scopeTagSpace,
   useScopeGrowth,
@@ -402,8 +403,6 @@ export function Omnibox() {
     !codeScope &&
     detected.kind !== "empty" &&
     (detected.kind !== "password" || looksLikeAddress(value));
-  // Empty and free, the box says in turn what it takes (02 §6).
-  const idleHint = useIdleHint(!docked && !scoped && value === "");
   const scheme = useMemo<EntryScheme>(
     () =>
       codeScope
@@ -496,9 +495,21 @@ export function Omnibox() {
   // was is kept while it goes.
   const scopeShown = expanded && scope !== null && !commandMode;
   const scopeWait = useRef(0);
-  const growth = useScopeGrowth(scopeShown, scopeWait);
+  // Taken off in the open box (× or 退格) it folds back; with the box
+  // flying away it fades with the box's contents (02 §4 收回顶栏).
+  const scopeLeave = useRef<ScopeLeave>("fold");
+  scopeLeave.current = expanded ? "fold" : "fade";
+  const growth = useScopeGrowth(scopeShown, scopeWait, scopeLeave);
+  // While it folds back the box still reads as it did, until the 协议标签
+  // comes back: no rolling hints, its placeholder kept.
+  const scopeGoing = !scopeShown && growth.rendered;
+  // Empty and free, the box says in turn what it takes (02 §6).
+  const idleHint = useIdleHint(
+    !docked && !scoped && !scopeGoing && value === "",
+  );
   const shownScope = useRef(scope);
   const shownTitle = useRef<string | null>(null);
+  const scopedPlaceholder = useRef("");
   if (scopeShown && scope) {
     shownScope.current = scope;
     shownTitle.current = scopeFacts ? scopeFacts.title : null;
@@ -884,6 +895,17 @@ export function Omnibox() {
       !(expanded && scheme.kind === "password" && !activeItem));
   const actionDisabled = pending || (usesCooldown && cooldown > 0 && !retryRow);
 
+  const placeholder = codeScope
+    ? scopeFacts?.code?.prompt || "输入要提交的内容"
+    : scope?.purpose === "verify" && scoped
+      ? "输入其他口令"
+      : scoped
+        ? "输入口令"
+        : compact
+          ? "口令、红包链接或 / 命令"
+          : "输入口令、红包链接，或输入 / 使用命令";
+  if (scopeShown) scopedPlaceholder.current = placeholder;
+
   const actionSize = compact ? "bar" : "md";
   const actionRadius = buttonRadius[actionSize];
   const actionShape = useButtonShape(actionRadius, buttonHeight[actionSize]);
@@ -948,18 +970,35 @@ export function Omnibox() {
           >
             <AnimatePresence initial={false} mode="popLayout">
               {growth.rendered ? (
-                <ScopeBadgeSpace
-                  key="scope"
-                  compact={compact}
-                  growth={growth}
-                />
+                <ScopeBadgeSpace key="scope" compact={compact} growth={growth}>
+                  {scopeGoing && (
+                    <SchemeChip
+                      scheme={scheme}
+                      idle={idleHint?.kind}
+                      compact={compact}
+                    />
+                  )}
+                </ScopeBadgeSpace>
               ) : (
-                <SchemeChip
+                // It came back inside the 图标标签's room as that shrank away
+                // (ScopeBadgeSpace), so it takes over as it is; making way
+                // for one, it fades where it was.
+                <motion.span
                   key="scheme"
-                  scheme={scheme}
-                  idle={idleHint?.kind}
-                  compact={compact}
-                />
+                  className="flex shrink-0"
+                  initial={false}
+                  exit={{ opacity: 0 }}
+                  transition={{
+                    duration: reduced ? 0 : durations.fadeOut,
+                    ease,
+                  }}
+                >
+                  <SchemeChip
+                    scheme={scheme}
+                    idle={idleHint?.kind}
+                    compact={compact}
+                  />
+                </motion.span>
               )}
             </AnimatePresence>
             <OmniboxField
@@ -1041,17 +1080,7 @@ export function Omnibox() {
                   </span>
                 )
               }
-              placeholder={
-                codeScope
-                  ? scopeFacts?.code?.prompt || "输入要提交的内容"
-                  : scope?.purpose === "verify" && scoped
-                    ? "输入其他口令"
-                    : scoped
-                      ? "输入口令"
-                      : compact
-                        ? "口令、红包链接或 / 命令"
-                        : "输入口令、红包链接，或输入 / 使用命令"
-              }
+              placeholder={scopeGoing ? scopedPlaceholder.current : placeholder}
               hint={
                 idleHint && <IdleHintText hint={idleHint} compact={compact} />
               }
@@ -1268,30 +1297,19 @@ export function Omnibox() {
       <p role="status" className="sr-only">
         {message?.text ?? ""}
       </p>
-      <ConfirmDialog
+      <ClearRecentDialog
         open={confirmClear}
+        count={clearCount}
         onClose={() => setConfirmClear(false)}
+        onClear={() => {
+          cleared.current = true;
+          history.clear();
+          setConfirmClear(false);
+        }}
         onClosed={() => {
           if (cleared.current) focusOmniboxInput();
           cleared.current = false;
         }}
-        title="清空最近输入？"
-        text={`这个浏览器里记下的 ${clearCount} 条口令会全部删除，不能恢复。不影响已经领到的红包。`}
-        actions={
-          <>
-            <Button onClick={() => setConfirmClear(false)}>取消</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                cleared.current = true;
-                history.clear();
-                setConfirmClear(false);
-              }}
-            >
-              清空
-            </Button>
-          </>
-        }
       />
     </motion.div>
   );

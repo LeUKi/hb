@@ -201,6 +201,27 @@ test.describe("兑奖", () => {
     await expect(page.getByRole("option", { name: /红包广场/ })).toBeVisible();
   });
 
+  test("首页最近输入：清空先问一次，清空后这一行收起", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockDiscover(page, [{ status: 200, body: discovered("none", []) }]);
+    await openApp(page);
+    await lookUp(page, "测试口令2099");
+    await expectNoMatch(page);
+    await expect(
+      page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
+    ).toBeAttached();
+    await page.goto("about:blank");
+    await openApp(page);
+    await page.getByRole("button", { name: "清空", exact: true }).click();
+    const ask = page.getByRole("dialog", { name: "清空最近输入？" });
+    await expect(ask).toContainText("记下的 1 条口令会全部删除，不能恢复");
+    await ask.getByRole("button", { name: "清空" }).click();
+    await expect(
+      page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("最近输入", { exact: true })).toHaveCount(0);
+  });
+
   test("匹配到多个：去 /🔑/ 结果页，选一个就去那个红包", async ({ page }) => {
     await mockSession(page, viewer);
     await mockDiscover(page, [

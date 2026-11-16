@@ -130,7 +130,14 @@ function MerchantSummary({
       </Reveal>
       <div className="border-line border-t pt-4">
         <Facts
-          className="@wide/window:grid-cols-3"
+          trailing={
+            <MoreLink
+              href="/payments"
+              onGo={() => void leaveTo({ to: "/payments" })}
+            >
+              付款记录
+            </MoreLink>
+          }
           items={[
             {
               label: "用它付款的红包",
@@ -160,14 +167,6 @@ function MerchantSummary({
             },
           ]}
         />
-      </div>
-      <div className="-mt-1 flex justify-end">
-        <MoreLink
-          href="/payments"
-          onGo={() => void leaveTo({ to: "/payments" })}
-        >
-          付款记录
-        </MoreLink>
       </div>
     </Panel>
   );
@@ -384,8 +383,9 @@ function MerchantDetail({
   csrfToken: string;
   focusNext?: { current: boolean };
 }) {
+  // One layer of the page's Swap: its two parts apart as the page's are.
   return (
-    <>
+    <div className="flex flex-col gap-6 @wide/window:gap-8">
       <MerchantSummary merchant={merchant} user={user} focusNext={focusNext} />
       <PageSection
         title="配置"
@@ -399,7 +399,7 @@ function MerchantDetail({
           csrfToken={csrfToken}
         />
       </PageSection>
-    </>
+    </div>
   );
 }
 

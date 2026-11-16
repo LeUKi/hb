@@ -24,6 +24,7 @@ import {
   resultOf,
 } from "../page/page-state";
 import { useSearchChoice } from "../shell/use-search-choice";
+import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { RollingNumber } from "../ui/morph-label";
@@ -46,6 +47,7 @@ export function SquareView() {
 
 function Square({ userId }: { userId: string | null }) {
   const { leaveTo } = useOmniboxController();
+  const { compact } = useWindowInfo();
   // 全部 first: 进行中 is often empty, and one sent here to find a 红包
   // sees it even if it has just ended (07 §2).
   const [filter, setFilter] = useSearchChoice<SquareFilter>(
@@ -80,6 +82,25 @@ function Square({ userId }: { userId: string | null }) {
     if (isStale && !isFetching) void refetch();
   }, [filter]);
 
+  const filterBar = (
+    <Segmented
+      label="筛选"
+      value={filter}
+      onChange={setFilter}
+      options={[
+        { value: "all", label: "全部", count: countOf("all") },
+        // 定时开放 before its time (scheduled-opening §7).
+        {
+          value: "upcoming",
+          label: "即将开放",
+          count: countOf("upcoming"),
+        },
+        { value: "active", label: "进行中", count: countOf("active") },
+        // Only for 72 hours after the end (archived after): 最近.
+        { value: "ended", label: "最近结束", count: countOf("ended") },
+      ]}
+    />
+  );
   return (
     // The title and the filter stay once shown; the cards load in place.
     <PageLoad load={queryLoad(query)} frame>
@@ -88,26 +109,12 @@ function Square({ userId }: { userId: string | null }) {
           refreshable
           title="红包广场"
           description="发红包时选了“加入红包广场”的红包，按开放时间排列；结束 72 小时后不再列出。"
-          actions={
-            <Segmented
-              label="筛选"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: "all", label: "全部", count: countOf("all") },
-                // 定时开放 before its time (scheduled-opening §7).
-                {
-                  value: "upcoming",
-                  label: "即将开放",
-                  count: countOf("upcoming"),
-                },
-                { value: "active", label: "进行中", count: countOf("active") },
-                // Only for 72 hours after the end (archived after): 最近.
-                { value: "ended", label: "最近结束", count: countOf("ended") },
-              ]}
-            />
-          }
+          // Right of the title (07 §2); a phone gives it its own line,
+          // where four options and their counts fit (or scroll in place)
+          // without widening the page.
+          actions={compact ? undefined : filterBar}
         />
+        {compact && filterBar}
         <SquareWatch />
         <ResultLoad
           id={`${filter}:${items.length === 0 ? "empty" : "cards"}`}

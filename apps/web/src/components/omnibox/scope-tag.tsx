@@ -6,9 +6,16 @@ import {
   useMotionValue,
   useTransform,
 } from "motion/react";
-import { type RefObject, useEffect, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../../lib/cn";
-import { ease, useReducedMotionPref } from "../../lib/motion";
+import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { buttonHeight, buttonRadius } from "../ui/button";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { useContentWidth } from "../ui/morph-label";
@@ -27,7 +34,10 @@ import { omniboxMetrics } from "./state";
 // the 主标签 buds at its tip as the box moves down to make room, then
 // spreads out to either side. Going, the other way round: the sides draw
 // in, the bud sinks as the box comes back up, the 连杆 draws down, and the
-// 图标标签 shrinks away, what is typed sliding back.
+// 图标标签 shrinks away, what is typed sliding back to where the 协议标签
+// comes back. Folding back to the top bar it does none of that: the whole
+// group fades with the box's contents as the box flies, and the room it
+// made for the 主标签 is given back in the same flight (02 §4 收回顶栏).
 
 export type ScopePurpose = "claim" | "verify" | "code";
 
@@ -102,6 +112,15 @@ const fallbacks: Record<ScopePurpose, string> = {
   code: "代码判定",
 };
 
+/**
+ * The 协议标签's width with nothing typed (its icon alone, chips.tsx): what
+ * the 图标标签's room gives way to, or grows from, in a box already open.
+ */
+export const SCHEME_CHIP_REST = 38;
+
+/** How it goes: folding back in the open box, or with the box's contents. */
+export type ScopeLeave = "fold" | "fade";
+
 /** Each stage's progress, 0 to 1 (a spring may carry one past 1). */
 export type ScopeGrowth = {
   /** Still drawn: growing, grown, or going. */
@@ -112,10 +131,16 @@ export type ScopeGrowth = {
   rise: MotionValue<number>;
   /** The 主标签 spreading out to either side. */
   spread: MotionValue<number>;
+  /** The 主标签's words: out first when it folds, before the sides draw in. */
+  words: MotionValue<number>;
+  /** The whole group, fading with the box's contents (收回顶栏). */
+  fade: MotionValue<number>;
+  /** Where the 图标标签's room starts and ends: the 协议标签's, or nothing. */
+  rest: MotionValue<number>;
 };
 
 type Stage = {
-  value: "badge" | "stem" | "rise" | "spread";
+  value: "badge" | "stem" | "rise" | "spread" | "words";
   delay: number;
   duration: number;
   ease: [number, number, number, number];
@@ -130,58 +155,106 @@ const GROW: Stage[] = [
   { value: "spread", delay: 0.48, duration: 0.5, ease: [0.3, 1.32, 0.5, 1] },
 ];
 
-/** Going: the sides first, then the bud and the box, the 连杆, the 图标标签. */
+/**
+ * Going: the words out first (02 §4: never cut short as the sides close
+ * on them), the sides, then the bud and the box, the 连杆, the 图标标签.
+ */
 const SHRINK: Stage[] = [
-  { value: "spread", delay: 0, duration: 0.22, ease: [0.55, 0, 0.75, 0.2] },
-  { value: "rise", delay: 0.14, duration: 0.3, ease: [0.6, 0, 0.3, 1] },
-  { value: "stem", delay: 0.34, duration: 0.16, ease: [0.5, 0, 0.8, 0.4] },
+  { value: "words", delay: 0, duration: 0.1, ease: [0.4, 0, 1, 1] },
+  { value: "spread", delay: 0.06, duration: 0.22, ease: [0.55, 0, 0.75, 0.2] },
+  { value: "rise", delay: 0.18, duration: 0.3, ease: [0.6, 0, 0.3, 1] },
+  { value: "stem", delay: 0.38, duration: 0.16, ease: [0.5, 0, 0.8, 0.4] },
   // A breath in before it goes.
-  { value: "badge", delay: 0.44, duration: 0.26, ease: [0.36, 0, 0.66, -0.5] },
+  { value: "badge", delay: 0.48, duration: 0.26, ease: [0.36, 0, 0.66, -0.5] },
 ];
 
 /**
  * The 作用域标签 growing in while `present`, and away after: its stages, and
  * whether to draw it at all. `wait` (seconds, read as it starts) lets the
- * box arrive first when it opened with the scope.
+ * box arrive first when it opened with the scope; `leave` (read as it
+ * goes) says whether the box stays open (fold) or flies away (fade).
  */
 export function useScopeGrowth(
   present: boolean,
   wait: RefObject<number>,
+  leave: RefObject<ScopeLeave>,
 ): ScopeGrowth {
   const reduced = useReducedMotionPref();
   const badge = useMotionValue(0);
   const stem = useMotionValue(0);
   const rise = useMotionValue(0);
   const spread = useMotionValue(0);
+  const words = useMotionValue(1);
+  const fade = useMotionValue(1);
+  const rest = useMotionValue(0);
   const [rendered, setRendered] = useState(present);
-  const values = useRef({ badge, stem, rise, spread });
+  const values = useRef({ badge, stem, rise, spread, words });
   useEffect(() => {
     const all = values.current;
+    const stages = [all.badge, all.stem, all.rise, all.spread];
+    const settle = () => {
+      for (const value of stages) value.jump(0);
+      all.words.jump(1);
+      fade.jump(1);
+    };
     if (present) setRendered(true);
     if (reduced) {
-      for (const value of Object.values(all)) value.jump(present ? 1 : 0);
+      if (present) for (const value of stages) value.jump(1);
+      else settle();
       if (!present) setRendered(false);
       return;
     }
-    const start = present ? wait.current : 0;
-    const controls = (present ? GROW : SHRINK).map((stage) =>
-      animate(all[stage.value], present ? 1 : 0, {
-        delay: start + stage.delay,
-        duration: stage.duration,
-        ease: stage.ease,
-      }),
-    );
+    let controls: ReturnType<typeof animate>[];
+    if (present) {
+      // Coming back while it was still going: from where it is, at once.
+      const resumed = all.badge.get() > 0.01 || fade.get() < 1;
+      const start = resumed ? 0 : wait.current;
+      // Opened with the box, it grows from nothing; in a box already open,
+      // from the 协议标签 it takes the place of.
+      if (!resumed) rest.jump(start > 0 ? 0 : SCHEME_CHIP_REST);
+      all.words.jump(1);
+      controls = [
+        ...(fade.get() < 1
+          ? [animate(fade, 1, { duration: durations.fadeIn, ease })]
+          : []),
+        ...GROW.map((stage) =>
+          animate(all[stage.value], 1, {
+            delay: start + stage.delay * (resumed ? 0.5 : 1),
+            duration: stage.duration,
+            ease: stage.ease,
+          }),
+        ),
+      ];
+    } else if (leave.current === "fade") {
+      // With the box's contents, as the box flies: the room above it is
+      // given back in the same flight, so it lands where its slot is.
+      controls = [
+        animate(fade, 0, { duration: durations.exit, ease }),
+        animate(all.rise, 0, { duration: durations.travel, ease }),
+      ];
+    } else {
+      rest.jump(SCHEME_CHIP_REST);
+      controls = SHRINK.map((stage) =>
+        animate(all[stage.value], 0, {
+          delay: stage.delay,
+          duration: stage.duration,
+          ease: stage.ease,
+        }),
+      );
+    }
     let stopped = false;
     if (!present)
       void Promise.all(controls).then(() => {
-        if (!stopped) setRendered(false);
+        if (stopped) return;
+        settle();
+        setRendered(false);
       });
     return () => {
       stopped = true;
       for (const control of controls) control.stop();
     };
-  }, [present, reduced, wait]);
-  return { rendered, badge, stem, rise, spread };
+  }, [present, reduced, wait, leave, fade, rest]);
+  return { rendered, badge, stem, rise, spread, words, fade, rest };
 }
 
 /**
@@ -192,22 +265,45 @@ export function useScopeGrowth(
 export function ScopeBadgeSpace({
   compact,
   growth,
+  children,
 }: {
   compact: boolean;
   growth: ScopeGrowth;
+  /**
+   * The 协议标签 coming back as the 图标标签 shrinks away over it (folding
+   * in the open box): it fades in where it will stay.
+   */
+  children?: ReactNode;
 }) {
   const { size } = badgeOf(compact);
-  // The row's gap (8px) comes and goes with it too.
-  const width = useTransform(() => size * Math.max(0, growth.badge.get()));
-  const marginRight = useTransform(
-    () => Math.min(0, growth.badge.get() - 1) * 8,
+  // From the 协议标签's width in a box already open (it never slides under
+  // the 图标标签 nor jumps when the 协议标签 comes back), from nothing as
+  // the box arrives; the row's gap (8px) comes and goes with it then.
+  const width = useTransform(() => {
+    const rest = growth.rest.get();
+    return rest + (size - rest) * Math.max(0, growth.badge.get());
+  });
+  const marginRight = useTransform(() =>
+    growth.rest.get() > 0 ? 0 : Math.min(0, growth.badge.get() - 1) * 8,
+  );
+  const comeback = useTransform(() =>
+    Math.max(0, Math.min(1, (1 - growth.badge.get()) * 1.5)),
   );
   return (
     <motion.span
       aria-hidden="true"
-      className="shrink-0 self-stretch"
+      className="relative shrink-0 self-stretch"
       style={{ width, marginRight }}
-    />
+    >
+      {children && (
+        <motion.span
+          className="absolute inset-y-0 left-0 flex items-center"
+          style={{ opacity: comeback }}
+        >
+          {children}
+        </motion.span>
+      )}
+    </motion.span>
   );
 }
 
@@ -273,7 +369,7 @@ export function ScopeTag({
   // The 主标签 as it grows: a bud on the 连杆's tip, its foot GAP above the
   // box, rising out of it, then spreading to the box's left edge and to
   // its full width on the right.
-  const { badge, stem, rise, spread } = growth;
+  const { badge, stem, rise, spread, fade } = growth;
   const headHeight = useTransform(() => height * Math.max(0, rise.get()));
   const headTop = useTransform(() => -GAP - headHeight.get());
   const headLeft = useTransform(
@@ -286,8 +382,10 @@ export function ScopeTag({
     ),
   );
   const headWidth = useTransform(() => headRight.get() - headLeft.get());
-  const words = useTransform(() =>
-    Math.max(0, Math.min(1, (spread.get() - 0.55) / 0.4)),
+  const words = useTransform(
+    () =>
+      Math.max(0, Math.min(1, (spread.get() - 0.55) / 0.4)) *
+      growth.words.get(),
   );
 
   const shape = useTransform(() => {
@@ -354,7 +452,10 @@ export function ScopeTag({
   );
 
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <motion.div
+      className="pointer-events-none absolute inset-0"
+      style={{ opacity: fade }}
+    >
       <svg
         aria-hidden="true"
         className="absolute top-0 left-0 overflow-visible"
@@ -478,6 +579,6 @@ export function ScopeTag({
       >
         <Icon className="size-[18px]" />
       </motion.span>
-    </div>
+    </motion.div>
   );
 }

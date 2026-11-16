@@ -215,7 +215,9 @@ export function PageHeader({
           </Reveal>
         </div>
         {(actions || refreshable) && (
-          <div className="flex flex-wrap items-center gap-2">
+          // Never wider than the row: a filter too long for a phone
+          // scrolls in itself rather than widening the page.
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
             {actions}
             {refreshable && <RefreshButton />}
           </div>
@@ -291,32 +293,57 @@ export function Panel({
 export function Facts({
   items,
   className,
+  trailing,
 }: {
   items: { label: string; value: ReactNode; note?: ReactNode }[];
   className?: string;
+  /**
+   * A link that goes with the figures (付款记录 ›): the grid's next cell,
+   * at its foot on the right, so it fills a short last line rather than
+   * standing on a line of its own.
+   */
+  trailing?: ReactNode;
 }) {
-  return (
-    <dl
-      className={cn(
-        "grid grid-cols-2 gap-x-6 gap-y-4 @wide/window:grid-cols-4",
-        className,
+  const grid = cn(
+    "grid grid-cols-2 gap-x-6 gap-y-4 @wide/window:grid-cols-4",
+    className,
+  );
+  const fact = (item: (typeof items)[number]) => (
+    <>
+      <dt className="text-sm text-ink-3">{item.label}</dt>
+      <dd className="truncate text-lg font-semibold text-ink tabular-nums">
+        {/* Figures roll as they change (a poll, 刷新). */}
+        {typeof item.value === "string" ? (
+          <RollingText text={item.value} />
+        ) : (
+          item.value
+        )}
+      </dd>
+      {/* A note wraps: cut short at phone width it would say less. */}
+      {item.note && (
+        <dd className="text-xs text-pretty text-ink-3">{item.note}</dd>
       )}
-    >
+    </>
+  );
+  const cell = "grid min-w-0 content-start gap-0.5";
+  // With a link among them, each figure is its own list: a list holds
+  // only its terms and their values.
+  if (trailing)
+    return (
+      <div className={grid}>
+        {items.map((item) => (
+          <dl key={item.label} className={cell}>
+            {fact(item)}
+          </dl>
+        ))}
+        <div className="flex min-w-0 items-end justify-end">{trailing}</div>
+      </div>
+    );
+  return (
+    <dl className={grid}>
       {items.map((item) => (
-        <div key={item.label} className="grid min-w-0 content-start gap-0.5">
-          <dt className="text-sm text-ink-3">{item.label}</dt>
-          <dd className="truncate text-lg font-semibold text-ink tabular-nums">
-            {/* Figures roll as they change (a poll, 刷新). */}
-            {typeof item.value === "string" ? (
-              <RollingText text={item.value} />
-            ) : (
-              item.value
-            )}
-          </dd>
-          {/* A note wraps: cut short at phone width it would say less. */}
-          {item.note && (
-            <dd className="text-xs text-pretty text-ink-3">{item.note}</dd>
-          )}
+        <div key={item.label} className={cell}>
+          {fact(item)}
         </div>
       ))}
     </dl>
