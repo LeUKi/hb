@@ -238,7 +238,11 @@
       }
       /* Handing over (02 §8): the app's own desktop shows through, the
          mark flies to the 顶栏 and the window opens out from it. */
-      #boot[data-state="reveal"] {
+      /* The dark desktop above is html[data-site-dark] #boot: say it again
+         here, or the dark loader stays opaque over the window and the
+         hand-over shows nothing until the loader goes (2026-11-16). */
+      #boot[data-state="reveal"],
+      html[data-site-dark] #boot[data-state="reveal"] {
         background: none;
         pointer-events: none;
       }
@@ -455,9 +459,11 @@
         // Handing over (docs/redesign/02-shell.md §8): the ring closes into
         // the dot, the mark flies on an arc to the 顶栏's home button, the
         // 顶栏 grows out from behind it on the way, unrolls to the right and
-        // the window drops down from it; the window's contents show as each
-        // edge passes (a mask over them), not part by part. Reduced motion,
-        // a hidden tab or a missing part: the loader fades as it always did.
+        // the window drops down from it; the window's contents come out of a
+        // long band of mist that follows each edge, not part by part. The
+        // mist is two layers moved by transforms only (a mask redrawn every
+        // frame stalled phones). Reduced motion, a hidden tab or a missing
+        // part: the loader fades as it always did.
         const handOver = () => {
           const frame = document.querySelector(".app-window-frame");
           const stage = document.querySelector("[data-window-stage]");
@@ -485,9 +491,6 @@
           const x1 = target.left + target.width / 2;
           const y1 = target.top + target.height / 2;
           const landSize = target.width;
-          const narrow = win.width < 640;
-          const lag = narrow ? 14 : 30;
-          const feather = narrow ? 16 : 34;
           const r0 = dot ? Number(dot.getAttribute("r")) : DOT;
           const closing = dot ? 0.42 : 0;
           const flyAt = dot ? 0.45 : 0.1;
@@ -499,6 +502,47 @@
           const settle = bezier(0.2, 0, 0, 1);
           const sprout = bezier(0.4, 0, 0.2, 1);
           const unrolls = bezier(0.3, 0, 0.1, 1);
+          const clears = bezier(0.42, 0, 0.3, 1);
+          // The mist: the glass's colour, nearly opaque, with a long eased
+          // edge (a third of the width along the 顶栏, two fifths of the
+          // height below it).
+          const fogColor = document.documentElement.hasAttribute("data-site-dark")
+            ? "30 24 26"
+            : "255 250 248";
+          const fogBand = (dir, band) =>
+            `linear-gradient(${dir}, ${[0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]
+              .map(
+                (x) =>
+                  `rgb(${fogColor} / ${(0.94 * x * x * (3 - 2 * x)).toFixed(3)}) ${(x * band).toFixed(1)}px`,
+              )
+              .join(", ")})`;
+          const bandX = Math.min(420, Math.max(120, win.width * 0.35));
+          const bandY = Math.min(380, Math.max(160, win.height * 0.4));
+          const fogLayer = (box, size, background) => {
+            const outer = document.createElement("div");
+            outer.style.cssText = `position:absolute;left:0;overflow:hidden;pointer-events:none;z-index:2147483647;${box}`;
+            const inner = document.createElement("div");
+            inner.style.cssText = `position:absolute;left:0;top:0;will-change:transform;${size};background:${background}`;
+            outer.append(inner);
+            frame.append(outer);
+            return [outer, inner];
+          };
+          const [barFog, barMist] = fogLayer(
+            `top:0;width:${win.width}px;height:${barHeight}px`,
+            `width:${win.width + bandX}px;height:100%`,
+            fogBand("to right", bandX),
+          );
+          const [bodyFog, bodyMist] = fogLayer(
+            `top:${barHeight}px;width:${win.width}px;height:${win.height - barHeight}px`,
+            `width:100%;height:${win.height - barHeight + bandY}px`,
+            fogBand("to bottom", bandY),
+          );
+          // Along the 顶栏 the mist starts just past the home button, so the
+          // mark lands clear; below it everything starts covered.
+          const fogX0 = x1 - win.left + landSize / 2 + 4;
+          const fogY0 = barHeight - bandY;
+          barMist.style.transform = `translate3d(${fogX0}px, 0, 0)`;
+          bodyMist.style.transform = `translate3d(0, ${fogY0 - barHeight}px, 0)`;
           // Each part hidden until it is reached.
           frame.style.clipPath = "inset(50%)";
           if (plate) plate.style.opacity = "0";
@@ -507,17 +551,21 @@
           if (track) track.style.display = "none";
           const startedAt = performance.now();
           let ended = false;
+          let plateShown = false;
+          const showPlate = () => {
+            if (plateShown || !plate) return;
+            plateShown = true;
+            plate.style.transition = "opacity 240ms ease";
+            plate.style.opacity = "";
+          };
           const end = () => {
             if (ended) return;
             ended = true;
             frame.style.clipPath = "";
-            for (const key of ["maskImage", "maskSize", "maskRepeat", "webkitMaskImage", "webkitMaskSize", "webkitMaskRepeat"])
-              stage.style[key] = "";
+            barFog.remove();
+            bodyFog.remove();
             home.style.visibility = "";
-            if (plate) {
-              plate.style.transition = "opacity 240ms ease";
-              plate.style.opacity = "";
-            }
+            showPlate();
             removeEventListener("resize", clipSquircles);
             boot.remove();
           };
@@ -579,17 +627,14 @@
               const bottom = mix(top + tall, win.bottom, drop);
               const round = mix(tall / 2, radius, clamp(drop * 3));
               frame.style.clipPath = `inset(${top - win.top}px ${win.right - right}px ${win.bottom - bottom}px ${left - win.left}px round ${round}px)`;
-              const ex = right - win.left - lag;
-              const ey = bottom - win.top - lag;
-              const image = `linear-gradient(to right, #000 ${ex - feather}px, transparent ${ex}px), linear-gradient(to bottom, transparent ${barHeight}px, #000 ${barHeight}px, #000 ${ey - feather}px, transparent ${ey}px)`;
-              const sizes = `100% ${barHeight}px, 100% 100%`;
-              stage.style.maskImage = image;
-              stage.style.webkitMaskImage = image;
-              stage.style.maskSize = sizes;
-              stage.style.webkitMaskSize = sizes;
-              stage.style.maskRepeat = "no-repeat";
-              stage.style.webkitMaskRepeat = "no-repeat";
-              if (flight >= 1.22) {
+              // The mist clears behind each edge, slower than the edge, and
+              // goes on past it once the window is out.
+              const fogX = mix(fogX0, win.width, clears(clamp((flight - 0.47) / 0.6)));
+              const fogY = mix(fogY0, win.height, clears(clamp((flight - 0.74) / 0.68)));
+              barMist.style.transform = `translate3d(${fogX}px, 0, 0)`;
+              bodyMist.style.transform = `translate3d(0, ${fogY - barHeight}px, 0)`;
+              if (drop >= 1) showPlate();
+              if (flight >= 1.42) {
                 end();
                 return;
               }
