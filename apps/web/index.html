@@ -536,11 +536,17 @@
               ring.setAttribute("stroke-width", String(width));
               ring.style.display = t < closing ? "" : "none";
               const after = t - closing;
+              const grown = mix(r0, DOT, swell(clamp(t / closing)));
+              // Where the ring's inner edge reaches the dot the two overlap a
+              // little, so no hairline shows between their edges.
+              const hole = (size - width) / 2;
               dot.setAttribute(
                 "r",
                 String(
                   after < 0
-                    ? mix(r0, DOT, swell(clamp(t / closing)))
+                    ? hole < grown + 1.5
+                      ? Math.max(grown, hole + 1)
+                      : grown
                     : DOT * (1 + 0.14 * Math.sin(clamp(after / 0.22) * Math.PI)),
                 ),
               );
@@ -590,7 +596,9 @@
             }
             requestAnimationFrame(step);
           };
-          requestAnimationFrame(step);
+          // The first frame now: the arc and track are already hidden, so
+          // waiting a frame would show the mark without its ring once.
+          step(startedAt);
           // A tab hidden half way stops frames: never leave the app covered.
           setTimeout(end, 3500);
           return true;
