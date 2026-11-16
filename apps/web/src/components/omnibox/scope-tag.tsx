@@ -16,38 +16,46 @@ import {
 } from "react";
 import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
+import { SMOOTHING, squirclePath } from "../../lib/squircle-path";
 import { buttonHeight, buttonRadius } from "../ui/button";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { useContentWidth } from "../ui/morph-label";
 import { TagHint } from "../ui/tag-hint";
 import { omniboxMetrics } from "./state";
 
-// 作用域标签 (redesign/02 §4, 2026-10-29): a 主标签 6px above the box, its
-// left edge on the box's, with the 红包's name and ×; an 图标标签 inside the
-// box, mirroring its 提交 button; and an 8px 细连杆 between them across the
-// box's top edge, round where it meets either. One fill and one rim (gold
-// on 代码判定's lacquer, which a dark page behind would swallow) around
-// them as one shape, so nothing shows where they meet.
+// 作用域标签 (redesign/02 §4, 2026-10-29; its shape and motion 2026-11-16):
+// a 主标签 6px above the box, its left edge on the box's, with the 红包's
+// name and ×; an 图标标签 inside the box, the same squircle as its 提交
+// button; and a neck between them across the box's top edge. One fill and
+// one rim (gold on 代码判定's lacquer, which a dark page behind would
+// swallow) around them as one shape.
 //
-// It grows (02 §4 过渡): the 图标标签 swells in the box, pushing what is
-// typed along; the 连杆 shoots up out of it through the box's top edge;
-// the 主标签 buds at its tip as the box moves down to make room, then
-// spreads out to either side. Going, the other way round: the sides draw
-// in, the bud sinks as the box comes back up, the 连杆 draws down, and the
-// 图标标签 shrinks away, what is typed sliding back to where the 协议标签
-// comes back. Folding back to the top bar it does none of that: the whole
-// group fades with the box's contents as the box flies, and the room it
-// made for the 主标签 is given back in the same flight (02 §4 收回顶栏).
+// The neck is liquid: the parts are drawn twice, once blurred and cut at
+// half (a "goo" filter), which melts them together with smooth curves
+// wherever they come close, and once exactly, so the 主标签 and the
+// 图标标签 keep their squircle corners. The rim follows the whole outline.
+//
+// It grows like a drop (user 2026-11-16): the 图标标签 pops into the box,
+// pushing what is typed along; a drop draws up out of it through the box's
+// top edge, swelling into a bud as the box moves down to make room; then
+// the words come and push the bud out into the 主标签. Springs, so each
+// part overshoots a little and settles. Going, the other way round: the
+// words out first, the 主标签 drawn back into the bud, the bud sinking into
+// the 图标标签 as the box comes back up, and the 图标标签 shrinking away,
+// what is typed staying where the 协议标签 comes back. Folding back to the
+// top bar it does none of that: the whole group fades with the box's
+// contents as the box flies, and the room it made for the 主标签 is given
+// back in the same flight (02 §4 收回顶栏).
 
 export type ScopePurpose = "claim" | "verify" | "code";
 
 /** Between the 主标签 and the box. */
 const GAP = 6;
-/** The 连杆, on the 图标标签's middle, and its round joins. */
-const STEM = 8;
-const JOIN_TOP = 4;
-const JOIN_BOTTOM = 3;
 const TAG_RADIUS = 9;
+/** The neck as drawn: the goo melts it down to about half, with its joins. */
+const NECK = 10;
+/** How far the goo reaches: the size of the curves where the parts meet. */
+const GOO_BLUR = 4;
 
 /**
  * The 图标标签: as tall as the box's 提交 button and as far from the box's
@@ -61,7 +69,7 @@ function badgeOf(compact: boolean) {
     size,
     left,
     radius: compact ? buttonRadius.bar : buttonRadius.md,
-    /** The 连杆's middle, the 图标标签's. */
+    /** The neck's middle, the 图标标签's. */
     middle: left + size / 2,
   };
 }
@@ -126,12 +134,11 @@ export type ScopeGrowth = {
   /** Still drawn: growing, grown, or going. */
   rendered: boolean;
   badge: MotionValue<number>;
-  stem: MotionValue<number>;
-  /** The 主标签 budding, and the box moving down for it, as one. */
+  /** The drop rising into the bud, and the box moving down for it, as one. */
   rise: MotionValue<number>;
-  /** The 主标签 spreading out to either side. */
+  /** The words pushing the bud out into the 主标签. */
   spread: MotionValue<number>;
-  /** The 主标签's words: out first when it folds, before the sides draw in. */
+  /** The 主标签's words: out first when it folds, before it draws in. */
   words: MotionValue<number>;
   /** The whole group, fading with the box's contents (收回顶栏). */
   fade: MotionValue<number>;
@@ -140,33 +147,48 @@ export type ScopeGrowth = {
 };
 
 type Stage = {
-  value: "badge" | "stem" | "rise" | "spread" | "words";
+  value: "badge" | "rise" | "spread" | "words";
   delay: number;
-  duration: number;
-  ease: [number, number, number, number];
-};
+} & (
+  | { spring: { visualDuration: number; bounce: number } }
+  | { duration: number; ease: [number, number, number, number] }
+);
 
-/** Growing: each stage takes over from the one before (02 §4 过渡). */
+/**
+ * Growing, like a drop: each stage a spring taking over from the one
+ * before, so each part goes a little past and settles (02 §4 过渡).
+ */
 const GROW: Stage[] = [
-  // Swells, a little past its size, and settles.
-  { value: "badge", delay: 0, duration: 0.36, ease: [0.34, 1.45, 0.64, 1] },
-  { value: "stem", delay: 0.2, duration: 0.22, ease: [0.45, 0, 0.2, 1] },
-  { value: "rise", delay: 0.34, duration: 0.42, ease: [0.22, 1, 0.36, 1] },
-  { value: "spread", delay: 0.48, duration: 0.5, ease: [0.3, 1.32, 0.5, 1] },
+  // Lands in the box: past its size, and back.
+  { value: "badge", delay: 0, spring: { visualDuration: 0.32, bounce: 0.35 } },
+  // Draws up and swells; a drop's give at the top.
+  { value: "rise", delay: 0.16, spring: { visualDuration: 0.4, bounce: 0.18 } },
+  // Pushed wide by the words: wider than they need, then settling.
+  {
+    value: "spread",
+    delay: 0.44,
+    spring: { visualDuration: 0.42, bounce: 0.28 },
+  },
 ];
 
 /**
- * Going: the words out first (02 §4: never cut short as the sides close
- * on them), the sides, then the bud and the box, the 连杆, the 图标标签.
+ * Going: the words out first (02 §4: never cut short as it draws in on
+ * them), the 主标签 back into the bud, the bud sinking (and the box with it),
+ * then the 图标标签 with a breath in. Curves that speed up into each stage:
+ * it is pulled back, not thrown.
  */
 const SHRINK: Stage[] = [
-  { value: "words", delay: 0, duration: 0.1, ease: [0.4, 0, 1, 1] },
-  { value: "spread", delay: 0.06, duration: 0.22, ease: [0.55, 0, 0.75, 0.2] },
-  { value: "rise", delay: 0.18, duration: 0.3, ease: [0.6, 0, 0.3, 1] },
-  { value: "stem", delay: 0.38, duration: 0.16, ease: [0.5, 0, 0.8, 0.4] },
-  // A breath in before it goes.
-  { value: "badge", delay: 0.48, duration: 0.26, ease: [0.36, 0, 0.66, -0.5] },
+  { value: "words", delay: 0, duration: 0.09, ease: [0.4, 0, 1, 1] },
+  { value: "spread", delay: 0.03, duration: 0.22, ease: [0.4, 0, 0.6, 0.5] },
+  { value: "rise", delay: 0.18, duration: 0.28, ease: [0.6, 0, 0.35, 1] },
+  { value: "badge", delay: 0.38, duration: 0.24, ease: [0.36, 0, 0.66, -0.4] },
 ];
+
+function stageTransition(stage: Stage, delay: number) {
+  return "spring" in stage
+    ? { type: "spring" as const, ...stage.spring, delay }
+    : { duration: stage.duration, ease: stage.ease, delay };
+}
 
 /**
  * The 作用域标签 growing in while `present`, and away after: its stages, and
@@ -181,17 +203,16 @@ export function useScopeGrowth(
 ): ScopeGrowth {
   const reduced = useReducedMotionPref();
   const badge = useMotionValue(0);
-  const stem = useMotionValue(0);
   const rise = useMotionValue(0);
   const spread = useMotionValue(0);
   const words = useMotionValue(1);
   const fade = useMotionValue(1);
   const rest = useMotionValue(0);
   const [rendered, setRendered] = useState(present);
-  const values = useRef({ badge, stem, rise, spread, words });
+  const values = useRef({ badge, rise, spread, words });
   useEffect(() => {
     const all = values.current;
-    const stages = [all.badge, all.stem, all.rise, all.spread];
+    const stages = [all.badge, all.rise, all.spread];
     const settle = () => {
       for (const value of stages) value.jump(0);
       all.words.jump(1);
@@ -218,11 +239,11 @@ export function useScopeGrowth(
           ? [animate(fade, 1, { duration: durations.fadeIn, ease })]
           : []),
         ...GROW.map((stage) =>
-          animate(all[stage.value], 1, {
-            delay: start + stage.delay * (resumed ? 0.5 : 1),
-            duration: stage.duration,
-            ease: stage.ease,
-          }),
+          animate(
+            all[stage.value],
+            1,
+            stageTransition(stage, start + stage.delay * (resumed ? 0.5 : 1)),
+          ),
         ),
       ];
     } else if (leave.current === "fade") {
@@ -235,11 +256,7 @@ export function useScopeGrowth(
     } else {
       rest.jump(SCHEME_CHIP_REST);
       controls = SHRINK.map((stage) =>
-        animate(all[stage.value], 0, {
-          delay: stage.delay,
-          duration: stage.duration,
-          ease: stage.ease,
-        }),
+        animate(all[stage.value], 0, stageTransition(stage, stage.delay)),
       );
     }
     let stopped = false;
@@ -254,7 +271,7 @@ export function useScopeGrowth(
       for (const control of controls) control.stop();
     };
   }, [present, reduced, wait, leave, fade, rest]);
-  return { rendered, badge, stem, rise, spread, words, fade, rest };
+  return { rendered, badge, rise, spread, words, fade, rest };
 }
 
 /**
@@ -283,9 +300,11 @@ export function ScopeBadgeSpace({
     const rest = growth.rest.get();
     return rest + (size - rest) * Math.max(0, growth.badge.get());
   });
-  const marginRight = useTransform(() =>
-    growth.rest.get() > 0 ? 0 : Math.min(0, growth.badge.get() - 1) * 8,
-  );
+  const marginRight = useTransform(() => {
+    const rest = growth.rest.get();
+    const b = growth.badge.get();
+    return rest > 0 ? 0 : Math.min(0, b - 1) * 8;
+  });
   const comeback = useTransform(() =>
     Math.max(0, Math.min(1, (1 - growth.badge.get()) * 1.5)),
   );
@@ -307,19 +326,9 @@ export function ScopeBadgeSpace({
   );
 }
 
-/** A round join: `x`,`y` its inner corner, `dx`,`dy` which way it reaches. */
-function join(x: number, y: number, dx: number, dy: number, r: number) {
-  if (r <= 0.1) return "";
-  const sweep = dx * dy > 0 ? 1 : 0;
-  return `M${x} ${y}L${x + dx * r} ${y}A${r} ${r} 0 0 ${sweep} ${x} ${y + dy * r}Z`;
-}
-
-/** A rounded rectangle as a path. */
-function box(x: number, y: number, w: number, h: number, r: number) {
-  if (w <= 0 || h <= 0) return "";
-  const k = Math.max(0, Math.min(r, w / 2, h / 2));
-  return `M${x + k} ${y}L${x + w - k} ${y}A${k} ${k} 0 0 1 ${x + w} ${y + k}L${x + w} ${y + h - k}A${k} ${k} 0 0 1 ${x + w - k} ${y + h}L${x + k} ${y + h}A${k} ${k} 0 0 1 ${x} ${y + h - k}L${x} ${y + k}A${k} ${k} 0 0 1 ${x + k} ${y}Z`;
-}
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const mix = (from: number, to: number, amount: number) =>
+  from + (to - from) * amount;
 
 /**
  * The 作用域标签 over the box (from the box's top-left), as far grown as
@@ -346,6 +355,7 @@ export function ScopeTag({
   const [contentRef, measured] = useContentWidth();
   const fillId = useId();
   const rimId = useId();
+  const gooId = useId();
   const tone = tones[purpose];
   const Icon = icons[purpose];
   const height = tagHeight(compact);
@@ -356,9 +366,8 @@ export function ScopeTag({
 
   // The 主标签's full width: its words' up to the box's, eased as they change.
   // A pixel to spare: the width is read whole, the words are not.
-  const bud = STEM + JOIN_TOP * 2;
   const natural = measured === null ? left + size : measured.width + 1;
-  const target = Math.max(left + size, Math.min(natural, maxWidth));
+  const target = Math.max(height, Math.min(natural, maxWidth));
   const truncated = natural > maxWidth;
   const full = useMotionValue(target);
   useEffect(() => {
@@ -366,77 +375,90 @@ export function ScopeTag({
     else animate(full, target, { duration: 0.2, ease });
   }, [target, reduced, measured?.instant, full]);
 
-  // The 主标签 as it grows: a bud on the 连杆's tip, its foot GAP above the
-  // box, rising out of it, then spreading to the box's left edge and to
-  // its full width on the right.
-  const { badge, stem, rise, spread, fade } = growth;
-  const headHeight = useTransform(() => height * Math.max(0, rise.get()));
-  const headTop = useTransform(() => -GAP - headHeight.get());
+  // The drop: out of the 图标标签's middle, up through the box's top edge
+  // to where the 主标签 will sit, swelling into a bud as tall as it.
+  const { badge, rise, spread, fade } = growth;
+  const bud = useTransform(
+    () => height * clamp01(Math.max(0, rise.get()) * 1.25) ** 0.8,
+  );
+  const budMiddle = useTransform(() =>
+    mix(left + size * 0.4, -GAP - height / 2, Math.min(1.05, rise.get())),
+  );
+  // The bud pushed out by the words: its left edge to the box's, its right
+  // to the words' end (a spring may carry it a little past, never past the
+  // box), its round ends into the 主标签's squircle corners.
   const headLeft = useTransform(
-    () => middle - bud / 2 - (middle - bud / 2) * spread.get(),
+    () =>
+      middle - bud.get() / 2 - (middle - bud.get() / 2) * clamp01(spread.get()),
   );
   const headRight = useTransform(() =>
     Math.min(
       maxWidth,
-      middle + bud / 2 + (full.get() - middle - bud / 2) * spread.get(),
+      mix(middle + bud.get() / 2, full.get(), Math.max(0, spread.get())),
     ),
   );
-  const headWidth = useTransform(() => headRight.get() - headLeft.get());
-  const words = useTransform(
-    () =>
-      Math.max(0, Math.min(1, (spread.get() - 0.55) / 0.4)) *
-      growth.words.get(),
+  const headWidth = useTransform(() =>
+    Math.max(0, headRight.get() - headLeft.get()),
   );
+  const headTop = useTransform(() => budMiddle.get() - bud.get() / 2);
+  const words = useTransform(
+    () => clamp01((spread.get() - 0.12) / 0.45) * growth.words.get(),
+  );
+  // Squeezed out of the bud: the words come from a little to its side.
+  const wordsShift = useTransform(() => mix(-6, 0, clamp01(spread.get())));
+  // Where the words sit inside the bud as it moves: their own place.
+  const rowLeft = useTransform(() => -headLeft.get());
+  const rowTop = useTransform(() => bud.get() / 2 - height / 2);
 
-  const shape = useTransform(() => {
+  // A computed value follows only what its first run read: everything is
+  // read before anything is decided.
+  const exact = useTransform(() => {
     const b = Math.max(0, badge.get());
-    const s = Math.max(0, Math.min(1, stem.get()));
-    const h = headHeight.get();
-    const parts: string[] = [];
-    // The 图标标签, swelling from its middle.
+    const tall = bud.get();
+    const s = clamp01(spread.get());
+    const head = [headLeft.get(), headTop.get(), headWidth.get()] as const;
     const side = size * b;
-    parts.push(
-      box(
+    const parts = [
+      squirclePath(
         middle - side / 2,
         left + size / 2 - side / 2,
         side,
         side,
         radius * Math.min(1, b),
       ),
-    );
-    if (s > 0) {
-      // The 连杆, up from the 图标标签 (2px into it) to the 主标签 (2px in).
-      const top = left - s * (left + GAP + 2);
-      const x = middle - STEM / 2;
-      parts.push(box(x, top, STEM, left + 2 - top, Math.min(STEM / 2, 1.5)));
-      const low = JOIN_BOTTOM * Math.min(1, s * 3);
-      parts.push(join(x, left, -1, -1, low), join(x + STEM, left, 1, -1, low));
-      if (h > 0) {
-        const high = JOIN_TOP * Math.min(1, h / 6);
-        parts.push(
-          join(x, -GAP, -1, 1, high),
-          join(x + STEM, -GAP, 1, 1, high),
-        );
-      }
-    }
-    if (h > 0)
+    ];
+    if (tall > 0.5)
       parts.push(
-        box(
-          headLeft.get(),
-          -GAP - h,
-          headWidth.get(),
-          h,
-          Math.min(TAG_RADIUS, h / 2),
+        squirclePath(
+          head[0],
+          head[1],
+          head[2],
+          tall,
+          mix(tall / 2, TAG_RADIUS, s),
+          mix(0, SMOOTHING, s),
         ),
       );
     return parts.join("");
+  });
+  // What the goo melts together: the parts and a neck from the 图标标签's
+  // middle to the bud's, thicker while the drop is still drawing up.
+  const molten = useTransform(() => {
+    const parts = exact.get();
+    const q = rise.get();
+    const b = badge.get();
+    const top = budMiddle.get();
+    if (q <= 0.02 || b <= 0.3) return parts;
+    const width = mix(NECK + 4, NECK, clamp01(q));
+    const bottom = left + size / 2;
+    return `${parts}M${middle - width / 2} ${top}h${width}V${bottom}h${-width}Z`;
   });
 
   const iconScale = useTransform(() => Math.max(0, badge.get()));
   const iconOpacity = useTransform(() =>
     Math.max(0, Math.min(1, badge.get() * 1.6 - 0.3)),
   );
-  const top = -(height + GAP + 4);
+  // Room above for a drop that rises a little past its place.
+  const top = -(height + GAP + 12);
 
   const titleClass = "min-w-0 flex-1 truncate text-[13px] font-medium";
   const row = "items-center gap-0.5 pr-0.5 pl-2.5";
@@ -467,21 +489,38 @@ export function ScopeTag({
             id={fillId}
             gradientUnits="userSpaceOnUse"
             x1="0"
-            y1={top}
+            y1={-(height + GAP)}
             x2="0"
             y2={left + size}
           >
             <stop offset="0" stopColor={tone.top} />
             <stop offset="1" stopColor={tone.bottom} />
           </linearGradient>
-          {/* One hairline round the parts as one shape, however far grown. */}
+          {/* Blurred and cut at half: the parts melt where they come close,
+              and straight edges stay where they are. */}
+          <filter
+            id={gooId}
+            filterUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
+            x={-16}
+            y={top - 16}
+            width={maxWidth + 32}
+            height={left + size - top + 32}
+          >
+            <feGaussianBlur stdDeviation={GOO_BLUR} />
+            <feColorMatrix
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"
+            />
+          </filter>
+          {/* One hairline round the whole outline, however far grown. */}
           <filter
             id={rimId}
             filterUnits="userSpaceOnUse"
-            x={-8}
-            y={top - 8}
-            width={maxWidth + 16}
-            height={left + size - top + 16}
+            x={-16}
+            y={top - 16}
+            width={maxWidth + 32}
+            height={left + size - top + 32}
           >
             <feMorphology
               in="SourceAlpha"
@@ -497,27 +536,38 @@ export function ScopeTag({
             </feMerge>
           </filter>
         </defs>
-        <motion.path
-          d={shape}
-          fill={`url(#${fillId})`}
-          filter={`url(#${rimId})`}
-        />
+        <g filter={`url(#${rimId})`}>
+          <motion.path
+            d={molten}
+            fill={`url(#${fillId})`}
+            filter={`url(#${gooId})`}
+          />
+          <motion.path d={exact} fill={`url(#${fillId})`} />
+        </g>
       </svg>
-      {/* The 主标签's words and ×, over its shape, rising with it. */}
+      {/* The 主标签's words and ×, in their own place, shown as the bud
+          grows round them. */}
       <motion.div
         className="pointer-events-auto absolute overflow-hidden"
         style={{
           left: headLeft,
           top: headTop,
           width: headWidth,
-          height: headHeight,
+          height: bud,
           color: tone.ink,
         }}
         data-scope-tag={purpose}
       >
         <motion.span
-          className={cn("absolute bottom-0 left-0 flex min-w-0", row)}
-          style={{ height, width: headWidth, opacity: words }}
+          className={cn("absolute flex min-w-0", row)}
+          style={{
+            left: rowLeft,
+            top: rowTop,
+            height,
+            width: full,
+            x: wordsShift,
+            opacity: words,
+          }}
         >
           {title === null ? (
             placeholder

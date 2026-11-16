@@ -515,7 +515,8 @@ export function Omnibox() {
     shownTitle.current = scopeFacts ? scopeFacts.title : null;
   }
   const tagOffset = useTransform(
-    () => growth.rise.get() * scopeTagSpace(compact),
+    // The drop may rise a little past its place; the box does not.
+    () => Math.max(0, Math.min(1, growth.rise.get())) * scopeTagSpace(compact),
   );
   const geometry = useSlotGeometry(
     target,
