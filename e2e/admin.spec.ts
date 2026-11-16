@@ -733,6 +733,86 @@ test.describe("网站管理", () => {
     await expect(page.getByText("三方积分 3 项要看")).toBeVisible();
   });
 
+  test("三方积分：写明谁暂停的；添加的人自己暂停的，恢复前先问一次", async ({
+    page,
+  }) => {
+    await mockSession(page, admin);
+    const pausedAt = Date.now() - 20 * 60_000;
+    const system = {
+      id: "eeeeeeee-1111-4222-8333-444444444444",
+      name: "星星",
+      unit: "星星",
+      step: 100,
+      issuerName: "星星乐园",
+      host: "stars.example.com",
+      status: "paused",
+      intro: "",
+      keyGuide: "",
+      noRecipient: "",
+      arrival: "",
+      notAllowed: "",
+      insufficient: "",
+      keyInvalid: "",
+      baseUrl: "https://stars.example.com/hb",
+      rate: 5,
+      endpointVersion: 1,
+      hasTestKey: true,
+      testRecipientId: "1",
+      passed: true,
+      passedTestId: "t1",
+      lastTestStartedAt: null,
+      submittedAt: null,
+      reviewedAt: Date.now() - 86_400_000,
+      reviewNote: null,
+      onlineAt: Date.now() - 86_400_000,
+      pausedBy: "owner",
+      pausedAt,
+      retiredAt: null,
+      breakerUntil: null,
+      version: 3,
+      createdAt: Date.now() - 2 * 86_400_000,
+      updatedAt: pausedAt,
+      ownerUsername: "stars_owner",
+      missedInRow: 0,
+      today: { calls: {}, total: 0, answeredRate: null, averageMs: null },
+      openHongbao: 2,
+      unseenChanges: 0,
+      attention: 0,
+    };
+    const acted: unknown[] = [];
+    await page.route("**/api/admin/points", (route) =>
+      route.fulfill({
+        json: {
+          settings: { enabled: true, version: 1, updatedAt: Date.now() },
+          systems: [system],
+        },
+      }),
+    );
+    await page.route("**/api/admin/points/*/resume", (route) => {
+      acted.push(route.request().url());
+      return route.fulfill({
+        json: { system: { ...system, status: "online" } },
+      });
+    });
+    await openApp(page, `/admin/points?id=${system.id}`);
+    await expect(page.getByText("添加的人暂停的").first()).toBeVisible();
+    await expect(page.getByText(/^添加的人 .+ 暂停的$/)).toBeVisible();
+    await page.getByRole("button", { name: "恢复", exact: true }).click();
+    const ask = page.getByRole("dialog", { name: "恢复「星星」" });
+    await expect(
+      ask.getByText(/这是添加它的 @stars_owner 在 .+ 自己暂停的/),
+    ).toBeVisible();
+    await ask.getByRole("button", { name: "返回" }).click();
+    await expect(ask).toHaveCount(0);
+    expect(acted).toEqual([]);
+    await page.getByRole("button", { name: "恢复", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "恢复「星星」" })
+      .getByRole("button", { name: "恢复" })
+      .click();
+    await expect.poll(() => acted.length).toBe(1);
+  });
+
   test("网站设置：别人先存了，改过的那一项保留，其余跟着新版本", async ({
     page,
   }) => {

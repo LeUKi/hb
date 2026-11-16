@@ -67,6 +67,12 @@ const whole: LazyList = {
 const resting = (row: AdminPointsRow) =>
   row.breakerUntil !== null && row.breakerUntil > Date.now();
 
+/** Who paused it: the 站长, or the one who added it (they cannot undo the 站长's). */
+const pausedByWords = (row: AdminPointsRow) =>
+  row.status !== "paused"
+    ? null
+    : `${row.pausedBy === "admin" ? "站长" : "添加的人"}${row.pausedAt ? ` ${clockLabel(row.pausedAt)} ` : ""}暂停的`;
+
 export function AdminPoints({ search }: { search: AdminSearch }) {
   const navigate = useNavigate({ from: "/admin/points" });
   const query = useAdminPoints();
@@ -279,6 +285,11 @@ function RowBody({ row }: { row: AdminPointsRow }) {
         <StatusChip tone={statusTones[row.status]}>
           {statusWords[row.status]}
         </StatusChip>
+        {row.status === "paused" && (
+          <span className="text-xs text-ink-3">
+            {row.pausedBy === "admin" ? "站长暂停的" : "添加的人暂停的"}
+          </span>
+        )}
         {resting(row) && <StatusChip tone="danger">熔断中</StatusChip>}
         {row.attention > 0 && (
           <StatusChip tone="danger" dot>
@@ -318,8 +329,8 @@ function Detail({ row }: { row: AdminPointsRow }) {
           <StatusChip tone={statusTones[row.status]}>
             {statusWords[row.status]}
           </StatusChip>
-          {row.status === "paused" && row.pausedBy === "admin" && (
-            <span className="text-xs text-ink-3">站长暂停的</span>
+          {row.status === "paused" && (
+            <span className="text-xs text-ink-3">{pausedByWords(row)}</span>
           )}
           {resting(row) && (
             <StatusChip tone="danger">
@@ -492,15 +503,21 @@ function Review({ row }: { row: AdminPointsRow }) {
   );
 }
 
-/** 暂停 / 恢复 at once; 下架 asks first (its open 红包 end). */
+/**
+ * 暂停 at once; 恢复 at once when the 站长 paused it, but one its adder
+ * paused themself asks first (they may be fixing their side, and are told
+ * it is back); 下架 asks first (its open 红包 end).
+ */
 function Actions({ row }: { row: AdminPointsRow }) {
   const actions = useAdminPointsActions();
   const [retiring, setRetiring] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const theirs = row.status === "paused" && row.pausedBy !== "admin";
   const error = actions.act.error;
   const busy = actions.act.isPending;
   return (
     <div className="grid gap-2 border-line border-t pt-3">
-      {error && !retiring && (
+      {error && !retiring && !resuming && (
         <p role="alert" className="text-sm text-danger">
           {error instanceof ActivityRequestError
             ? error.message
@@ -524,7 +541,9 @@ function Actions({ row }: { row: AdminPointsRow }) {
             size="sm"
             aria-disabled={busy || undefined}
             onClick={() => {
-              if (!busy) actions.act.mutate({ id: row.id, action: "resume" });
+              if (theirs) setResuming(true);
+              else if (!busy)
+                actions.act.mutate({ id: row.id, action: "resume" });
             }}
           >
             恢复
@@ -534,6 +553,38 @@ function Actions({ row }: { row: AdminPointsRow }) {
           下架
         </Button>
       </div>
+      <ConfirmDialog
+        open={resuming}
+        onClose={() => setResuming(false)}
+        busy={busy}
+        title={`恢复「${row.name}」`}
+        text={`这是添加它的 @${row.ownerUsername}${row.pausedAt ? ` 在 ${clockLabel(row.pausedAt)} ` : " "}自己暂停的，他可能正在处理那边的网站。恢复后马上又能用它发红包和领取，他会收到私信。`}
+        error={
+          resuming && error
+            ? error instanceof ActivityRequestError
+              ? error.message
+              : "恢复没有完成，请稍后再试。"
+            : null
+        }
+        actions={
+          <>
+            <Button onClick={() => setResuming(false)}>返回</Button>
+            <Button
+              variant="primary"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                actions.act.mutate(
+                  { id: row.id, action: "resume" },
+                  { onSuccess: () => setResuming(false) },
+                );
+              }}
+            >
+              {busy ? "正在恢复…" : "恢复"}
+            </Button>
+          </>
+        }
+      />
       <ConfirmDialog
         open={retiring}
         onClose={() => setRetiring(false)}
