@@ -51,6 +51,15 @@ async function record(
   // that misses says so to the person who asked.
   // An answer ends an outage; the first trip of one is told to its owner
   // once (私信通知, docs/notification-design.md §3.3).
+  if (counts && call.answered)
+    // 操作记录 (§17): an outage ends with this answer.
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO points_events (id,system_id,at,actor,actor_id,action,note)
+         SELECT ?1,id,?2,'system',NULL,'breaker_end',NULL FROM points_systems
+         WHERE id=?3 AND breaker_noticed_at IS NOT NULL`,
+      ).bind(crypto.randomUUID(), now, target.id),
+    );
   if (counts)
     statements.push(
       call.answered
@@ -71,11 +80,26 @@ async function record(
             now,
           ),
     );
+  if (counts && !call.answered)
+    // 操作记录 (§17): the first trip of an outage, as its owner is told.
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO points_events (id,system_id,at,actor,actor_id,action,note)
+         SELECT ?1,id,?2,'system',NULL,'breaker',?3 FROM points_systems
+         WHERE id=?4 AND breaker_noticed_at=?2`,
+      ).bind(
+        crypto.randomUUID(),
+        now,
+        `连续 ${POINTS_LIMITS.breakerMisses} 次没有回复，发放暂停 ${POINTS_LIMITS.breakerPauseMs / 60_000} 分钟`,
+        target.id,
+      ),
+    );
   try {
     const results = await env.DB.batch(statements);
     const breaker =
       counts && !call.answered
-        ? (results.at(-1)?.results?.[0] as
+        ? // The breaker's own update, just after the call's row.
+          (results[1]?.results?.[0] as
             | { breaker_noticed_at: number | null }
             | undefined)
         : undefined;

@@ -1,6 +1,7 @@
 // One 三方积分's own pages in 网站管理 (docs/third-party-points-design.md
 // §7): 配置 (every setting, each word as it renders), 文案改动 (before and
-// after, unseen marked, 都看过了) and 接口测试记录 (each run and its steps).
+// after, unseen marked, 都看过了), 接口测试记录 (each run and its steps)
+// and 操作记录 (§17: who did what, newest first).
 // One level down from the list, each with its way back to the row it came
 // from (/admin/points?id=). 发放记录 is points-records.tsx, shared with the
 // issuer.
@@ -9,11 +10,15 @@ import { ActivityRequestError } from "../../../lib/activities";
 import {
   type AdminPointsDetail,
   type PointsCopy,
+  type PointsEvent,
   useAdminPointsActions,
   useAdminPointsDetail,
+  useAdminPointsEvents,
 } from "../../../lib/points";
+import { pointsEventLine } from "../../../lib/points-words";
 import { clockLabel } from "../../../lib/roster-time";
 import { amountText } from "../../../lib/units";
+import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import {
   EmptyNote,
   InfoList,
@@ -284,6 +289,71 @@ export function AdminPointsTests({ id }: { id: string }) {
                 </ol>
               </Panel>
             ))}
+          </div>
+        )
+      }
+    </SystemPage>
+  );
+}
+
+/** Who did it, in the 站长's words. */
+function actorOf(event: PointsEvent) {
+  if (event.actor === "system") return "系统";
+  if (event.actor === "admin")
+    return event.actorUsername ? `站长 @${event.actorUsername}` : "站长";
+  return event.actorUsername ? `添加的人 @${event.actorUsername}` : "添加的人";
+}
+
+/**
+ * 操作记录 (§17): review, 暂停 and 恢复 with their reasons, 下架, settings
+ * changed, the breaker, self-tests and the 站长's moves on payouts; newest
+ * first, 50 at a time. What happened before 2026-11-16 is only its first
+ * 上线, a pause in force then and its 下架.
+ */
+export function AdminPointsEvents({ id }: { id: string }) {
+  const query = useAdminPointsEvents(id);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const events = query.data?.pages.flatMap((page) => page.items) ?? [];
+  return (
+    <SystemPage
+      id={id}
+      title="操作记录"
+      description="谁在什么时候做了什么：审核、暂停和恢复（带原因）、下架、改设置、熔断、接口测试，以及站长对发放的处理。2026-11-16 以前只记得第一次上线、当时的暂停和下架。"
+    >
+      {() =>
+        query.isPending ? (
+          <Panel className="loading-sheen p-4 text-sm text-ink-3">
+            正在读操作记录
+          </Panel>
+        ) : events.length === 0 ? (
+          <EmptyNote title="还没有记录" text="以后的每一步都会记在这里。" />
+        ) : (
+          <div className="grid gap-2">
+            <Panel className="grid px-4">
+              {events.map((event) => (
+                <div
+                  key={event.id}
+                  className="grid gap-0.5 border-line border-b py-3 text-sm last:border-b-0"
+                >
+                  <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                    <span className="text-ink">
+                      {pointsEventLine(event.action, event.note)}
+                    </span>
+                    <span className="ml-auto text-xs text-ink-3">
+                      {clockLabel(event.at)}
+                    </span>
+                  </span>
+                  <span className="text-xs text-ink-3">{actorOf(event)}</span>
+                </div>
+              ))}
+            </Panel>
+            <LazyListEnd list={list} done={`共 ${events.length} 条`} />
           </div>
         )
       }

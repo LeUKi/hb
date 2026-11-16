@@ -21,6 +21,8 @@ export const POINTS_LIMITS = {
   notAllowedMax: 60,
   senderNoticeMax: 100,
   reviewNoteMax: 200,
+  /** 暂停's reason, as its pauser writes it (§17). */
+  pauseReasonMax: 100,
   keyMax: 512,
   baseUrlMax: 200,
   outTradeNoMax: 64,

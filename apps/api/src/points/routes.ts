@@ -26,6 +26,7 @@ import {
   markChangesSeen,
   requeryPayout,
 } from "./admin";
+import { listPointsEvents } from "./events";
 import {
   availableNow,
   keyView,
@@ -89,6 +90,21 @@ const updateSchema = z.strictObject({
   config: pointsSystemConfigSchema,
 });
 const keySchema = z.strictObject({ key: pointsKeySchema });
+
+/**
+ * 暂停's reason (third-party-points §17): an optional JSON body
+ * `{ reason }`; none, or anything else, is no reason.
+ */
+async function pauseReasonOf(request: Request) {
+  const text = await request.text().catch(() => "");
+  if (!text || text.length > 2000) return "";
+  try {
+    const value = JSON.parse(text) as { reason?: unknown };
+    return typeof value.reason === "string" ? value.reason : "";
+  } catch {
+    return "";
+  }
+}
 const reviewSchema = z.strictObject({
   approve: z.boolean(),
   note: z.string().trim().max(200),
@@ -176,6 +192,13 @@ export const pointsRoutes = new Hono<ApiContext>()
         ownerUsername: owner?.username ?? "",
         onlineAt: row.online_at,
         mine: session?.user.id === row.owner_id,
+        // Paused: by whom, and why when they wrote it (§17).
+        ...(row.status === "paused"
+          ? {
+              pausedBy: row.paused_by === "admin" ? "admin" : "owner",
+              pauseReason: row.pause_reason,
+            }
+          : {}),
       },
       key: keyView(key),
     });
@@ -274,6 +297,7 @@ export const pointsRoutes = new Hono<ApiContext>()
         session.user.id,
         c.req.param("id"),
         false,
+        await pauseReasonOf(c.req.raw),
       ),
     });
   })
@@ -380,11 +404,26 @@ export const pointsRoutes = new Hono<ApiContext>()
     const action = c.req.param("action");
     const system =
       action === "pause"
-        ? await pauseSystem(c.env, session.user.id, id, true)
+        ? await pauseSystem(
+            c.env,
+            session.user.id,
+            id,
+            true,
+            await pauseReasonOf(c.req.raw),
+          )
         : action === "resume"
           ? await resumeSystem(c.env, session.user.id, id, true)
           : await retireSystem(c.env, session.user.id, id, true);
     return c.json({ system });
+  })
+  // 操作记录 (§17): newest first, 50 a page.
+  .get("/admin/points/:id/events", async (c) => {
+    await requireAdmin(c);
+    const id = c.req.param("id");
+    await requireSystem(c.env, id);
+    return c.json(
+      await listPointsEvents(c.env, id, c.req.query("cursor") ?? undefined),
+    );
   })
   .post("/admin/points/:id/changes/seen", async (c) => {
     await requireAdminMutation(c);
@@ -392,12 +431,12 @@ export const pointsRoutes = new Hono<ApiContext>()
     return c.json({ ok: true });
   })
   .post("/admin/points/payouts/:id/requery", async (c) => {
-    await requireAdminMutation(c);
-    await requeryPayout(c.env, c.req.param("id"));
+    const session = await requireAdminMutation(c);
+    await requeryPayout(c.env, c.req.param("id"), session.user.id);
     return c.json({ ok: true });
   })
   .post("/admin/points/payouts/:id/fail", async (c) => {
-    await requireAdminMutation(c);
-    await failPayout(c.env, c.req.param("id"));
+    const session = await requireAdminMutation(c);
+    await failPayout(c.env, c.req.param("id"), session.user.id);
     return c.json({ ok: true });
   });

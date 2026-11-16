@@ -1,6 +1,7 @@
 import type { AdminAuditEntry } from "@hb/contracts";
 import { useState } from "react";
 import { useAdminList } from "../../../lib/admin";
+import { pointsEventLine } from "../../../lib/points-words";
 import { fullTime } from "../../../lib/roster-time";
 import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote, Panel } from "../../page/page";
@@ -60,6 +61,7 @@ const kinds = {
   judge_square: "判定器广场",
   roadmap: "施工",
   tip_stop: "停用打赏卡",
+  points: "三方积分",
 } as const;
 
 /** 施工中 (roadmap-design §4): the 站长's move, in the tab's words. */
@@ -82,6 +84,10 @@ function changesOf(entry: AdminAuditEntry) {
     return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
   if (entry.type === "page_stop")
     return [`停用红包「${entry.activity?.title ?? ""}」的附带网页`];
+  if (entry.type === "points" && entry.points)
+    return [
+      `「${entry.points.name}」${pointsEventLine(entry.points.action, entry.points.note)}`,
+    ];
   if (entry.type === "tip_stop")
     return [
       `停用打赏卡「${entry.tipCard?.name ?? ""}」：${entry.tipCard?.reason ?? ""}`,
@@ -237,6 +243,7 @@ export function AdminAudit() {
                       {entry.type !== "code_stop" &&
                         entry.type !== "page_stop" &&
                         entry.type !== "tip_stop" &&
+                        entry.type !== "points" &&
                         entry.type !== "judge_square" &&
                         entry.type !== "roadmap" && (
                           <p className="text-xs text-ink-3">

@@ -34,6 +34,9 @@ export type PointsDetail = {
     ownerUsername: string;
     onlineAt: number | null;
     mine: boolean;
+    /** Paused: by whom, and why when they wrote it (§17). */
+    pausedBy?: "admin" | "owner";
+    pauseReason?: string | null;
   };
   key: PointsKeyView | null;
 };
@@ -61,6 +64,8 @@ export type PointsOwnerView = PointsSystemView & {
   onlineAt: number | null;
   pausedBy: string | null;
   pausedAt: number | null;
+  /** Why it was paused, as its pauser wrote it (§17). */
+  pauseReason: string | null;
   retiredAt: number | null;
   breakerUntil: number | null;
   version: number;
@@ -281,10 +286,13 @@ export function usePointsOwnerActions(userId: string) {
       mutationFn: (input: {
         id: string;
         action: "submit" | "pause" | "resume" | "retire";
+        /** 暂停's reason (§17), optional. */
+        reason?: string;
       }) =>
         send<{ system: PointsOwnerView }>(
           "POST",
           `me/points/${encodeURIComponent(input.id)}/${input.action}`,
+          input.action === "pause" ? { reason: input.reason ?? "" } : undefined,
         ),
       onSuccess: ({ system }) => settle(system),
     }),
@@ -337,7 +345,52 @@ export type AdminPointsRow = PointsOwnerView & {
   openHongbao: number;
   unseenChanges: number;
   attention: number;
+  /** 发放质量 (§17): the last 7 days and the last 24 hours. */
+  week: PayoutQuality;
+  day: PayoutQuality;
+  /** Enough payouts in a day, most refused for the recipient. */
+  failing: boolean;
 };
+
+export type PayoutQuality = {
+  confirmed: number;
+  noRecipient: number;
+  notAllowed: number;
+  otherFailed: number;
+  waiting: number;
+};
+
+/** The share of ended payouts that failed, or null with none ended. */
+export function failedShare(quality: PayoutQuality) {
+  const failed = quality.noRecipient + quality.notAllowed + quality.otherFailed;
+  const ended = quality.confirmed + failed;
+  return ended ? failed / ended : null;
+}
+
+/** 操作记录 (§17): one thing that happened, and who did it. */
+export type PointsEvent = {
+  id: string;
+  at: number;
+  actor: "admin" | "owner" | "system";
+  actorUsername: string | null;
+  action: string;
+  note: string | null;
+};
+
+/** A system's 操作记录, newest first, 50 at a time (the 站长's). */
+export function useAdminPointsEvents(id: string) {
+  return useInfiniteQuery({
+    queryKey: [...pointsKeys.adminOne(id), "events"],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      get<{ items: PointsEvent[]; nextCursor: string | null }>(
+        `admin/points/${encodeURIComponent(id)}/events${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: id !== "",
+  });
+}
 
 export type AdminPayout = {
   id: string;
@@ -416,10 +469,13 @@ export function useAdminPointsActions() {
       mutationFn: (input: {
         id: string;
         action: "pause" | "resume" | "retire";
+        /** 暂停's reason (§17), optional. */
+        reason?: string;
       }) =>
         send(
           "POST",
           `admin/points/${encodeURIComponent(input.id)}/${input.action}`,
+          input.action === "pause" ? { reason: input.reason ?? "" } : undefined,
         ),
       onSuccess: settle,
     }),
@@ -483,7 +539,10 @@ export type PayoutRecord = {
 };
 
 type Sum = { count: number; amountMinor: number };
-type Totals = Record<"confirmed" | "waiting" | "failed", Sum>;
+type Totals = Record<"confirmed" | "waiting", Sum> & {
+  /** 发放失败, and why (§17): the recipient's side, or anything else. */
+  failed: Sum & { noRecipient?: number; notAllowed?: number; other?: number };
+};
 export type PayoutTotals = { today: Totals; week: Totals };
 
 /** One 红包 of a system, with its payouts summed (§7 按红包). */

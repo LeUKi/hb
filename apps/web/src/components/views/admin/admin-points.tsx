@@ -13,6 +13,8 @@ import { ActivityRequestError } from "../../../lib/activities";
 import { cn } from "../../../lib/cn";
 import {
   type AdminPointsRow,
+  failedShare,
+  type PayoutQuality,
   statusWords,
   useAdminPoints,
   useAdminPointsActions,
@@ -47,13 +49,33 @@ type StatusFilter =
   | "paused"
   | "draft"
   | "retired";
-type Anomaly = "payouts" | "changes" | "breaker";
+type Anomaly = "payouts" | "changes" | "breaker" | "owner_paused" | "failing";
 
 const anomalyWords: Record<Anomaly, string> = {
   payouts: "有出问题的发放",
   changes: "有没看的文案改动",
   breaker: "熔断中",
+  owner_paused: "添加的人暂停的",
+  failing: "失败率高",
 };
+
+const ownerPaused = (row: AdminPointsRow) =>
+  row.status === "paused" && row.pausedBy !== "admin";
+
+/** "12%", or "—" with nothing ended. */
+const percent = (share: number | null) =>
+  share === null ? "—" : `${Math.round(share * 100)}%`;
+
+/** 发放质量 (§17) in a line: through, and each failure by why. */
+function qualityLine(quality: PayoutQuality) {
+  const parts = [`到账 ${quality.confirmed} 笔`];
+  if (quality.noRecipient) parts.push(`找不到收款人 ${quality.noRecipient}`);
+  if (quality.notAllowed) parts.push(`不允许 ${quality.notAllowed}`);
+  if (quality.otherFailed) parts.push(`其他失败 ${quality.otherFailed}`);
+  if (quality.waiting) parts.push(`处理中 ${quality.waiting}`);
+  const share = failedShare(quality);
+  return `${parts.join(" · ")}${share === null ? "" : `（失败 ${percent(share)}）`}`;
+}
 
 /** A short list, read at once: nothing more to load. */
 const whole: LazyList = {
@@ -89,7 +111,9 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
   const anomaly =
     search.anomaly === "payouts" ||
     search.anomaly === "changes" ||
-    search.anomaly === "breaker"
+    search.anomaly === "breaker" ||
+    search.anomaly === "owner_paused" ||
+    search.anomaly === "failing"
       ? search.anomaly
       : null;
   const data = query.data;
@@ -100,7 +124,9 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
       (anomaly === null ||
         (anomaly === "payouts" && row.attention > 0) ||
         (anomaly === "changes" && row.unseenChanges > 0) ||
-        (anomaly === "breaker" && resting(row))),
+        (anomaly === "breaker" && resting(row)) ||
+        (anomaly === "owner_paused" && ownerPaused(row)) ||
+        (anomaly === "failing" && row.failing)),
   );
   const cards: Card[] = [
     {
@@ -131,6 +157,21 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
       severe: true,
       search: { anomaly: "breaker" },
     },
+    // §17: worth a look, not a fault of this site's.
+    {
+      key: "owner_paused",
+      label: "添加的人暂停的",
+      count: systems.filter(ownerPaused).length,
+      severe: false,
+      search: { anomaly: "owner_paused" },
+    },
+    {
+      key: "failing",
+      label: "失败率高",
+      count: systems.filter((row) => row.failing).length,
+      severe: false,
+      search: { anomaly: "failing" },
+    },
   ];
   return (
     <PageLoad load={listLoad(query)} area frame>
@@ -152,7 +193,7 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
           </Panel>
         )}
         <PageSection title="需要留意">
-          <ul className="grid grid-cols-2 gap-3 @wide/window:grid-cols-4">
+          <ul className="grid grid-cols-2 gap-3 @wide/window:grid-cols-3">
             {cards.map((card) => (
               <li key={card.key}>
                 <AttentionCard card={card} />
@@ -291,6 +332,7 @@ function RowBody({ row }: { row: AdminPointsRow }) {
           </span>
         )}
         {resting(row) && <StatusChip tone="danger">熔断中</StatusChip>}
+        {row.failing && <StatusChip tone="warning">失败率高</StatusChip>}
         {row.attention > 0 && (
           <StatusChip tone="danger" dot>
             {row.attention} 笔出问题
@@ -306,10 +348,9 @@ function RowBody({ row }: { row: AdminPointsRow }) {
         {row.host} · @{row.ownerUsername} · 开放中 {row.openHongbao} 个
       </span>
       <span className="text-ink-3">
-        今天发放 {row.today.calls.transfer ?? 0} 次 · 有回复{" "}
-        {row.today.answeredRate === null
-          ? "—"
-          : `${Math.round(row.today.answeredRate * 100)}%`}
+        近 7 天到账 {row.week.confirmed} 笔 · 失败{" "}
+        {percent(failedShare(row.week))} · 今天有回复{" "}
+        {percent(row.today.answeredRate)}
       </span>
     </span>
   );
@@ -332,6 +373,7 @@ function Detail({ row }: { row: AdminPointsRow }) {
           {row.status === "paused" && (
             <span className="text-xs text-ink-3">{pausedByWords(row)}</span>
           )}
+          {row.failing && <StatusChip tone="warning">失败率高</StatusChip>}
           {resting(row) && (
             <StatusChip tone="danger">
               熔断到 {clockLabel(row.breakerUntil ?? 0)}
@@ -339,6 +381,9 @@ function Detail({ row }: { row: AdminPointsRow }) {
           )}
         </span>
       </div>
+      {row.status === "paused" && row.pauseReason && (
+        <p className="text-sm text-ink-2">原因：{row.pauseReason}</p>
+      )}
       {row.status === "reviewing" && <Review row={row} />}
       <DetailRows
         rows={[
@@ -367,6 +412,9 @@ function Detail({ row }: { row: AdminPointsRow }) {
             value: row.onlineAt ? clockLabel(row.onlineAt) : "还没上线",
           },
           { label: "开放中的红包", value: `${row.openHongbao} 个` },
+          // 发放质量 (§17): failures by why, not only the broken answers.
+          { label: "近 7 天发放", value: qualityLine(row.week) },
+          { label: "近 24 小时", value: qualityLine(row.day) },
           {
             label: "今天调用",
             value: `查余额 ${row.today.calls.balance ?? 0} · 发放 ${row.today.calls.transfer ?? 0} · 查单 ${row.today.calls.query ?? 0}`,
@@ -401,6 +449,7 @@ function Detail({ row }: { row: AdminPointsRow }) {
           hot={row.unseenChanges > 0}
         />
         <PageLink href={`${base}/tests`} label="接口测试记录" />
+        <PageLink href={`${base}/events`} label="操作记录" />
       </nav>
       {row.status !== "retired" && row.status !== "reviewing" && (
         <Actions row={row} />
@@ -504,20 +553,24 @@ function Review({ row }: { row: AdminPointsRow }) {
 }
 
 /**
- * 暂停 at once; 恢复 at once when the 站长 paused it, but one its adder
- * paused themself asks first (they may be fixing their side, and are told
- * it is back); 下架 asks first (its open 红包 end).
+ * 暂停 asks for a reason (optional; §17: it goes into the 操作记录, the
+ * adder's 私信 and where it shows as paused); 恢复 at once when the 站长
+ * paused it, but one its adder paused themself asks first (they may be
+ * fixing their side, and are told it is back); 下架 asks first (its open
+ * 红包 end).
  */
 function Actions({ row }: { row: AdminPointsRow }) {
   const actions = useAdminPointsActions();
   const [retiring, setRetiring] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [reason, setReason] = useState("");
   const theirs = row.status === "paused" && row.pausedBy !== "admin";
   const error = actions.act.error;
   const busy = actions.act.isPending;
   return (
     <div className="grid gap-2 border-line border-t pt-3">
-      {error && !retiring && !resuming && (
+      {error && !retiring && !resuming && !pausing && (
         <p role="alert" className="text-sm text-danger">
           {error instanceof ActivityRequestError
             ? error.message
@@ -530,7 +583,9 @@ function Actions({ row }: { row: AdminPointsRow }) {
             size="sm"
             aria-disabled={busy || undefined}
             onClick={() => {
-              if (!busy) actions.act.mutate({ id: row.id, action: "pause" });
+              actions.act.reset();
+              setReason("");
+              setPausing(true);
             }}
           >
             暂停
@@ -553,6 +608,52 @@ function Actions({ row }: { row: AdminPointsRow }) {
           下架
         </Button>
       </div>
+      <ConfirmDialog
+        open={pausing}
+        onClose={() => setPausing(false)}
+        busy={busy}
+        title={`暂停「${row.name}」`}
+        text={`暂停后不能用它发新红包，开放中的 ${row.openHongbao} 个红包暂停领取和发放，恢复后接着来。添加的人 @${row.ownerUsername} 会收到私信。`}
+        error={
+          pausing && error
+            ? error instanceof ActivityRequestError
+              ? error.message
+              : "暂停没有完成，请稍后再试。"
+            : null
+        }
+        actions={
+          <>
+            <Button onClick={() => setPausing(false)}>返回</Button>
+            <Button
+              variant="primary"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                actions.act.mutate(
+                  { id: row.id, action: "pause", reason: reason.trim() },
+                  { onSuccess: () => setPausing(false) },
+                );
+              }}
+            >
+              {busy ? "正在暂停…" : "暂停"}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="原因"
+          htmlFor={`pause-${row.id}`}
+          optional
+          hint="写进操作记录和给添加的人的私信；他的积分页和详情页上也看得到。"
+        >
+          <TextInput
+            id={`pause-${row.id}`}
+            value={reason}
+            maxLength={100}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={resuming}
         onClose={() => setResuming(false)}

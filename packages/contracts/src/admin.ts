@@ -92,6 +92,8 @@ export const adminAuditTypeSchema = z.enum([
   "roadmap",
   /** 站长 stopped a 打赏卡 (docs/tip-design.md §12). */
   "tip_stop",
+  /** The 站长's moves on a 三方积分 (docs/third-party-points-design.md §17). */
+  "points",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -376,6 +378,8 @@ export type AdminAuditEntry = {
   activity?: { id: string; title: string };
   /** tip_stop: the 打赏卡 stopped (its name), and why. */
   tipCard?: { code: string; name: string; reason: string | null };
+  /** points: what the 站长 did to which 三方积分 (its name now), and why. */
+  points?: { id: string; name: string; action: string; note: string | null };
   /** judge_square: what was done to which 判定器 (its name then). */
   judge?: {
     id: string;

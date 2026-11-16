@@ -331,17 +331,18 @@ export async function payoutTotals(env: ApiBindings, systemId: string) {
   const week = Date.now() - 7 * DAY_MS;
   const today = startOfToday();
   const rows = await env.DB.prepare(
-    `SELECT status,COUNT(*) AS count,SUM(amount_minor) AS amount,
+    `SELECT status,reason,COUNT(*) AS count,SUM(amount_minor) AS amount,
         SUM(CASE WHEN updated_at>=?3 THEN 1 ELSE 0 END) AS today_count,
         SUM(CASE WHEN updated_at>=?3 THEN amount_minor ELSE 0 END) AS today_amount
       FROM points_payments WHERE system_id=?1
         AND status IN ('pending','sending','held','unknown','confirmed','failed')
         AND updated_at>=?2
-      GROUP BY status`,
+      GROUP BY status,reason`,
   )
     .bind(systemId, week, today)
     .all<{
       status: string;
+      reason: string | null;
       count: number;
       amount: number;
       today_count: number;
@@ -358,13 +359,29 @@ export async function payoutTotals(env: ApiBindings, systemId: string) {
       amountMinor: picked.reduce((total, row) => total + (row[amount] ?? 0), 0),
     };
   };
+  // 发放失败 by why (§17): the recipient's side, or anything else.
+  const failedBy = (count: "count" | "today_count") => {
+    const failed = rows.results.filter((row) => row.status === "failed");
+    const of = (reasons: (string | null)[], inside: boolean) =>
+      failed
+        .filter((row) => reasons.includes(row.reason) === inside)
+        .reduce((total, row) => total + (row[count] ?? 0), 0);
+    return {
+      noRecipient: of(["no_recipient"], true),
+      notAllowed: of(["not_allowed"], true),
+      other: of(["no_recipient", "not_allowed"], false),
+    };
+  };
   const span = (
     count: "count" | "today_count",
     amount: "amount" | "today_amount",
   ) => ({
     confirmed: sum(POINTS_PAYOUT_FILTERS.confirmed, count, amount),
     waiting: sum(POINTS_PAYOUT_FILTERS.waiting, count, amount),
-    failed: sum(POINTS_PAYOUT_FILTERS.failed, count, amount),
+    failed: {
+      ...sum(POINTS_PAYOUT_FILTERS.failed, count, amount),
+      ...failedBy(count),
+    },
   });
   return {
     today: span("today_count", "today_amount"),

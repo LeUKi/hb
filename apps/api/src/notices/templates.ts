@@ -325,13 +325,17 @@ export function pointsStatus(
     systemId: string;
     name: string;
     action: "pause" | "resume" | "retire";
+    reason?: string;
   },
 ): Notice {
   const name = points(input.name);
+  const why = input.reason
+    ? `原因：${input.reason.replace(/[。.]$/u, "")}。`
+    : "";
   const said = {
     pause: {
       subject: `${name}被站长暂停了`,
-      text: `站长暂停了你添加的${name}。暂停期间不能用它发新红包，积分也暂停分发。`,
+      text: `站长暂停了你添加的${name}。${why}暂停期间不能用它发新红包，积分也暂停发放。`,
     },
     resume: {
       subject: `${name}恢复了`,

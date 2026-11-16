@@ -350,6 +350,10 @@ const adminPointsTestsRoute = adminRoute2(
   "/admin/points/$id/tests",
   "接口测试记录",
 );
+const adminPointsEventsRoute = adminRoute2(
+  "/admin/points/$id/events",
+  "三方积分操作记录",
+);
 const helpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/help",
@@ -457,6 +461,7 @@ const routeTree = rootRoute.addChildren([
   adminPointsRecordsRoute,
   adminPointsChangesRoute,
   adminPointsTestsRoute,
+  adminPointsEventsRoute,
   helpRoute,
   helpApiRoute,
   helpStartRoute,

@@ -795,6 +795,9 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
   const user = useSessionUser();
   const actions = usePointsOwnerActions(user?.id ?? "");
   const [retiring, setRetiring] = useState(false);
+  // 暂停 asks for a reason (optional, §17): the 站长 sees it.
+  const [pausing, setPausing] = useState(false);
+  const [reason, setReason] = useState("");
   // Which one was pressed: that button says 正在… (the others wait).
   const [pressed, setPressed] = useState<
     "submit" | "pause" | "resume" | "retire" | null
@@ -813,7 +816,10 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
     resume: "恢复",
     retire: "下架",
   } as const;
-  const error = pressed && pressed !== "retire" ? failed(words[pressed]) : null;
+  const error =
+    pressed && pressed !== "retire" && !(pressed === "pause" && pausing)
+      ? failed(words[pressed])
+      : null;
   const run = (action: "submit" | "pause" | "resume") => {
     if (busy) return;
     setPressed(action);
@@ -843,6 +849,12 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
                   : "已经下架。"}
         </span>
       </div>
+      {system.status === "paused" && system.pauseReason && (
+        <p className="text-sm text-ink-2">
+          {system.pausedBy === "admin" ? "站长写的原因" : "你写的原因"}：
+          {system.pauseReason}
+        </p>
+      )}
       {system.reviewNote && (
         <p className="text-sm text-ink-2">站长说：{system.reviewNote}</p>
       )}
@@ -875,7 +887,12 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
             <Button
               size="sm"
               aria-disabled={busy || undefined}
-              onClick={() => run("pause")}
+              onClick={() => {
+                act.reset();
+                setPressed("pause");
+                setReason("");
+                setPausing(true);
+              }}
             >
               {label("pause", "暂停")}
             </Button>
@@ -902,6 +919,46 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={pausing}
+        onClose={() => setPausing(false)}
+        busy={busy}
+        title={`暂停「${system.name}」`}
+        text="暂停后不能用它发新红包，开放中的红包暂停领取和发放，你恢复后接着来。"
+        error={pausing ? failed("暂停") : null}
+        actions={
+          <>
+            <Button onClick={() => setPausing(false)}>返回</Button>
+            <Button
+              variant="primary"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                act.mutate(
+                  { id: system.id, action: "pause", reason: reason.trim() },
+                  { onSuccess: () => setPausing(false) },
+                );
+              }}
+            >
+              {busy ? "正在暂停…" : "暂停"}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="原因"
+          htmlFor="pt-pause-reason"
+          optional
+          hint="写给站长看，比如“在升级接口，今晚恢复”。"
+        >
+          <TextInput
+            id="pt-pause-reason"
+            value={reason}
+            maxLength={100}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={retiring}
         onClose={() => setRetiring(false)}

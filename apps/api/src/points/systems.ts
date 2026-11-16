@@ -19,6 +19,7 @@ import {
   noticePointsReviewed,
   noticePointsStatus,
 } from "../notices/events";
+import { pointsEventIfChanged } from "./events";
 
 export type PointsSystemRow = {
   id: string;
@@ -52,6 +53,7 @@ export type PointsSystemRow = {
   online_at: number | null;
   paused_by: string | null;
   paused_at: number | null;
+  pause_reason: string | null;
   retired_at: number | null;
   missed_in_row: number;
   breaker_until: number | null;
@@ -198,6 +200,7 @@ export function ownerView(row: PointsSystemRow) {
     onlineAt: row.online_at,
     pausedBy: row.paused_by,
     pausedAt: row.paused_at,
+    pauseReason: row.pause_reason,
     retiredAt: row.retired_at,
     breakerUntil: row.breaker_until,
     version: row.version,
@@ -432,11 +435,57 @@ export async function updateSystem(
           ),
         )
       : []),
+    // 操作记录 (§17): what the copy changes do not hold.
+    ...(logged
+      ? settingChanges(row, config, endpoint.url).map(({ action, note }) =>
+          pointsEventIfChanged(env, {
+            systemId: id,
+            actor: "owner",
+            actorId: userId,
+            action,
+            note,
+            at: now,
+          }),
+        )
+      : []),
   ];
   const results = await env.DB.batch(statements);
   if (!results[0]?.meta.changes)
     pointsError(409, "POINTS_VERSION_CONFLICT", "已经有新的修改，请刷新后重试");
   return ownerView(await requireSystem(env, id));
+}
+
+/** The settings a save changed that the copy changes do not record. */
+function settingChanges(
+  row: PointsSystemRow,
+  config: PointsSystemConfig,
+  baseUrl: string,
+) {
+  const changed = (label: string, before: unknown, after: unknown) =>
+    String(before) === String(after) ? [] : [`${label} ${before} → ${after}`];
+  return [
+    {
+      action: "endpoint" as const,
+      notes: [
+        ...changed("接口地址", row.base_url, baseUrl),
+        ...changed("最小单位", row.step, config.step),
+      ],
+    },
+    {
+      action: "rate" as const,
+      notes: changed("每秒最多调用", row.rate, config.rate),
+    },
+    {
+      action: "profile" as const,
+      notes: [
+        ...changed("名称", row.name, config.name),
+        ...changed("单位", row.unit, config.unit),
+        ...changed("网站名称", row.issuer_name, config.issuerName),
+      ],
+    },
+  ].flatMap(({ action, notes }) =>
+    notes.length ? [{ action, note: notes.join("；") }] : [],
+  );
 }
 
 /** 提交审核 (§4): only with a self-test passed for this endpoint. */
@@ -454,12 +503,19 @@ export async function submitSystem(
   )
     pointsError(409, "POINTS_TEST_NEEDED", "先通过接口测试，再提交审核");
   const now = Date.now();
-  await env.DB.prepare(
-    `UPDATE points_systems SET status='reviewing',submitted_at=?1,review_note=NULL,
-      version=version+1,updated_at=?1 WHERE id=?2 AND status='draft'`,
-  )
-    .bind(now, id)
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_systems SET status='reviewing',submitted_at=?1,review_note=NULL,
+        version=version+1,updated_at=?1 WHERE id=?2 AND status='draft'`,
+    ).bind(now, id),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: "owner",
+      actorId: userId,
+      action: "submit",
+      at: now,
+    }),
+  ]);
   return ownerView(await requireSystem(env, id));
 }
 
@@ -502,6 +558,16 @@ export async function retireSystem(
       `UPDATE points_systems SET status='retired',retired_at=?1,paused_by=?2,
         version=version+1,updated_at=?1 WHERE id=?3 AND status<>'retired'`,
     ).bind(now, admin ? "admin" : "owner", id),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: admin ? "admin" : "owner",
+      actorId,
+      action: "retire",
+      note: open.results.length
+        ? `结束了 ${open.results.length} 个开放中的红包`
+        : null,
+      at: now,
+    }),
     endOpenStatements(env, id, "retired"),
   ]);
   if ((retired?.meta.changes ?? 0) > 0) {
@@ -518,12 +584,17 @@ export async function retireSystem(
   return ownerView(await requireSystem(env, id));
 }
 
-/** 暂停 (owner or 站长) and 恢复: claims are stopped before a share is taken. */
+/**
+ * 暂停 (owner or 站长), with a reason if they wrote one (§17: kept in the
+ * 操作记录, told to the owner and shown where it is paused), and 恢复:
+ * claims are stopped before a share is taken.
+ */
 export async function pauseSystem(
   env: ApiBindings,
   actorId: string,
   id: string,
   admin: boolean,
+  reason = "",
 ) {
   const row = admin
     ? await requireSystem(env, id)
@@ -531,14 +602,25 @@ export async function pauseSystem(
   if (row.status !== "online")
     pointsError(409, "POINTS_NOT_ONLINE", "只有已上线的能暂停");
   const now = Date.now();
-  const paused = await env.DB.prepare(
-    `UPDATE points_systems SET status='paused',paused_by=?1,paused_at=?2,
-      version=version+1,updated_at=?2 WHERE id=?3 AND status='online'`,
-  )
-    .bind(admin ? "admin" : "owner", now, id)
-    .run();
-  if (admin && paused.meta.changes > 0)
-    await noticePointsStatus(env, row, "pause", now);
+  const why = Array.from(reason.trim())
+    .slice(0, POINTS_LIMITS.pauseReasonMax)
+    .join("");
+  const [paused] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_systems SET status='paused',paused_by=?1,paused_at=?2,pause_reason=?3,
+        version=version+1,updated_at=?2 WHERE id=?4 AND status='online'`,
+    ).bind(admin ? "admin" : "owner", now, why || null, id),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: admin ? "admin" : "owner",
+      actorId,
+      action: "pause",
+      note: why,
+      at: now,
+    }),
+  ]);
+  if (admin && (paused?.meta.changes ?? 0) > 0)
+    await noticePointsStatus(env, row, "pause", now, why);
   return ownerView(await requireSystem(env, id));
 }
 
@@ -563,14 +645,23 @@ export async function resumeSystem(
   )
     pointsError(409, "POINTS_REVIEW_NEEDED", "接口改过了，要重新测试和审核");
   const now = Date.now();
-  const resumed = await env.DB.prepare(
-    `UPDATE points_systems SET status='online',paused_by=NULL,paused_at=NULL,
-      missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,version=version+1,updated_at=?1
-     WHERE id=?2 AND status='paused'`,
-  )
-    .bind(now, id)
-    .run();
-  if (admin && resumed.meta.changes > 0)
+  const [resumed] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_systems SET status='online',paused_by=NULL,paused_at=NULL,pause_reason=NULL,
+        missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,version=version+1,updated_at=?1
+       WHERE id=?2 AND status='paused'`,
+    ).bind(now, id),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: admin ? "admin" : "owner",
+      actorId,
+      action: "resume",
+      // Whose pause it undid, when the 站长 resumes its owner's.
+      note: admin && row.paused_by !== "admin" ? "添加的人暂停的" : null,
+      at: now,
+    }),
+  ]);
+  if (admin && (resumed?.meta.changes ?? 0) > 0)
     await noticePointsStatus(env, row, "resume", now);
   return ownerView(await requireSystem(env, id));
 }
@@ -586,18 +677,26 @@ export async function reviewSystem(
   if (row.status !== "reviewing")
     pointsError(409, "POINTS_NOT_REVIEWING", "现在不是待审核");
   const now = Date.now();
-  const reviewed = await env.DB.prepare(
-    decision.approve
-      ? `UPDATE points_systems SET status='online',reviewed_at=?1,reviewed_by=?2,review_note=?3,
-          online_at=COALESCE(online_at,?1),missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,
-          version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`
-      : `UPDATE points_systems SET status='draft',reviewed_at=?1,reviewed_by=?2,review_note=?3,
-          version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`,
-  )
-    .bind(now, adminId, decision.note || null, id)
-    .run();
+  const [reviewed] = await env.DB.batch([
+    env.DB.prepare(
+      decision.approve
+        ? `UPDATE points_systems SET status='online',reviewed_at=?1,reviewed_by=?2,review_note=?3,
+            online_at=COALESCE(online_at,?1),missed_in_row=0,breaker_until=NULL,breaker_noticed_at=NULL,
+            version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`
+        : `UPDATE points_systems SET status='draft',reviewed_at=?1,reviewed_by=?2,review_note=?3,
+            version=version+1,updated_at=?1 WHERE id=?4 AND status='reviewing'`,
+    ).bind(now, adminId, decision.note || null, id),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: "admin",
+      actorId: adminId,
+      action: decision.approve ? "approve" : "return",
+      note: decision.note,
+      at: now,
+    }),
+  ]);
   // 审核结果 (docs/notification-design.md §3.3): its owner.
-  if (reviewed.meta.changes > 0)
+  if ((reviewed?.meta.changes ?? 0) > 0)
     await noticePointsReviewed(
       env,
       row,

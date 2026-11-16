@@ -498,6 +498,13 @@
       "when": 1794820981233,
       "tag": "0070_payout_funds_stop",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1794825495581,
+      "tag": "0071_points_events",
+      "breakpoints": true
     }
   ]
 }

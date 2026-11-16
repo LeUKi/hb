@@ -775,9 +775,25 @@ test.describe("网站管理", () => {
       ownerUsername: "stars_owner",
       missedInRow: 0,
       today: { calls: {}, total: 0, answeredRate: null, averageMs: null },
+      pauseReason: "在升级接口，今晚恢复",
       openHongbao: 2,
       unseenChanges: 0,
       attention: 0,
+      week: {
+        confirmed: 30,
+        noRecipient: 8,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 1,
+      },
+      day: {
+        confirmed: 5,
+        noRecipient: 14,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 0,
+      },
+      failing: true,
     };
     const acted: unknown[] = [];
     await page.route("**/api/admin/points", (route) =>
@@ -797,6 +813,25 @@ test.describe("网站管理", () => {
     await openApp(page, `/admin/points?id=${system.id}`);
     await expect(page.getByText("添加的人暂停的").first()).toBeVisible();
     await expect(page.getByText(/^添加的人 .+ 暂停的$/)).toBeVisible();
+    await expect(page.getByText("原因：在升级接口，今晚恢复")).toBeVisible();
+    // §17: the two new cards, and quality in the row and the detail.
+    for (const label of ["添加的人暂停的", "失败率高"])
+      await expect(
+        page.getByRole("link", { name: new RegExp(`${label}\\s*1`) }),
+      ).toBeVisible();
+    await expect(
+      page.getByText(/近 7 天到账 30 笔 · 失败 25% · 今天有回复/),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "到账 30 笔 · 找不到收款人 8 · 不允许 2 · 处理中 1（失败 25%）",
+      ),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "这种积分的页面" })
+        .getByRole("link", { name: "操作记录" }),
+    ).toHaveAttribute("href", `/admin/points/${system.id}/events`);
     await page.getByRole("button", { name: "恢复", exact: true }).click();
     const ask = page.getByRole("dialog", { name: "恢复「星星」" });
     await expect(
@@ -811,6 +846,144 @@ test.describe("网站管理", () => {
       .getByRole("button", { name: "恢复" })
       .click();
     await expect.poll(() => acted.length).toBe(1);
+  });
+
+  test("三方积分：暂停时可以写原因；操作记录一条条写谁、几点、做了什么（§17）", async ({
+    page,
+  }) => {
+    await mockSession(page, admin);
+    const pausedAt = Date.now() - 20 * 60_000;
+    const system = {
+      id: "eeeeeeee-1111-4222-8333-444444444444",
+      name: "星星",
+      unit: "星星",
+      step: 100,
+      issuerName: "星星乐园",
+      host: "stars.example.com",
+      status: "online",
+      intro: "",
+      keyGuide: "",
+      noRecipient: "",
+      arrival: "",
+      notAllowed: "",
+      insufficient: "",
+      keyInvalid: "",
+      baseUrl: "https://stars.example.com/hb",
+      rate: 5,
+      endpointVersion: 1,
+      hasTestKey: true,
+      testRecipientId: "1",
+      passed: true,
+      passedTestId: "t1",
+      lastTestStartedAt: null,
+      submittedAt: null,
+      reviewedAt: Date.now() - 86_400_000,
+      reviewNote: null,
+      onlineAt: Date.now() - 86_400_000,
+      pausedBy: null,
+      pausedAt: null,
+      retiredAt: null,
+      breakerUntil: null,
+      version: 3,
+      createdAt: Date.now() - 2 * 86_400_000,
+      updatedAt: pausedAt,
+      ownerUsername: "stars_owner",
+      missedInRow: 0,
+      today: { calls: {}, total: 0, answeredRate: null, averageMs: null },
+      pauseReason: null,
+      openHongbao: 2,
+      unseenChanges: 0,
+      attention: 0,
+      week: {
+        confirmed: 30,
+        noRecipient: 8,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 1,
+      },
+      day: {
+        confirmed: 5,
+        noRecipient: 14,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 0,
+      },
+      failing: true,
+    };
+    void pausedAt;
+    const paused: unknown[] = [];
+    await page.route("**/api/admin/points", (route) =>
+      route.fulfill({
+        json: {
+          settings: { enabled: true, version: 1, updatedAt: Date.now() },
+          systems: [system],
+        },
+      }),
+    );
+    await page.route("**/api/admin/points/*/pause", (route) => {
+      paused.push(route.request().postDataJSON());
+      return route.fulfill({
+        json: { system: { ...system, status: "paused" } },
+      });
+    });
+    await openApp(page, `/admin/points?id=${system.id}`);
+    await page.getByRole("button", { name: "暂停", exact: true }).click();
+    const ask = page.getByRole("dialog", { name: "暂停「星星」" });
+    await expect(
+      ask.getByText(/添加的人 @stars_owner 会收到私信/),
+    ).toBeVisible();
+    await ask.getByRole("textbox", { name: /原因/ }).fill("对方接口在升级");
+    await ask.getByRole("button", { name: "暂停", exact: true }).click();
+    await expect.poll(() => paused).toEqual([{ reason: "对方接口在升级" }]);
+
+    // 操作记录, newest first.
+    await page.route(`**/api/admin/points/${system.id}`, (route) =>
+      route.fulfill({
+        json: { system, tests: [], changes: [], attention: [] },
+      }),
+    );
+    await page.route(`**/api/admin/points/${system.id}/events*`, (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: "e3",
+              at: Date.now() - 60_000,
+              actor: "admin",
+              actorUsername: "admin",
+              action: "pause",
+              note: "对方接口在升级",
+            },
+            {
+              id: "e2",
+              at: Date.now() - 3_600_000,
+              actor: "system",
+              actorUsername: null,
+              action: "breaker",
+              note: "连续 5 次没有回复，发放暂停 10 分钟",
+            },
+            {
+              id: "e1",
+              at: Date.now() - 86_400_000,
+              actor: "owner",
+              actorUsername: "stars_owner",
+              action: "rate",
+              note: "每秒最多调用 10 → 5",
+            },
+          ],
+          nextCursor: null,
+        },
+      }),
+    );
+    await openApp(page, `/admin/points/${system.id}/events`);
+    await expect(page.getByText("暂停：对方接口在升级")).toBeVisible();
+    await expect(page.getByText("站长 @admin")).toBeVisible();
+    await expect(
+      page.getByText("熔断：连续 5 次没有回复，发放暂停 10 分钟"),
+    ).toBeVisible();
+    await expect(page.getByText("系统", { exact: true })).toBeVisible();
+    await expect(page.getByText("改了每秒最多调用 10 → 5")).toBeVisible();
+    await expect(page.getByText("添加的人 @stars_owner")).toBeVisible();
   });
 
   test("网站设置：别人先存了，改过的那一项保留，其余跟着新版本", async ({

@@ -4,6 +4,7 @@
 // dot until seen), self-tests. Read on demand; nothing refreshes by itself.
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
+import { pointsEventIfChanged } from "./events";
 import { wakePointsPayment } from "./payments";
 import { listSelfTests } from "./self-test";
 import {
@@ -69,6 +70,10 @@ export async function adminOverview(env: ApiBindings) {
         .all<{ id: string; count: number }>(),
     ],
   );
+  const quality = await payoutQuality(
+    env,
+    systems.results.map((row) => row.id),
+  );
   const openOf = new Map(open.results.map((row) => [row.id, row.count]));
   const unseenOf = new Map(unseen.results.map((row) => [row.id, row.count]));
   const attentionOf = new Map(
@@ -100,9 +105,91 @@ export async function adminOverview(env: ApiBindings) {
         openHongbao: openOf.get(row.id) ?? 0,
         unseenChanges: unseenOf.get(row.id) ?? 0,
         attention: attentionOf.get(row.id) ?? 0,
+        ...(quality.get(row.id) ?? emptyQuality()),
       };
     }),
   };
+}
+
+/** Payouts by how they ended: through, and the failures by reason. */
+export type PayoutQuality = {
+  confirmed: number;
+  noRecipient: number;
+  notAllowed: number;
+  otherFailed: number;
+  waiting: number;
+};
+
+/** 失败率高 (§17): enough payouts in a day, most refused for the recipient. */
+export const FAILING_MIN_PAYOUTS = 20;
+
+export function failingDay(day: PayoutQuality) {
+  const ended =
+    day.confirmed + day.noRecipient + day.notAllowed + day.otherFailed;
+  return (
+    ended >= FAILING_MIN_PAYOUTS &&
+    (day.noRecipient + day.notAllowed) * 2 > ended
+  );
+}
+
+function emptyQuality() {
+  const none = {
+    confirmed: 0,
+    noRecipient: 0,
+    notAllowed: 0,
+    otherFailed: 0,
+    waiting: 0,
+  };
+  return { week: { ...none }, day: { ...none }, failing: false };
+}
+
+/**
+ * 发放质量 (docs/third-party-points-design.md §17), for every system at
+ * once: the last 7 days and the last 24 hours, by the payouts' index
+ * (system_id, status, updated_at).
+ */
+async function payoutQuality(env: ApiBindings, systemIds: string[]) {
+  const map = new Map<string, ReturnType<typeof emptyQuality>>();
+  if (!systemIds.length) return map;
+  const now = Date.now();
+  const rows = await env.DB.prepare(
+    `SELECT system_id,
+        SUM(status='confirmed') AS confirmed,
+        SUM(status='failed' AND reason='no_recipient') AS no_recipient,
+        SUM(status='failed' AND reason='not_allowed') AS not_allowed,
+        SUM(status='failed' AND COALESCE(reason,'') NOT IN ('no_recipient','not_allowed')) AS other_failed,
+        SUM(status IN ('pending','sending','held','unknown')) AS waiting,
+        SUM(updated_at>=?3 AND status='confirmed') AS day_confirmed,
+        SUM(updated_at>=?3 AND status='failed' AND reason='no_recipient') AS day_no_recipient,
+        SUM(updated_at>=?3 AND status='failed' AND reason='not_allowed') AS day_not_allowed,
+        SUM(updated_at>=?3 AND status='failed' AND COALESCE(reason,'') NOT IN ('no_recipient','not_allowed')) AS day_other_failed,
+        SUM(updated_at>=?3 AND status IN ('pending','sending','held','unknown')) AS day_waiting
+      FROM points_payments
+      WHERE system_id IN (SELECT value FROM json_each(?1))
+        AND status IN ('pending','sending','held','unknown','confirmed','failed')
+        AND updated_at>=?2
+      GROUP BY system_id`,
+  )
+    .bind(JSON.stringify(systemIds), now - 7 * DAY_MS, now - DAY_MS)
+    .all<Record<string, number> & { system_id: string }>();
+  for (const row of rows.results) {
+    const week = {
+      confirmed: row.confirmed ?? 0,
+      noRecipient: row.no_recipient ?? 0,
+      notAllowed: row.not_allowed ?? 0,
+      otherFailed: row.other_failed ?? 0,
+      waiting: row.waiting ?? 0,
+    };
+    const day = {
+      confirmed: row.day_confirmed ?? 0,
+      noRecipient: row.day_no_recipient ?? 0,
+      notAllowed: row.day_not_allowed ?? 0,
+      otherFailed: row.day_other_failed ?? 0,
+      waiting: row.day_waiting ?? 0,
+    };
+    map.set(row.system_id, { week, day, failing: failingDay(day) });
+  }
+  return map;
 }
 
 /** For the 站长's red dot: what waits for them (session, admin only). */
@@ -224,16 +311,42 @@ export async function markChangesSeen(env: ApiBindings, systemId: string) {
     .run();
 }
 
-/** 再查一次: a payout with no known result asks the issuer once more. */
-export async function requeryPayout(env: ApiBindings, id: string) {
-  const now = Date.now();
-  const result = await env.DB.prepare(
-    `UPDATE points_payments SET status='pending',reason='final_query',query_first=1,
-      next_run_at=?1,updated_at=?1 WHERE id=?2 AND status='unknown'`,
+/** The payout, for its system and 单号 in the 操作记录. */
+async function payoutIdentity(env: ApiBindings, id: string) {
+  return env.DB.prepare(
+    "SELECT system_id,out_trade_no FROM points_payments WHERE id=?",
   )
-    .bind(now, id)
-    .run();
-  if (!result.meta.changes)
+    .bind(id)
+    .first<{ system_id: string; out_trade_no: string }>();
+}
+
+/** 再查一次: a payout with no known result asks the issuer once more. */
+export async function requeryPayout(
+  env: ApiBindings,
+  id: string,
+  adminId: string,
+) {
+  const now = Date.now();
+  const payout = await payoutIdentity(env, id);
+  const [result] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_payments SET status='pending',reason='final_query',query_first=1,
+        next_run_at=?1,updated_at=?1 WHERE id=?2 AND status='unknown'`,
+    ).bind(now, id),
+    ...(payout
+      ? [
+          pointsEventIfChanged(env, {
+            systemId: payout.system_id,
+            actor: "admin",
+            actorId: adminId,
+            action: "payout_requery",
+            note: `单号 ${payout.out_trade_no}`,
+            at: now,
+          }),
+        ]
+      : []),
+  ]);
+  if (!result?.meta.changes)
     throw new ActivityError(
       409,
       "POINTS_PAYOUT_MOVED",
@@ -242,16 +355,33 @@ export async function requeryPayout(env: ApiBindings, id: string) {
   await wakePointsPayment(env, id);
 }
 
-/** 标为未发出: the 站长 settles a payout with no known result as not paid. */
-export async function failPayout(env: ApiBindings, id: string) {
+/** 标为发放失败: the 站长 settles a payout with no known result as not paid. */
+export async function failPayout(
+  env: ApiBindings,
+  id: string,
+  adminId: string,
+) {
   const now = Date.now();
-  const result = await env.DB.prepare(
-    `UPDATE points_payments SET status='failed',reason='admin',next_run_at=NULL,
-      done_at=?1,updated_at=?1 WHERE id=?2 AND status='unknown'`,
-  )
-    .bind(now, id)
-    .run();
-  if (!result.meta.changes)
+  const payout = await payoutIdentity(env, id);
+  const [result] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_payments SET status='failed',reason='admin',next_run_at=NULL,
+        done_at=?1,updated_at=?1 WHERE id=?2 AND status='unknown'`,
+    ).bind(now, id),
+    ...(payout
+      ? [
+          pointsEventIfChanged(env, {
+            systemId: payout.system_id,
+            actor: "admin",
+            actorId: adminId,
+            action: "payout_failed",
+            note: `单号 ${payout.out_trade_no}`,
+            at: now,
+          }),
+        ]
+      : []),
+  ]);
+  if (!result?.meta.changes)
     throw new ActivityError(
       409,
       "POINTS_PAYOUT_MOVED",

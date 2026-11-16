@@ -5,6 +5,7 @@
 import { formatStep, POINTS_LIMITS } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
+import { pointsEventStatement } from "./events";
 import { issuerBalance, issuerQuery, issuerTransfer } from "./issuer";
 import { maskKey, type PointsCall } from "./protocol";
 import {
@@ -148,6 +149,22 @@ export async function runSelfTest(
           ).bind(testId, row.endpoint_version, finished, systemId),
         ]
       : []),
+    // 操作记录 (third-party-points §17): each run's end, where it stopped.
+    pointsEventStatement(env, {
+      systemId,
+      actor: "owner",
+      actorId: userId,
+      action: passed ? "test_passed" : "test_failed",
+      note: passed
+        ? null
+        : (() => {
+            const failed = steps.find((step) => !step.ok);
+            return failed
+              ? `第 ${failed.n} 步没通过：${failed.title}`
+              : "没有跑完";
+          })(),
+      at: finished,
+    }),
   ]);
   return {
     id: testId,

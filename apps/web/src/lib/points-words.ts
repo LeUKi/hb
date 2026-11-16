@@ -34,3 +34,34 @@ export function pointsFailureWords(
       return null;
   }
 }
+
+/** 操作记录 (§17): what happened, in the 站长's words. */
+export const POINTS_EVENT_WORDS: Record<string, string> = {
+  submit: "提交审核",
+  approve: "审核通过，上线",
+  return: "审核退回",
+  pause: "暂停",
+  resume: "恢复",
+  retire: "下架",
+  endpoint: "改了接口地址或最小单位",
+  rate: "改了每秒最多调用",
+  profile: "改了名称",
+  breaker: "熔断",
+  breaker_end: "熔断结束，接口又有回复了",
+  test_passed: "接口测试通过",
+  test_failed: "接口测试没通过",
+  payout_requery: "让一笔结果不明的发放再查一次",
+  payout_failed: "把一笔结果不明的发放标为发放失败",
+};
+
+/** One event in a line: what, and its note. */
+export function pointsEventLine(action: string, note: string | null) {
+  // A setting's note names it already: "每秒最多调用 10 → 5".
+  if (
+    note &&
+    (action === "endpoint" || action === "rate" || action === "profile")
+  )
+    return `改了${note}`;
+  const what = POINTS_EVENT_WORDS[action] ?? action;
+  return note ? `${what}：${note}` : what;
+}

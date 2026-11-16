@@ -239,7 +239,25 @@ function Totals({
         )}
       >
         发放失败 {span.failed.count} 笔
+        {span.failed.count > 0 &&
+          `，占 ${Math.round((span.failed.count / (span.failed.count + span.confirmed.count)) * 100)}%`}
       </span>
+      {/* §17: why they failed — the recipient's side, or anything else. */}
+      {span.failed.count > 0 && (
+        <span className="whitespace-nowrap text-ink-3">
+          （
+          {[
+            span.failed.noRecipient
+              ? `找不到收款人 ${span.failed.noRecipient}`
+              : "",
+            span.failed.notAllowed ? `不允许 ${span.failed.notAllowed}` : "",
+            span.failed.other ? `其他 ${span.failed.other}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          ）
+        </span>
+      )}
     </>
   );
   return (

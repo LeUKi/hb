@@ -21,6 +21,7 @@ import { AdminPoints } from "../views/admin/admin-points";
 import {
   AdminPointsChanges,
   AdminPointsConfig,
+  AdminPointsEvents,
   AdminPointsTests,
 } from "../views/admin/admin-points-pages";
 import { AdminRoadmap } from "../views/admin/admin-roadmap";
@@ -186,6 +187,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="admin"
           page={<AdminPointsTests id={params.id ?? ""} />}
+        />
+      );
+    case "/admin/points/$id/events":
+      return (
+        <CommandPageView
+          id="admin"
+          page={<AdminPointsEvents id={params.id ?? ""} />}
         />
       );
     case "/points/$id/records":

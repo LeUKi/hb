@@ -466,6 +466,8 @@ export function noticePointsStatus(
   system: SystemLike,
   action: "pause" | "resume" | "retire",
   at: number,
+  /** 暂停's reason, as the 站长 wrote it (third-party-points §17). */
+  reason = "",
 ) {
   return quietly("points_status", () =>
     notify(env, {
@@ -476,6 +478,7 @@ export function noticePointsStatus(
         systemId: system.id,
         name: system.name,
         action,
+        reason,
       }),
     }),
   );

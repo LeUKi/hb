@@ -16,6 +16,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { adminOverview, failingDay } from "../src/points/admin";
 import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
 import {
   resendPointsPayment,
@@ -774,6 +775,179 @@ describe("三方积分红包", () => {
     expect(failedCalls.items.map((call) => call.result)).toContain(
       "no_recipient",
     );
+  });
+});
+
+describe("站长端：操作记录和发放质量 (§17)", () => {
+  it("records each step with who did it and why; the 站长's show in the site-wide 操作记录", async () => {
+    await online();
+    const boss = await codeActor();
+    const asBoss = { ...bindings, ADMIN_LINUX_DO_IDS: boss.externalId };
+    const call = async <T>(method: string, path: string, json?: unknown) => {
+      const response = await app.request(
+        `${origin}/api${path}`,
+        {
+          method,
+          headers: {
+            Cookie: boss.cookie,
+            "X-CSRF-Token": boss.csrf,
+            Origin: origin,
+            ...(json === undefined
+              ? {}
+              : { "Content-Type": "application/json" }),
+          },
+          ...(json === undefined ? {} : { body: JSON.stringify(json) }),
+        },
+        asBoss,
+      );
+      return { status: response.status, body: (await response.json()) as T };
+    };
+    expect(
+      (
+        await call("POST", `/admin/points/${systemId}/pause`, {
+          reason: "接口升级",
+        })
+      ).status,
+    ).toBe(200);
+    // Where it shows as paused: by whom, and why.
+    expect(
+      (
+        await call<{ system: { pausedBy?: string; pauseReason?: string } }>(
+          "GET",
+          `/points/${systemId}`,
+        )
+      ).body.system,
+    ).toMatchObject({ pausedBy: "admin", pauseReason: "接口升级" });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND kind='points_status' AND replace(body,char(10),'') LIKE '%原因：接口升级%'",
+      )
+        .bind(owner.id)
+        .first(),
+    ).toEqual({ n: 1 });
+    await call("POST", `/admin/points/${systemId}/resume`);
+    expect(
+      await env.DB.prepare("SELECT pause_reason FROM points_systems WHERE id=?")
+        .bind(systemId)
+        .first(),
+    ).toEqual({ pause_reason: null });
+    // Its adder pauses it themself, with a reason; the 站长 resumes it.
+    await pauseSystem(bindings, owner.id, systemId, false, "在升级");
+    await call("POST", `/admin/points/${systemId}/resume`);
+
+    const events = (
+      await call<{
+        items: {
+          actor: string;
+          action: string;
+          note: string | null;
+          actorUsername: string | null;
+        }[];
+      }>("GET", `/admin/points/${systemId}/events`)
+    ).body.items;
+    expect(
+      events.map((event) => [event.actor, event.action, event.note]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["owner", "test_passed", null],
+        ["owner", "submit", null],
+        ["admin", "approve", null],
+        ["admin", "pause", "接口升级"],
+        ["admin", "resume", null],
+        ["owner", "pause", "在升级"],
+        ["admin", "resume", "添加的人暂停的"],
+      ]),
+    );
+    expect(events).toHaveLength(7);
+    expect(
+      events.find(
+        (event) => event.action === "pause" && event.actor === "owner",
+      )?.actorUsername,
+    ).toBe(owner.username);
+
+    // The 站长's own moves, beside the site's other ones.
+    const audit = (
+      await call<{
+        items: {
+          type: string;
+          actorUserId: string;
+          points?: { name: string; action: string; note: string | null };
+        }[];
+      }>("GET", "/admin/audit?type=points")
+    ).body.items;
+    expect(audit.every((entry) => entry.type === "points")).toBe(true);
+    expect(audit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actorUserId: boss.id,
+          points: expect.objectContaining({
+            name: "星星",
+            action: "pause",
+            note: "接口升级",
+          }),
+        }),
+      ]),
+    );
+    // Its adder's own moves are not the 站长's.
+    expect(audit.some((entry) => entry.points?.note === "在升级")).toBe(false);
+  });
+
+  it("counts payouts by how they ended, the failures by why", async () => {
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "30",
+      count: 3,
+    });
+    const paid = await actor();
+    issuer.open(paid.externalId, paid.username, 0);
+    const through = await claim(hongbao.id, paid);
+    expect(await run(through.claim.payment?.id ?? "")).toBe("confirmed");
+    const stranger = await actor();
+    const held = await claim(hongbao.id, stranger);
+    expect(await run(held.claim.payment?.id ?? "")).toBe("held");
+    await env.DB.prepare(
+      "UPDATE points_payments SET resend_until=? WHERE claim_id=?",
+    )
+      .bind(Date.now() - 1, held.claim.id)
+      .run();
+    await sweepPointsPayments(bindings);
+
+    const row = (await adminOverview(bindings)).systems.find(
+      (system) => system.id === systemId,
+    );
+    expect(row?.week).toMatchObject({
+      confirmed: 1,
+      noRecipient: 1,
+      notAllowed: 0,
+      otherFailed: 0,
+    });
+    expect(row?.day).toMatchObject({ confirmed: 1, noRecipient: 1 });
+    expect(row?.failing).toBe(false);
+    expect((await payoutTotals(bindings, systemId)).week.failed).toMatchObject({
+      count: 1,
+      noRecipient: 1,
+      notAllowed: 0,
+      other: 0,
+    });
+  });
+
+  it("flags a day only with enough payouts, most refused for the recipient", () => {
+    const day = (
+      confirmed: number,
+      noRecipient: number,
+      notAllowed: number,
+    ) => ({
+      confirmed,
+      noRecipient,
+      notAllowed,
+      otherFailed: 0,
+      waiting: 0,
+    });
+    expect(failingDay(day(9, 11, 0))).toBe(true);
+    expect(failingDay(day(10, 6, 4))).toBe(false);
+    expect(failingDay(day(1, 18, 0))).toBe(false);
+    expect(failingDay(day(2, 5, 13))).toBe(true);
   });
 });
 

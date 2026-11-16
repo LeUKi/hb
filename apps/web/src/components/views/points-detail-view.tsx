@@ -108,8 +108,8 @@ export function PointsDetailView({ id }: { id: string }) {
           {system.status !== "online" && (
             <Callout tone="warning" title={statusWords[system.status]}>
               {system.status === "retired"
-                ? `「${system.name}」已经下架，不能再用它发红包；还开着的红包已经结束。`
-                : `「${system.name}」现在不能用来发红包，领取也要等它恢复。`}
+                ? `「${system.name}」已下架，不能再用它发红包；还开着的红包已结束。`
+                : `「${system.name}」${system.pausedBy === "admin" ? "被站长暂停了" : system.pausedBy === "owner" ? "被添加的人暂停了" : "暂停了"}，现在不能用来发红包，领取也要等它恢复。${system.pauseReason ? `原因：${system.pauseReason.replace(/[。.]$/u, "")}。` : ""}`}
             </Callout>
           )}
           <PageSection title="三方积分是什么">

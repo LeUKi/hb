@@ -3011,6 +3011,8 @@ export const pointsSystems = sqliteTable(
     /** Who paused it: the 站长 or the owner (retired too). */
     pausedBy: text("paused_by"),
     pausedAt: integer("paused_at"),
+    /** Why it was paused, as its pauser wrote it (§17); cleared on 恢复. */
+    pauseReason: text("pause_reason"),
     retiredAt: integer("retired_at"),
     /** 熔断 (§5): answers missed in a row, and until when it rests. */
     missedInRow: integer("missed_in_row").notNull().default(0),
@@ -3061,6 +3063,34 @@ export const pointsCopyChanges = sqliteTable(
     index("points_copy_changes_unseen_idx")
       .on(table.createdAt)
       .where(sql`${table.seenAt} IS NULL`),
+  ],
+);
+
+/**
+ * 操作记录 (docs/third-party-points-design.md §17): what happened to a
+ * system and who did it — review, 暂停 and 恢复 with their reasons, 下架,
+ * endpoint and rate changes, the breaker, self-tests, the 站长's actions on
+ * payouts. Written with the change it records; never edited.
+ */
+export const pointsEvents = sqliteTable(
+  "points_events",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => pointsSystems.id),
+    at: integer("at").notNull(),
+    actor: text("actor", { enum: ["admin", "owner", "system"] }).notNull(),
+    actorId: text("actor_id").references(() => users.id),
+    action: text("action").notNull(),
+    note: text("note"),
+  },
+  (table) => [
+    index("points_events_system_time_idx").on(
+      table.systemId,
+      sql`${table.at} DESC`,
+      sql`${table.id} DESC`,
+    ),
   ],
 );
 

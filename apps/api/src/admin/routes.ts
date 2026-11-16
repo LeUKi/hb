@@ -1402,6 +1402,26 @@ async function audit(
         },
       }),
     },
+    // 三方积分 (docs/third-party-points-design.md §17): the 站长's own moves
+    // from its 操作记录.
+    {
+      type: "points" as const,
+      columns: "c.system_id, c.action, c.note, c.name",
+      table: `(SELECT e.id, e.actor_id AS actor_user_id, e.at AS created_at,
+        0 AS previous_version, 0 AS next_version, e.system_id, e.action, e.note, s.name
+        FROM points_events e JOIN points_systems s ON s.id = e.system_id
+        WHERE e.actor = 'admin')`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        points: {
+          id: String(row.system_id),
+          name: String(row.name),
+          action: String(row.action),
+          note: row.note == null ? null : String(row.note),
+        },
+      }),
+    },
     // 站长停用打赏卡 (docs/tip-design.md §12): kept on the card's row.
     {
       type: "tip_stop" as const,
