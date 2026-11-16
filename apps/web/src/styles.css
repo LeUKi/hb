@@ -431,9 +431,30 @@
       rgb(255 255 255 / 0) 38%
     );
   }
+  /* 满屏 (phones): the window is the screen, so its glass is a plain opaque
+     surface in the colour the 92% glass showed over the desktop, without the
+     blur, the light edge or the ring. iOS Safari fills the strips above and
+     below the page with the first background it finds going up from what
+     touches each edge (through the transparent 顶栏 and 内容区), so the
+     frame carries the same colour, and only a solid colour comes out the
+     same there (02 §11). */
   @media (max-width: 639px), (max-height: 559px) {
-    .window-glass {
-      background: rgb(255 250 248 / 0.92);
+    .app-window-frame {
+      background: rgb(243 230 229);
+    }
+    .window-glass:not(.window-glass-split) {
+      background: rgb(243 230 229);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: none;
+    }
+    .window-glass:not(.window-glass-split)::before {
+      display: none;
+    }
+    /* No desktop around it, so no long shadow either: Safari showed its
+       first pixel along the bottom edge. */
+    .window-plate {
+      display: none;
     }
   }
 
@@ -2812,9 +2833,15 @@ html[data-embed] .build-stamp {
     box-shadow: 0 30px 60px -28px rgb(0 0 0 / 0.8);
   }
   @media (max-width: 639px), (max-height: 559px) {
-    :root[data-site-dark] .window-glass,
     :root[data-site-dark] .window-glass-bar {
       background: rgb(30 24 26 / 0.94);
+    }
+    :root[data-site-dark] .app-window-frame {
+      background: rgb(30 23 25);
+    }
+    :root[data-site-dark] .window-glass:not(.window-glass-split) {
+      background: rgb(30 23 25);
+      box-shadow: none;
     }
   }
 

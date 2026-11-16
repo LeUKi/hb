@@ -157,7 +157,9 @@ export function AppWindow() {
           The 内容区 itself is not clipped: its full-window layers each clip
           themselves (WindowClip), so the 顶栏's blur can see the page. */}
       <div
-        className="app-window-frame relative"
+        // Full screen it is fixed to the screen: iOS Safari colours its
+        // strips above and below the page from fixed elements (02 §11).
+        className={`app-window-frame ${frameRadius === 0 ? "fixed inset-0" : "relative"}`}
         style={attachedFrameStyle(companion)}
         // Under the 附带网页 gone full screen: as it was, out of reach.
         inert={companion.covered}

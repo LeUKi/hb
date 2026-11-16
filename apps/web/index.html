@@ -34,13 +34,22 @@
           (saved !== "light" &&
             !!window.matchMedia &&
             window.matchMedia("(prefers-color-scheme: dark)").matches);
+        // The browser's own bar: the 背景's colour, full screen (a phone)
+        // the window's (src/lib/theme.ts, docs/redesign/02-shell.md §11).
+        var full =
+          !!window.matchMedia &&
+          window.matchMedia("(max-width: 639px), (max-height: 559px)").matches;
+        var bar = document.querySelector('meta[name="theme-color"]');
+        if (bar)
+          bar.setAttribute(
+            "content",
+            full ? (dark ? "#1e1719" : "#f3e6e5") : dark ? "#2a0710" : "#6e0f1b",
+          );
         if (!dark) return;
         root.dataset.mode = "dark";
         root.dataset.siteDark = "";
         var scheme = document.querySelector('meta[name="color-scheme"]');
         if (scheme) scheme.setAttribute("content", "dark");
-        var bar = document.querySelector('meta[name="theme-color"]');
-        if (bar) bar.setAttribute("content", "#2a0710");
       })();
     </script>
     <style>
@@ -55,8 +64,11 @@
         overflow: clip;
         background: #3a0710;
       }
+      /* Absolute, not fixed: iOS Safari colours its strips above and below
+         the page from the root's background when the page loads, and a
+         fixed loader over it would be what it takes (02 §11). */
       #boot {
-        position: fixed;
+        position: absolute;
         inset: 0;
         z-index: 50;
         display: grid;
@@ -139,6 +151,19 @@
       html[data-site-dark],
       html[data-site-dark] body {
         background: #16030a;
+      }
+      /* 满屏 (phones): the root has the window's colour (src/styles.css,
+         .app-window-frame), which iOS Safari then gives the strips above
+         and below the page; the desktop and the loader cover it. */
+      @media (max-width: 639px), (max-height: 559px) {
+        html,
+        body {
+          background: rgb(243 230 229);
+        }
+        html[data-site-dark],
+        html[data-site-dark] body {
+          background: rgb(30 23 25);
+        }
       }
       html[data-site-dark] #boot {
         color: #ededed;

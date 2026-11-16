@@ -38,6 +38,14 @@ export function resolveDark(pref: ThemePref): boolean {
 
 /** Light and dark 背景's top colour, for the browser's own chrome. */
 const themeColor = { light: "#6e0f1b", dark: "#2a0710" } as const;
+/** Full screen (a phone) the window's colour instead, as the page's root
+ * has there for iOS Safari's strips (docs/redesign/02-shell.md §11). */
+const fullScreenColor = { light: "#f3e6e5", dark: "#1e1719" } as const;
+/** The app-window-frame's full-screen breakpoint (styles.css, index.html). */
+const fullScreen = () =>
+  typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 639px), (max-height: 559px)")
+    : null;
 
 /** Puts the marks on <html> (not on an embedded 打赏卡, which has its own). */
 export function applyTheme(pref: ThemePref = readPref()) {
@@ -54,9 +62,10 @@ export function applyTheme(pref: ThemePref = readPref()) {
   document
     .querySelector('meta[name="color-scheme"]')
     ?.setAttribute("content", dark ? "dark" : "light");
+  const colors = fullScreen()?.matches ? fullScreenColor : themeColor;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", dark ? themeColor.dark : themeColor.light);
+    ?.setAttribute("content", dark ? colors.dark : colors.light);
 }
 
 const listeners = new Set<() => void>();
@@ -76,12 +85,14 @@ function subscribe(listener: () => void) {
   listeners.add(listener);
   if (listeners.size === 1) {
     media()?.addEventListener("change", onSystem);
+    fullScreen()?.addEventListener("change", onFrame);
     window.addEventListener("storage", onStorage);
   }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
       media()?.removeEventListener("change", onSystem);
+      fullScreen()?.removeEventListener("change", onFrame);
       window.removeEventListener("storage", onStorage);
     }
   };
@@ -90,6 +101,11 @@ function subscribe(listener: () => void) {
 /** The system switched: only matters while following it. */
 function onSystem() {
   if (pref() === "system") changed();
+}
+
+/** The window went full screen or back (a turned phone): the bar's colour. */
+function onFrame() {
+  applyTheme(pref());
 }
 
 /** Another tab chose. */
