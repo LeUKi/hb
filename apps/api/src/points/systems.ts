@@ -16,6 +16,7 @@ import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
 import {
   noticePointsEnded,
+  noticePointsRate,
   noticePointsReviewed,
   noticePointsStatus,
 } from "../notices/events";
@@ -704,5 +705,47 @@ export async function reviewSystem(
       decision.note || null,
       now,
     );
+  return ownerView(await requireSystem(env, id));
+}
+
+/**
+ * 站长调每秒最多调用 (§17 第三批): when the issuer cannot keep up, the
+ * 站长 turns it down (or back up) without waiting for its adder; written
+ * in the 操作记录 and told to the adder.
+ */
+export async function setRateByAdmin(
+  env: ApiBindings,
+  adminId: string,
+  id: string,
+  rate: number,
+) {
+  if (!Number.isSafeInteger(rate) || rate < 1 || rate > POINTS_LIMITS.rateMax)
+    pointsError(
+      400,
+      "POINTS_RATE_INVALID",
+      `每秒最多调用要在 1 到 ${POINTS_LIMITS.rateMax} 之间`,
+    );
+  const row = await requireSystem(env, id);
+  if (row.status === "retired")
+    pointsError(409, "POINTS_RETIRED", "这个积分已经下架了");
+  if (row.rate === rate) return ownerView(row);
+  const now = Date.now();
+  const [changed] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE points_systems SET rate=?1,version=version+1,updated_at=?2
+        WHERE id=?3 AND rate=?4`,
+    ).bind(rate, now, id, row.rate),
+    pointsEventIfChanged(env, {
+      systemId: id,
+      actor: "admin",
+      actorId: adminId,
+      action: "rate",
+      note: `每秒最多调用 ${row.rate} → ${rate}`,
+      at: now,
+    }),
+  ]);
+  if (!changed?.meta.changes)
+    pointsError(409, "POINTS_VERSION_CONFLICT", "已经有新的修改，请刷新后重试");
+  await noticePointsRate(env, row, row.rate, rate, now);
   return ownerView(await requireSystem(env, id));
 }

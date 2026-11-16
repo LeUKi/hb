@@ -40,9 +40,12 @@ import {
   listCallRecords,
   listHongbaoPayouts,
   listHongbaoRecords,
+  listSenders,
   POINTS_PAYOUT_FILTERS,
   type PointsPayoutFilter,
   payoutTotals,
+  pointsTrend,
+  pointsUsage,
   searchPayouts,
 } from "./records";
 import { listSelfTests, runSelfTest } from "./self-test";
@@ -60,6 +63,7 @@ import {
   resumeSystem,
   retireSystem,
   reviewSystem,
+  setRateByAdmin,
   submitSystem,
   updatePointsSettings,
   updateSystem,
@@ -146,6 +150,8 @@ async function records(
       );
     case "hongbao":
       return listHongbaoRecords(env, systemId, query.before);
+    case "senders":
+      return { items: await listSenders(env, systemId) };
     case "payouts":
       return listHongbaoPayouts(
         env,
@@ -415,6 +421,32 @@ export const pointsRoutes = new Hono<ApiContext>()
           ? await resumeSystem(c.env, session.user.id, id, true)
           : await retireSystem(c.env, session.user.id, id, true);
     return c.json({ system });
+  })
+  // 用量 and 近 14 天走势 (§17 第二批), for the detail beside the list.
+  .get("/admin/points/:id/usage", async (c) => {
+    await requireAdmin(c);
+    const id = c.req.param("id");
+    await requireSystem(c.env, id);
+    const [usage, trend] = await Promise.all([
+      pointsUsage(c.env, id),
+      pointsTrend(c.env, id),
+    ]);
+    return c.json({ usage, trend });
+  })
+  // 站长调每秒最多调用 (§17 第三批).
+  .post("/admin/points/:id/rate", async (c) => {
+    const session = await requireAdminMutation(c);
+    const body = (await c.req.json().catch(() => null)) as {
+      rate?: unknown;
+    } | null;
+    return c.json({
+      system: await setRateByAdmin(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        Number(body?.rate),
+      ),
+    });
   })
   // 操作记录 (§17): newest first, 50 a page.
   .get("/admin/points/:id/events", async (c) => {

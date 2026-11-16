@@ -17,6 +17,7 @@ import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { adminOverview, failingDay } from "../src/points/admin";
+import { listPointsEvents } from "../src/points/events";
 import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
 import {
   resendPointsPayment,
@@ -29,14 +30,19 @@ import {
   listHongbaoPayouts,
   listHongbaoRecords,
   listPayoutRecords,
+  listSenders,
   payoutTotals,
+  pointsTrend,
+  pointsUsage,
   searchPayouts,
 } from "../src/points/records";
 import { runSelfTest } from "../src/points/self-test";
 import {
   createSystem,
   pauseSystem,
+  requireSystem,
   reviewSystem,
+  setRateByAdmin,
   submitSystem,
 } from "../src/points/systems";
 import { sha256Hex } from "../src/security/crypto";
@@ -930,6 +936,70 @@ describe("站长端：操作记录和发放质量 (§17)", () => {
       notAllowed: 0,
       other: 0,
     });
+  });
+
+  it("tells its usage, 14 days of payouts and who sends with it (第二批)", async () => {
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "30",
+      count: 3,
+    });
+    const paid = await actor();
+    issuer.open(paid.externalId, paid.username, 0);
+    const through = await claim(hongbao.id, paid);
+    expect(await run(through.claim.payment?.id ?? "")).toBe("confirmed");
+
+    const usage = await pointsUsage(bindings, systemId);
+    expect(usage).toMatchObject({
+      keys: 1,
+      invalidKeys: 0,
+      hongbao: 1,
+      senders: 1,
+      claimants: 1,
+      week: { count: 1 },
+      all: { count: 1 },
+    });
+    expect(usage.all.amountMinor).toBeGreaterThan(0);
+    const trend = await pointsTrend(bindings, systemId);
+    expect(trend).toHaveLength(14);
+    expect(trend.at(-1)).toMatchObject({ confirmed: 1, failed: 0 });
+    expect(trend.at(-1)?.averageMs).not.toBeNull();
+    expect(trend.slice(0, 13).every((day) => day.confirmed === 0)).toBe(true);
+    const senders = await listSenders(bindings, systemId);
+    expect(senders).toEqual([
+      expect.objectContaining({
+        username: sender.username,
+        hongbao: 1,
+        open: 1,
+        key: "ok",
+        all: { count: 1, amountMinor: usage.all.amountMinor },
+        weekAmountMinor: usage.all.amountMinor,
+      }),
+    ]);
+  });
+
+  it("lets the 站长 set its calls a second, logged and told to its adder (第三批)", async () => {
+    await online();
+    const before = (await requireSystem(bindings, systemId)).rate;
+    const system = await setRateByAdmin(bindings, admin.id, systemId, 5);
+    expect(system.rate).toBe(5);
+    const events = await listPointsEvents(bindings, systemId);
+    expect(events.items[0]).toMatchObject({
+      actor: "admin",
+      action: "rate",
+      note: `每秒最多调用 ${before} → 5`,
+    });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM notifications WHERE user_id=? AND kind='points_status' AND dedupe_key LIKE 'points_rate:%'",
+      )
+        .bind(owner.id)
+        .first(),
+    ).toEqual({ n: 1 });
+    await expect(
+      setRateByAdmin(bindings, admin.id, systemId, 0),
+    ).rejects.toThrow("每秒最多调用要在");
   });
 
   it("flags a day only with enough payouts, most refused for the recipient", () => {

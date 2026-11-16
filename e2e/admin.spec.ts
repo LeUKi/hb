@@ -804,6 +804,29 @@ test.describe("网站管理", () => {
         },
       }),
     );
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    await page.route("**/api/admin/points/*/usage", (route) =>
+      route.fulfill({
+        json: {
+          usage: {
+            keys: 6,
+            invalidKeys: 1,
+            hongbao: 9,
+            senders: 4,
+            claimants: 120,
+            week: { count: 30, amountMinor: 300_00 },
+            all: { count: 140, amountMinor: 1400_00 },
+          },
+          trend: Array.from({ length: 14 }, (_, index) => ({
+            day: today.getTime() - (13 - index) * 86_400_000,
+            confirmed: index === 13 ? 5 : index,
+            failed: index === 13 ? 16 : 0,
+            averageMs: index === 13 ? 420 : null,
+          })),
+        },
+      }),
+    );
     await page.route("**/api/admin/points/*/resume", (route) => {
       acted.push(route.request().url());
       return route.fulfill({
@@ -826,6 +849,16 @@ test.describe("网站管理", () => {
       page.getByText(
         "到账 30 笔 · 找不到收款人 8 · 不允许 2 · 处理中 1（失败 25%）",
       ),
+    ).toBeVisible();
+    // 第二批: 用量 and 14 days, the day's numbers on hover.
+    await expect(page.getByText("6 人（1 把失效）")).toBeVisible();
+    await expect(page.getByText("9 个，4 人发")).toBeVisible();
+    await expect(page.getByText("300 星星（30 笔）")).toBeVisible();
+    await page
+      .getByRole("button", { name: /到账 5 笔，发放失败 16 笔/ })
+      .hover();
+    await expect(
+      page.getByText(/：到账 5 笔，发放失败 16 笔，接口平均 420 ms$/),
     ).toBeVisible();
     await expect(
       page
@@ -920,6 +953,27 @@ test.describe("网站管理", () => {
         },
       }),
     );
+    await page.route("**/api/admin/points/*/usage", (route) =>
+      route.fulfill({
+        json: {
+          usage: {
+            keys: 0,
+            invalidKeys: 0,
+            hongbao: 0,
+            senders: 0,
+            claimants: 0,
+            week: { count: 0, amountMinor: 0 },
+            all: { count: 0, amountMinor: 0 },
+          },
+          trend: [],
+        },
+      }),
+    );
+    const rates: unknown[] = [];
+    await page.route("**/api/admin/points/*/rate", (route) => {
+      rates.push(route.request().postDataJSON());
+      return route.fulfill({ json: { system: { ...system, rate: 2 } } });
+    });
     await page.route("**/api/admin/points/*/pause", (route) => {
       paused.push(route.request().postDataJSON());
       return route.fulfill({
@@ -935,6 +989,18 @@ test.describe("网站管理", () => {
     await ask.getByRole("textbox", { name: /原因/ }).fill("对方接口在升级");
     await ask.getByRole("button", { name: "暂停", exact: true }).click();
     await expect.poll(() => paused).toEqual([{ reason: "对方接口在升级" }]);
+
+    // 第三批: the 站长 turns the rate down.
+    await page.getByRole("button", { name: "调整" }).click();
+    const rate = page.getByRole("dialog", {
+      name: "调整「星星」的每秒最多调用",
+    });
+    await rate.getByRole("textbox", { name: "每秒最多调用" }).fill("2");
+    await rate.getByRole("button", { name: "保存" }).click();
+    await expect.poll(() => rates).toEqual([{ rate: 2 }]);
+    // The list's order is in the address.
+    await page.getByRole("button", { name: "失败率最高" }).click();
+    await expect(page).toHaveURL(/sort=failed/);
 
     // 操作记录, newest first.
     await page.route(`**/api/admin/points/${system.id}`, (route) =>
@@ -984,6 +1050,147 @@ test.describe("网站管理", () => {
     await expect(page.getByText("系统", { exact: true })).toBeVisible();
     await expect(page.getByText("改了每秒最多调用 10 → 5")).toBeVisible();
     await expect(page.getByText("添加的人 @stars_owner")).toBeVisible();
+  });
+
+  test("三方积分 · 发放记录：发红包的人一页，近 7 天发得多的在前，写密钥是否有效（§17）", async ({
+    page,
+  }) => {
+    await mockSession(page, admin);
+    const pausedAt = Date.now();
+    const system = {
+      id: "eeeeeeee-1111-4222-8333-444444444444",
+      name: "星星",
+      unit: "星星",
+      step: 100,
+      issuerName: "星星乐园",
+      host: "stars.example.com",
+      status: "paused",
+      intro: "",
+      keyGuide: "",
+      noRecipient: "",
+      arrival: "",
+      notAllowed: "",
+      insufficient: "",
+      keyInvalid: "",
+      baseUrl: "https://stars.example.com/hb",
+      rate: 5,
+      endpointVersion: 1,
+      hasTestKey: true,
+      testRecipientId: "1",
+      passed: true,
+      passedTestId: "t1",
+      lastTestStartedAt: null,
+      submittedAt: null,
+      reviewedAt: Date.now() - 86_400_000,
+      reviewNote: null,
+      onlineAt: Date.now() - 86_400_000,
+      pausedBy: "owner",
+      pausedAt,
+      retiredAt: null,
+      breakerUntil: null,
+      version: 3,
+      createdAt: Date.now() - 2 * 86_400_000,
+      updatedAt: pausedAt,
+      ownerUsername: "stars_owner",
+      missedInRow: 0,
+      today: { calls: {}, total: 0, answeredRate: null, averageMs: null },
+      pauseReason: "在升级接口，今晚恢复",
+      openHongbao: 2,
+      unseenChanges: 0,
+      attention: 0,
+      week: {
+        confirmed: 30,
+        noRecipient: 8,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 1,
+      },
+      day: {
+        confirmed: 5,
+        noRecipient: 14,
+        notAllowed: 2,
+        otherFailed: 0,
+        waiting: 0,
+      },
+      failing: true,
+    };
+    void pausedAt;
+    const sum = (count: number, amountMinor: number) => ({
+      count,
+      amountMinor,
+    });
+    await page.route(`**/api/admin/points/${system.id}`, (route) =>
+      route.fulfill({
+        json: { system, tests: [], changes: [], attention: [] },
+      }),
+    );
+    await page.route(`**/api/admin/points/${system.id}/records*`, (route) => {
+      const kind = new URL(route.request().url()).searchParams.get("kind");
+      return route.fulfill({
+        json:
+          kind === "senders"
+            ? {
+                items: [
+                  {
+                    username: "big_sender",
+                    hongbao: 5,
+                    open: 1,
+                    lastOpenedAt: Date.now() - 3_600_000,
+                    all: sum(80, 800_00),
+                    weekAmountMinor: 300_00,
+                    key: "ok",
+                  },
+                  {
+                    username: "old_sender",
+                    hongbao: 2,
+                    open: 0,
+                    lastOpenedAt: Date.now() - 10 * 86_400_000,
+                    all: sum(20, 200_00),
+                    weekAmountMinor: 0,
+                    key: "invalid",
+                  },
+                ],
+              }
+            : {
+                totals: {
+                  today: {
+                    confirmed: sum(5, 50_00),
+                    waiting: sum(0, 0),
+                    failed: {
+                      ...sum(16, 160_00),
+                      noRecipient: 14,
+                      notAllowed: 2,
+                      other: 0,
+                    },
+                  },
+                  week: {
+                    confirmed: sum(30, 300_00),
+                    waiting: sum(1, 10_00),
+                    failed: {
+                      ...sum(10, 100_00),
+                      noRecipient: 8,
+                      notAllowed: 2,
+                      other: 0,
+                    },
+                  },
+                },
+                attention: [],
+              },
+      });
+    });
+    await openApp(page, `/admin/points/${system.id}/records?tab=senders`);
+    await expect(page.getByText("发放失败 16 笔，占 76%")).toBeVisible();
+    await expect(
+      page.getByText("（找不到收款人 14 · 不允许 2）"),
+    ).toBeVisible();
+    const rows = page.getByRole("listitem");
+    await expect(rows.first()).toContainText("@big_sender");
+    await expect(rows.first()).toContainText("5 个红包（1 个进行中）");
+    await expect(rows.first()).toContainText(
+      "近 7 天发出 300 星星 · 一共 800 星星（80 笔）",
+    );
+    await expect(rows.nth(1)).toContainText("@old_sender");
+    await expect(rows.nth(1)).toContainText("密钥失效");
   });
 
   test("网站设置：别人先存了，改过的那一项保留，其余跟着新版本", async ({

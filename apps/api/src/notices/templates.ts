@@ -319,6 +319,27 @@ export function pointsReviewed(
 }
 
 /** 三方积分 paused, resumed or 下架 by the 站长. */
+/** The 站长 changed a 三方积分's 每秒最多调用 (third-party-points §17). */
+export function pointsRate(
+  env: ApiBindings,
+  input: { systemId: string; name: string; from: number; to: number },
+): Notice {
+  const name = points(input.name);
+  return {
+    subject: subjectOf(`${name}的每秒最多调用被站长改成了 ${input.to} 次`),
+    body: bodyOf(
+      [
+        `站长把你添加的${name}的每秒最多调用从 ${input.from} 次改成了 ${input.to} 次。红包站调用你的接口时，每秒不会超过这个次数。你也可以在设置页自己改。`,
+      ],
+      {
+        label: "去设置",
+        url: `${originOf(env)}/points/${encodeURIComponent(input.systemId)}/edit`,
+      },
+      off(env),
+    ),
+  };
+}
+
 export function pointsStatus(
   env: ApiBindings,
   input: {

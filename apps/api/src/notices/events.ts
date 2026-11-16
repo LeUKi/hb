@@ -484,6 +484,29 @@ export function noticePointsStatus(
   );
 }
 
+/** The 站长 changed its 每秒最多调用 (third-party-points §17): its adder hears. */
+export function noticePointsRate(
+  env: ApiBindings,
+  system: SystemLike,
+  from: number,
+  to: number,
+  at: number,
+) {
+  return quietly("points_status", () =>
+    notify(env, {
+      userId: system.owner_id,
+      kind: "points_status",
+      key: `points_rate:${system.id}:${at}`,
+      ...notice.pointsRate(env, {
+        systemId: system.id,
+        name: system.name,
+        from,
+        to,
+      }),
+    }),
+  );
+}
+
 /** 三方积分's interface stopped answering: the first trip of an outage. */
 export function noticePointsBreaker(
   env: ApiBindings,

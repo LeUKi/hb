@@ -444,3 +444,168 @@ export async function listCallRecords(
       rows.results.length > limit && last ? cursorOf(last.at, last.rid) : null,
   };
 }
+
+const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
+
+/**
+ * 用量 (§17 第二批): who holds a key for it (and how many of those keys
+ * failed), the 红包 sent with it and by how many people, how many got some,
+ * and how much went out in the last 7 days and in all.
+ */
+export async function pointsUsage(env: ApiBindings, systemId: string) {
+  const week = Date.now() - 7 * DAY_MS;
+  const [keys, hongbao, paid] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT COUNT(*) AS keys, COALESCE(SUM(status<>'ok'),0) AS invalid
+        FROM points_keys WHERE system_id=? AND removed_at IS NULL`,
+    ).bind(systemId),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS hongbao, COUNT(DISTINCT author_id) AS senders
+        FROM activities WHERE points_system_id=? AND opened_at IS NOT NULL`,
+    ).bind(systemId),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(amount_minor),0) AS amount,
+          COUNT(DISTINCT recipient_user_id) AS claimants,
+          COALESCE(SUM(updated_at>=?2),0) AS week_count,
+          COALESCE(SUM(CASE WHEN updated_at>=?2 THEN amount_minor ELSE 0 END),0) AS week_amount
+        FROM points_payments WHERE system_id=?1 AND status='confirmed'`,
+    ).bind(systemId, week),
+  ]);
+  const k = keys?.results?.[0] as { keys: number; invalid: number };
+  const h = hongbao?.results?.[0] as { hongbao: number; senders: number };
+  const p = paid?.results?.[0] as {
+    count: number;
+    amount: number;
+    claimants: number;
+    week_count: number;
+    week_amount: number;
+  };
+  return {
+    keys: k?.keys ?? 0,
+    invalidKeys: k?.invalid ?? 0,
+    hongbao: h?.hongbao ?? 0,
+    senders: h?.senders ?? 0,
+    claimants: p?.claimants ?? 0,
+    week: { count: p?.week_count ?? 0, amountMinor: p?.week_amount ?? 0 },
+    all: { count: p?.count ?? 0, amountMinor: p?.amount ?? 0 },
+  };
+}
+
+/**
+ * 近 14 天走势 (§17 第二批): each day in Shanghai, payouts ended through or
+ * failed, and the issuer's average answer time for 发放 calls.
+ */
+export async function pointsTrend(env: ApiBindings, systemId: string) {
+  const today = startOfToday();
+  const from = today - 13 * DAY_MS;
+  const [payouts, calls] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT CAST((updated_at+?3)/86400000 AS INTEGER) AS day, status, COUNT(*) AS n
+        FROM points_payments WHERE system_id=?1 AND status IN ('confirmed','failed')
+          AND updated_at>=?2
+        GROUP BY day, status`,
+    ).bind(systemId, from, SHANGHAI_OFFSET_MS),
+    env.DB.prepare(
+      `SELECT CAST((at+?3)/86400000 AS INTEGER) AS day, CAST(AVG(ms) AS INTEGER) AS ms, COUNT(*) AS n
+        FROM points_calls WHERE system_id=?1 AND at>=?2 AND kind='transfer'
+        GROUP BY day`,
+    ).bind(systemId, from, SHANGHAI_OFFSET_MS),
+  ]);
+  const firstDay = Math.floor((from + SHANGHAI_OFFSET_MS) / DAY_MS);
+  const days = Array.from({ length: 14 }, (_, index) => ({
+    day: (firstDay + index) * DAY_MS - SHANGHAI_OFFSET_MS,
+    confirmed: 0,
+    failed: 0,
+    averageMs: null as number | null,
+  }));
+  for (const row of (payouts?.results ?? []) as {
+    day: number;
+    status: string;
+    n: number;
+  }[]) {
+    const slot = days[row.day - firstDay];
+    if (!slot) continue;
+    if (row.status === "confirmed") slot.confirmed = row.n;
+    else slot.failed = row.n;
+  }
+  for (const row of (calls?.results ?? []) as {
+    day: number;
+    ms: number;
+    n: number;
+  }[]) {
+    const slot = days[row.day - firstDay];
+    if (slot && row.n > 0) slot.averageMs = row.ms;
+  }
+  return days;
+}
+
+/**
+ * 发红包的人 (§17 第二批): who sends 红包 with it — how many, how much went
+ * out in all and in the last 7 days, and whether their key works now;
+ * the most in the last 7 days first, at most 100.
+ */
+export async function listSenders(env: ApiBindings, systemId: string) {
+  const week = Date.now() - 7 * DAY_MS;
+  const [senders, paid, keys] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT a.author_id, u.username, COUNT(*) AS hongbao, MAX(a.opened_at) AS last_opened,
+          COALESCE(SUM(a.opened_at IS NOT NULL AND a.ended_at IS NULL AND a.deleted_at IS NULL),0) AS open
+        FROM activities a JOIN users u ON u.id=a.author_id
+        WHERE a.points_system_id=? AND a.opened_at IS NOT NULL
+        GROUP BY a.author_id`,
+    ).bind(systemId),
+    env.DB.prepare(
+      `SELECT author_id, COUNT(*) AS count, COALESCE(SUM(amount_minor),0) AS amount,
+          COALESCE(SUM(CASE WHEN updated_at>=?2 THEN amount_minor ELSE 0 END),0) AS week_amount
+        FROM points_payments WHERE system_id=?1 AND status='confirmed'
+        GROUP BY author_id`,
+    ).bind(systemId, week),
+    env.DB.prepare(
+      `SELECT author_id, status FROM points_keys
+        WHERE system_id=? AND removed_at IS NULL`,
+    ).bind(systemId),
+  ]);
+  const paidOf = new Map(
+    (
+      (paid?.results ?? []) as {
+        author_id: string;
+        count: number;
+        amount: number;
+        week_amount: number;
+      }[]
+    ).map((row) => [row.author_id, row]),
+  );
+  const keyOf = new Map(
+    ((keys?.results ?? []) as { author_id: string; status: string }[]).map(
+      (row) => [row.author_id, row.status === "ok" ? "ok" : "invalid"],
+    ),
+  );
+  return (
+    (senders?.results ?? []) as {
+      author_id: string;
+      username: string;
+      hongbao: number;
+      last_opened: number;
+      open: number;
+    }[]
+  )
+    .map((row) => {
+      const sums = paidOf.get(row.author_id);
+      return {
+        username: row.username,
+        hongbao: row.hongbao,
+        open: row.open,
+        lastOpenedAt: row.last_opened,
+        all: { count: sums?.count ?? 0, amountMinor: sums?.amount ?? 0 },
+        weekAmountMinor: sums?.week_amount ?? 0,
+        key: (keyOf.get(row.author_id) ?? "none") as "ok" | "invalid" | "none",
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.weekAmountMinor - a.weekAmountMinor ||
+        b.all.amountMinor - a.all.amountMinor ||
+        b.lastOpenedAt - a.lastOpenedAt,
+    )
+    .slice(0, 100);
+}

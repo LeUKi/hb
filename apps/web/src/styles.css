@@ -81,6 +81,10 @@
   --color-warning-soft: rgb(178 106 0 / 0.1);
   --color-danger: #c81e3a;
   --color-danger-soft: rgb(200 30 58 / 0.08);
+  /* Two series on a chart (dataviz reference slots 1–2, validated light
+     and dark): 三方积分's 走势, 到账 and 发放失败. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
   /* The official envelope SVG keeps its own colours; the small envelope in
      lists draws with them (flap, and greyed once ended). */
   --color-envelope: #c94b37;
@@ -2723,6 +2727,8 @@ html[data-embed] .build-stamp {
   color-scheme: dark;
   --mini-page: #222222;
   --color-white: color-mix(in srgb, var(--mini-page), #fff 10%);
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
   --color-ink: #ededed;
   --color-ink-2: #b3b3b3;
   --color-ink-3: #868686;

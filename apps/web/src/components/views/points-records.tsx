@@ -29,6 +29,7 @@ import {
   useOwnPoints,
   useRecordsOverview,
   useSearchPayouts,
+  useSenderRecords,
 } from "../../lib/points";
 import { clockLabel } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
@@ -48,6 +49,7 @@ import {
 } from "../page/page-state";
 import { useSearchChoice, useSearchStep } from "../shell/use-search-choice";
 import { Button } from "../ui/button";
+import { PersonName } from "../ui/person";
 import { PointsCapsule } from "../ui/points-mark";
 import { Swap } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
@@ -90,7 +92,7 @@ const callResults: Record<string, string> = {
   "missed:invalid": "回复看不懂",
 };
 
-type Tab = "attention" | "hongbao" | "calls";
+type Tab = "attention" | "hongbao" | "senders" | "calls";
 type Props = { scope: RecordsScope; systemId: string; unit: AmountUnit };
 
 /** The page: the system read for its name and unit, then the records. */
@@ -158,6 +160,7 @@ function Records(props: Props) {
   const [tab, setTab] = useSearchChoice<Tab>("tab", "attention", [
     "attention",
     "hongbao",
+    "senders",
     "calls",
   ]);
   const [typed, setTyped] = useState("");
@@ -189,6 +192,7 @@ function Records(props: Props) {
                   count: attention?.length,
                 },
                 { value: "hongbao", label: "按红包" },
+                { value: "senders", label: "发红包的人" },
                 { value: "calls", label: "调用记录" },
               ]}
             />
@@ -197,6 +201,8 @@ function Records(props: Props) {
                 <Attention {...props} />
               ) : tab === "hongbao" ? (
                 <ByHongbao {...props} />
+              ) : tab === "senders" ? (
+                <Senders {...props} />
               ) : (
                 <Calls scope={props.scope} systemId={props.systemId} />
               )}
@@ -415,6 +421,57 @@ function HongbaoList({
               />
             </button>
           </Squircle>
+        </li>
+      ))}
+    </ListArea>
+  );
+}
+
+/**
+ * 发红包的人 (§17 第二批): who sends 红包 with it, the most in the last 7
+ * days first — their 红包, what went out, and whether their key works now.
+ */
+function Senders({ scope, systemId, unit }: Props) {
+  const query = useSenderRecords(scope, systemId);
+  const items = query.data?.items ?? [];
+  return (
+    <ListArea
+      pending={query.isPending}
+      failed={query.isError}
+      onRetry={() => void query.refetch()}
+      empty={
+        <EmptyNote
+          title="还没有人用它发红包"
+          text="有人用这种积分开放红包以后，会按近 7 天发出的数量列在这里。"
+        />
+      }
+    >
+      {items.map((sender) => (
+        <li
+          key={sender.username}
+          className="grid gap-0.5 border-line border-b px-1.5 py-2.5 text-sm last:border-b-0"
+        >
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <PersonName
+              name={`@${sender.username}`}
+              username={sender.username}
+              className="font-medium text-ink"
+            />
+            {sender.key === "invalid" ? (
+              <StatusChip tone="danger">密钥失效</StatusChip>
+            ) : sender.key === "none" ? (
+              <StatusChip tone="neutral">没有密钥</StatusChip>
+            ) : null}
+          </span>
+          <span className="text-ink-3">
+            {sender.hongbao} 个红包
+            {sender.open > 0 && `（${sender.open} 个进行中）`} · 最近一次{" "}
+            {clockLabel(sender.lastOpenedAt)} 开放
+          </span>
+          <span className="text-ink-2">
+            近 7 天发出 {amountText(sender.weekAmountMinor, unit)} · 一共{" "}
+            {amountText(sender.all.amountMinor, unit)}（{sender.all.count} 笔）
+          </span>
         </li>
       ))}
     </ListArea>

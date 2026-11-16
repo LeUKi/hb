@@ -377,6 +377,49 @@ export type PointsEvent = {
   note: string | null;
 };
 
+/** 用量 (§17 第二批): keys, 红包, senders, claimants, and what went out. */
+export type PointsUsage = {
+  keys: number;
+  invalidKeys: number;
+  hongbao: number;
+  senders: number;
+  claimants: number;
+  week: { count: number; amountMinor: number };
+  all: { count: number; amountMinor: number };
+};
+
+/** One day of 近 14 天走势 (midnight in Shanghai, ms). */
+export type PointsTrendDay = {
+  day: number;
+  confirmed: number;
+  failed: number;
+  averageMs: number | null;
+};
+
+/** The detail's 用量 and 走势, read when a system is opened (the 站长's). */
+export function useAdminPointsUsage(id: string) {
+  return useQuery({
+    queryKey: [...pointsKeys.adminOne(id), "usage"],
+    queryFn: ({ signal }) =>
+      get<{ usage: PointsUsage; trend: PointsTrendDay[] }>(
+        `admin/points/${encodeURIComponent(id)}/usage`,
+        signal,
+      ),
+    enabled: id !== "",
+  });
+}
+
+/** 发红包的人 (§17 第二批): one row a sender, the most in 7 days first. */
+export type PointsSender = {
+  username: string;
+  hongbao: number;
+  open: number;
+  lastOpenedAt: number;
+  all: { count: number; amountMinor: number };
+  weekAmountMinor: number;
+  key: "ok" | "invalid" | "none";
+};
+
 /** A system's 操作记录, newest first, 50 at a time (the 站长's). */
 export function useAdminPointsEvents(id: string) {
   return useInfiniteQuery({
@@ -484,6 +527,14 @@ export function useAdminPointsActions() {
         send("POST", `admin/points/${encodeURIComponent(id)}/changes/seen`),
       onSuccess: settle,
     }),
+    // 站长调每秒最多调用 (§17 第三批).
+    rate: useMutation({
+      mutationFn: (input: { id: string; rate: number }) =>
+        send("POST", `admin/points/${encodeURIComponent(input.id)}/rate`, {
+          rate: input.rate,
+        }),
+      onSuccess: settle,
+    }),
     payout: useMutation({
       mutationFn: (input: { id: string; action: "requery" | "fail" }) =>
         send(
@@ -580,6 +631,19 @@ export function useRecordsOverview(scope: RecordsScope, id: string) {
     queryFn: ({ signal }) =>
       get<{ totals: PayoutTotals; attention: PayoutRecord[] }>(
         recordsPath(scope, id, "kind=overview"),
+        signal,
+      ),
+    enabled: id !== "",
+  });
+}
+
+/** 发红包的人 (§17 第二批): who sends with it, at most 100. */
+export function useSenderRecords(scope: RecordsScope, id: string) {
+  return useQuery({
+    queryKey: [...pointsKeys.records(scope, id), "senders"],
+    queryFn: ({ signal }) =>
+      get<{ items: PointsSender[] }>(
+        recordsPath(scope, id, "kind=senders"),
         signal,
       ),
     enabled: id !== "",

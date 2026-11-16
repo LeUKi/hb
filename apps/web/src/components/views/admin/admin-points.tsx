@@ -6,6 +6,7 @@
 // own pages — 配置, 发放记录, 调用记录, 文案改动, 接口测试记录 — each one
 // level down with its way back. Read on 刷新; the chosen row is in the
 // address (?id=), the filters too (?status=, ?anomaly=).
+import { type AmountUnit, POINTS_LIMITS } from "@hb/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Clock } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -18,6 +19,7 @@ import {
   statusWords,
   useAdminPoints,
   useAdminPointsActions,
+  useAdminPointsUsage,
 } from "../../../lib/points";
 import { clockLabel } from "../../../lib/roster-time";
 import { amountText } from "../../../lib/units";
@@ -29,6 +31,7 @@ import { ConfirmDialog } from "../../shell/confirm-dialog";
 import { useSearchChoice, useSearchStep } from "../../shell/use-search-choice";
 import { Button } from "../../ui/button";
 import { Field, Segmented, Switch, TextInput } from "../../ui/field";
+import { PersonName } from "../../ui/person";
 import { PointsCapsule } from "../../ui/points-mark";
 import { radius, Squircle } from "../../ui/squircle";
 import { StatusChip } from "../../ui/status-chip";
@@ -41,6 +44,7 @@ import {
   ListDetail,
   listLoad,
 } from "./admin-frame";
+import { PointsTrend } from "./points-trend";
 
 type StatusFilter =
   | "all"
@@ -58,6 +62,25 @@ const anomalyWords: Record<Anomaly, string> = {
   owner_paused: "添加的人暂停的",
   failing: "失败率高",
 };
+
+type SortOrder = "status" | "volume" | "failed" | "online";
+
+/** The list's order: as the server gives it (by state), or by a number. */
+function sortRows(rows: AdminPointsRow[], sort: SortOrder) {
+  if (sort === "status") return rows;
+  const ended = (row: AdminPointsRow) =>
+    row.week.confirmed +
+    row.week.noRecipient +
+    row.week.notAllowed +
+    row.week.otherFailed;
+  const key = (row: AdminPointsRow) =>
+    sort === "volume"
+      ? ended(row)
+      : sort === "failed"
+        ? (failedShare(row.week) ?? -1)
+        : (row.onlineAt ?? -1);
+  return [...rows].sort((a, b) => key(b) - key(a));
+}
 
 const ownerPaused = (row: AdminPointsRow) =>
   row.status === "paused" && row.pausedBy !== "admin";
@@ -107,6 +130,13 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
     "draft",
     "retired",
   ]);
+  // 列表排序 (§17 第三批), in the address with the rest.
+  const [sort, setSort] = useSearchChoice<SortOrder>("sort", "status", [
+    "status",
+    "volume",
+    "failed",
+    "online",
+  ]);
   const selected = useSearchStep("id");
   const anomaly =
     search.anomaly === "payouts" ||
@@ -118,15 +148,18 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
       : null;
   const data = query.data;
   const systems = data?.systems ?? [];
-  const rows = systems.filter(
-    (row) =>
-      (status === "all" || row.status === status) &&
-      (anomaly === null ||
-        (anomaly === "payouts" && row.attention > 0) ||
-        (anomaly === "changes" && row.unseenChanges > 0) ||
-        (anomaly === "breaker" && resting(row)) ||
-        (anomaly === "owner_paused" && ownerPaused(row)) ||
-        (anomaly === "failing" && row.failing)),
+  const rows = sortRows(
+    systems.filter(
+      (row) =>
+        (status === "all" || row.status === status) &&
+        (anomaly === null ||
+          (anomaly === "payouts" && row.attention > 0) ||
+          (anomaly === "changes" && row.unseenChanges > 0) ||
+          (anomaly === "breaker" && resting(row)) ||
+          (anomaly === "owner_paused" && ownerPaused(row)) ||
+          (anomaly === "failing" && row.failing)),
+    ),
+    sort,
   );
   const cards: Card[] = [
     {
@@ -214,6 +247,18 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
               { value: "paused", label: "已暂停" },
               { value: "draft", label: "草稿" },
               { value: "retired", label: "已下架" },
+            ]}
+          />
+          <Segmented
+            size="sm"
+            label="排序"
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: "status", label: "按状态" },
+              { value: "volume", label: "发放最多" },
+              { value: "failed", label: "失败率最高" },
+              { value: "online", label: "最近上线" },
             ]}
           />
           {anomaly && (
@@ -400,9 +445,26 @@ function Detail({ row }: { row: AdminPointsRow }) {
               </a>
             ),
           },
-          { label: "添加的人", value: `@${row.ownerUsername}` },
+          {
+            label: "添加的人",
+            // 联系添加的人 (§17 第三批): their card, with their 社区 profile.
+            value: (
+              <PersonName
+                name={`@${row.ownerUsername}`}
+                username={row.ownerUsername}
+              />
+            ),
+          },
           { label: "最小单位", value: amountText(row.step, unit) },
-          { label: "每秒最多调用", value: `${row.rate} 次` },
+          {
+            label: "每秒最多调用",
+            value:
+              row.status === "retired" ? (
+                `${row.rate} 次`
+              ) : (
+                <RateValue row={row} />
+              ),
+          },
           {
             label: "接口测试",
             value: row.passed ? "当前接口地址已通过" : "当前接口地址没通过",
@@ -431,6 +493,7 @@ function Detail({ row }: { row: AdminPointsRow }) {
             : []),
         ]}
       />
+      <Usage id={row.id} unit={unit} />
       <nav aria-label="这种积分的页面" className="grid">
         <PageLink href={`${base}/config`} label="配置" />
         <PageLink
@@ -719,5 +782,125 @@ function Actions({ row }: { row: AdminPointsRow }) {
         }
       />
     </div>
+  );
+}
+
+/**
+ * 用量 and 近 14 天走势 (§17 第二批), read when the detail opens: keys (how
+ * many failed), 红包 and their senders, who got some, and what went out.
+ */
+function Usage({ id, unit }: { id: string; unit: AmountUnit }) {
+  const query = useAdminPointsUsage(id);
+  const data = query.data;
+  if (query.isError)
+    return <p className="text-sm text-ink-3">用量没有读到，刷新再试。</p>;
+  if (!data)
+    return <p className="loading-sheen text-sm text-ink-3">正在读用量和走势</p>;
+  const { usage, trend } = data;
+  return (
+    <div className="grid gap-3 border-line border-t pt-3">
+      <DetailRows
+        rows={[
+          {
+            label: "填了密钥",
+            value: `${usage.keys} 人${usage.invalidKeys ? `（${usage.invalidKeys} 把失效）` : ""}`,
+          },
+          {
+            label: "用它发的红包",
+            value: `${usage.hongbao} 个，${usage.senders} 人发`,
+          },
+          { label: "领到的人", value: `${usage.claimants} 人` },
+          {
+            label: "近 7 天发出",
+            value: `${amountText(usage.week.amountMinor, unit)}（${usage.week.count} 笔）`,
+          },
+          {
+            label: "一共发出",
+            value: `${amountText(usage.all.amountMinor, unit)}（${usage.all.count} 笔）`,
+          },
+        ]}
+      />
+      <PointsTrend days={trend} />
+    </div>
+  );
+}
+
+/**
+ * 每秒最多调用 with 调整 (§17 第三批): the 站长 can turn it down when the
+ * issuer cannot keep up; its adder is told, and it is in the 操作记录.
+ */
+function RateValue({ row }: { row: AdminPointsRow }) {
+  const actions = useAdminPointsActions();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(String(row.rate));
+  const rate = Number(value);
+  const valid =
+    Number.isSafeInteger(rate) && rate >= 1 && rate <= POINTS_LIMITS.rateMax;
+  const busy = actions.rate.isPending;
+  const error = actions.rate.error;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {row.rate} 次
+      <Button
+        size="xs"
+        variant="quiet"
+        aria-haspopup="dialog"
+        onClick={() => {
+          actions.rate.reset();
+          setValue(String(row.rate));
+          setOpen(true);
+        }}
+      >
+        调整
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        busy={busy}
+        title={`调整「${row.name}」的每秒最多调用`}
+        text={`红包站调用 ${row.host} 的接口时，每秒不超过这个次数。对方扛不住时可以先调低；添加的人 @${row.ownerUsername} 会收到私信，操作记录里也会记下。`}
+        error={
+          error
+            ? error instanceof ActivityRequestError
+              ? error.message
+              : "调整没有完成，请稍后再试。"
+            : null
+        }
+        actions={
+          <>
+            <Button onClick={() => setOpen(false)}>返回</Button>
+            <Button
+              variant="primary"
+              aria-disabled={busy || !valid || rate === row.rate || undefined}
+              onClick={() => {
+                if (busy || !valid || rate === row.rate) return;
+                actions.rate.mutate(
+                  { id: row.id, rate },
+                  { onSuccess: () => setOpen(false) },
+                );
+              }}
+            >
+              {busy ? "正在保存…" : "保存"}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="每秒最多调用"
+          htmlFor={`rate-${row.id}`}
+          hint={`1 到 ${POINTS_LIMITS.rateMax} 次，现在是 ${row.rate} 次。`}
+          error={valid ? null : `要在 1 到 ${POINTS_LIMITS.rateMax} 之间`}
+          live
+        >
+          <TextInput
+            id={`rate-${row.id}`}
+            inputMode="numeric"
+            value={value}
+            invalid={!valid}
+            onChange={(event) => setValue(event.target.value.trim())}
+          />
+        </Field>
+      </ConfirmDialog>
+    </span>
   );
 }
