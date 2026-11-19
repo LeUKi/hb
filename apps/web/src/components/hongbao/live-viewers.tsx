@@ -1,6 +1,7 @@
 import type { ViewerStats } from "@hb/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
+import { Eye } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type RefObject,
@@ -131,10 +132,12 @@ function PlainCount({ count }: { count: number }) {
 
 /**
  * A small card of two short lines on 分享's glass, squarer than its pill:
- * the number, and under it 人在看 (人看过 once over). It stays in the
+ * the number by itself, and under it the live dot and 在看 (an eye and 看过
+ * once over), as a live count is marked (user 2026-11-20). It stays in the
  * column the cover keeps free at its sides for 分享 (56px on a phone: the
  * small cover's padding, the big cover's name line clearance), so it never
- * runs over the author's name or the title (user 2026-11-19). A wide
+ * runs over the author's name or the title (user 2026-11-19): the mark sits
+ * by the short word, not the number, so four digits still fit. A wide
  * window's column (112px) takes it a size up. The most at once is in the
  * card it opens.
  */
@@ -169,12 +172,22 @@ function ViewersChip({
       onClick={onToggle}
     >
       <SquircleFill radius={CHIP_RADIUS} />
-      <span className="flex items-center gap-[3px] text-sm leading-5 font-semibold tracking-[-0.02em] text-ink tabular-nums @wide/window:gap-1 @wide/window:text-lg @wide/window:leading-6">
-        {live && <span className="hb-live-dot" aria-hidden="true" />}
+      <span className="text-sm leading-5 font-semibold tracking-[-0.02em] text-ink tabular-nums @wide/window:text-lg @wide/window:leading-6">
         <RollingNumber value={count} />
       </span>
-      <span className="text-[0.6875rem] leading-[0.875rem] font-normal text-ink-3 @wide/window:text-xs @wide/window:leading-4">
-        {label}
+      <span
+        className="flex items-center gap-0.5 text-[0.6875rem] leading-[0.875rem] font-normal text-ink-2 @wide/window:gap-1 @wide/window:text-xs @wide/window:leading-4"
+        aria-hidden="true"
+      >
+        {live ? (
+          <span className="hb-live-dot size-1.5 @wide/window:size-2" />
+        ) : (
+          <Eye
+            className="size-[0.6875rem] @wide/window:size-3"
+            strokeWidth={2.25}
+          />
+        )}
+        {live ? "在看" : "看过"}
       </span>
     </button>
   );
