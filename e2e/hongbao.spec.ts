@@ -594,21 +594,21 @@ test.describe("红包页", () => {
     });
     await openApp(page, path);
     await expect.poll(() => sockets.length).toBe(1);
-    const viewers = page.locator('[data-hb-part="viewers"]');
+    const viewers = page.locator('[data-hb-part="viewers"] button');
     sockets[0]?.send(
       JSON.stringify({ type: "activity", activity: publicRead(state), seq: 7 }),
     );
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 3, seq: 8 }));
-    await expect(viewers).toHaveText("3 人在看");
+    await expect(viewers).toHaveAccessibleName("3 人在看");
     await page.waitForTimeout(500);
     const before = state.reads.public;
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 4, seq: 9 }));
-    await expect(viewers).toHaveText("4 人在看");
+    await expect(viewers).toHaveAccessibleName("4 人在看");
     await page.waitForTimeout(500);
     expect(state.reads.public).toBe(before);
     // 10 and 11 never came: the 红包 read once, whole.
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 5, seq: 12 }));
-    await expect(viewers).toHaveText("5 人在看");
+    await expect(viewers).toHaveAccessibleName("5 人在看");
     await expect.poll(() => state.reads.public).toBe(before + 1);
   });
 
@@ -626,19 +626,19 @@ test.describe("红包页", () => {
     });
     await openApp(page, path);
     await expect.poll(() => sockets.length).toBe(1);
-    const viewers = page.locator('[data-hb-part="viewers"]');
+    const viewers = page.locator('[data-hb-part="viewers"] button');
     // Nothing until the channel says how many.
-    await expect(viewers).toHaveText("");
+    await expect(viewers).toHaveCount(0);
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 3 }));
-    await expect(viewers).toHaveText("3 人在看");
+    await expect(viewers).toHaveAccessibleName("3 人在看");
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 12 }));
-    await expect(viewers).toHaveText("12 人在看");
+    await expect(viewers).toHaveAccessibleName("12 人在看");
     // The line drops: the number goes until the next one comes.
     await sockets[0]?.close({ code: 1012, reason: "restart" });
-    await expect(viewers).toHaveText("");
+    await expect(viewers).toHaveCount(0);
     await expect.poll(() => sockets.length, { timeout: 5_000 }).toBe(2);
     sockets[1]?.send(JSON.stringify({ type: "viewers", count: 11 }));
-    await expect(viewers).toHaveText("11 人在看");
+    await expect(viewers).toHaveAccessibleName("11 人在看");
   });
 
   test("在看人数（viewer-stats §6）：点开看此刻、同时最多、来看过和曲线；结束后谁都看得到看过几人", async ({
@@ -692,7 +692,7 @@ test.describe("红包页", () => {
         total: 40,
       }),
     );
-    await expect(chip).toHaveText("3 人在看");
+    await expect(chip).toHaveAccessibleName("3 人在看");
     await chip.click();
     const card = page.getByRole("dialog", { name: "在看人数" });
     await expect(card).toBeVisible();
@@ -718,7 +718,7 @@ test.describe("红包页", () => {
     await expect(card).toBeHidden();
     await expect(chip).toBeFocused();
 
-    // Over: in its place how many looked and the most at once, for anyone.
+    // Over: in its place how many looked, for anyone; the card says the most at once.
     state.activity = {
       ...state.activity,
       status: "ended",
@@ -731,10 +731,11 @@ test.describe("红包页", () => {
     sockets[0]?.send(
       JSON.stringify({ type: "activity", activity: publicRead(state) }),
     );
-    await expect(chip).toHaveText("41 人看过 · 同时最多 12");
+    await expect(chip).toHaveAccessibleName("41 人看过");
     await chip.click();
     await expect(card).toBeVisible();
     await expect(card.getByText("此刻在看")).toHaveCount(0);
+    await expect(card.getByText("同时最多")).toBeVisible();
     await expect(card.getByRole("slider")).toBeVisible();
     // Read again on opening again: never a stale curve.
     expect(curveReads).toBeGreaterThan(firstReads);
@@ -757,7 +758,7 @@ test.describe("红包页", () => {
       viewers: { peak: 5, peakAt: new Date().toISOString(), total: 9 },
     };
     await page.reload();
-    await expect(chip).toHaveText("9 人看过 · 同时最多 5");
+    await expect(chip).toHaveAccessibleName("9 人看过");
   });
 
   test("登录后：连接断了退回轮询，重连后补读自己那份", async ({ page }) => {
@@ -2301,9 +2302,9 @@ test.describe("红包页", () => {
     await openApp(page, path);
     await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
     await expect.poll(() => sockets.length).toBe(1);
-    const viewers = page.locator('[data-hb-part="viewers"]');
+    const viewers = page.locator('[data-hb-part="viewers"] button');
     sockets[0]?.send(JSON.stringify({ type: "viewers", count: 7 }));
-    await expect(viewers).toHaveText("7 人在看");
+    await expect(viewers).toHaveAccessibleName("7 人在看");
     // Its opening, pushed: no waiting for a read.
     sockets[0]?.send(JSON.stringify({ type: "activity", activity: opened }));
     await expect(

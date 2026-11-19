@@ -802,7 +802,7 @@ function Page({
             className="relative flex flex-col pb-4 [overflow-anchor:none]"
             data-phase={seal.phase}
           >
-            <LiveViewers activityId={id} running={!view.ended} />
+            <LiveViewers activityId={id} running={!view.ended} plain />
             <AddressActions sdk={sdk} id={id} />
             <p className="sr-only" role="status">
               {seal.announcement}
