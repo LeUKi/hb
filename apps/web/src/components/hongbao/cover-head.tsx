@@ -144,6 +144,9 @@ export function CoverHead({
   // under it) over the cover's right edge, on both sides to stay centred:
   // a long name ran under 分享. The small cover's padding already does.
   const clear = small ? 0 : compact ? 4 : page.available ? 14 : 11;
+  // On a phone the name line keeps 16px more each side: 在看人数 top left
+  // is a 48px card as tall as 分享 (live-viewers.tsx, 05 §3).
+  const nameClear = compact ? clear + 2 : clear;
   const author = activity.author.displayName;
   const note = activity.beforeInfo.trim();
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -262,7 +265,9 @@ export function CoverHead({
           "relative flex max-w-full items-center text-cream-2",
           small ? "gap-1.5" : "gap-2",
         )}
-        style={clear ? { maxWidth: `calc(100% - ${clear}rem)` } : undefined}
+        style={
+          nameClear ? { maxWidth: `calc(100% - ${nameClear}rem)` } : undefined
+        }
       >
         <motion.span {...motions.leaf} className="inline-flex shrink-0">
           <Avatar
