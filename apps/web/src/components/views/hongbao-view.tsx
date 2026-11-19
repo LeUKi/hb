@@ -139,7 +139,12 @@ function HongbaoPage({
       data-cover-pinned={opened || undefined}
     >
       <PageActions />
-      <LiveViewers activityId={activity.id} running={running} />
+      <LiveViewers
+        activityId={activity.id}
+        running={running}
+        over={activity.viewers}
+        openedAt={activity.openedAt}
+      />
       <p className="sr-only" role="status">
         {hongbao.announcement}
       </p>

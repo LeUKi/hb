@@ -132,6 +132,7 @@ import {
   rewardFilterSql,
 } from "./history-query";
 import { humanCheckAvailable, humanCheckMethodOf } from "./human-check";
+import { viewersOver } from "./live";
 import {
   openingRandomVersion,
   publicDrawProof,
@@ -151,6 +152,7 @@ import {
   privateSnapshot,
   readPrivateContent,
 } from "./storage";
+import { storedViewerStats } from "./viewer-stats";
 
 export { deleteActivity } from "./deletion";
 
@@ -551,19 +553,26 @@ export async function getPublicActivity(
   // A draft too, for whoever has its link (05 §5): 未开放.
   if (!row) activityNotFound();
   const sender = row.authorId === viewerId;
-  const [drawProof, scope, judge, pool, funds] = await Promise.all([
+  const status = activityStatus(row);
+  const [drawProof, scope, judge, pool, funds, viewers] = await Promise.all([
     publicDrawProof(env, row),
     publicScopeWithPeople(env, configuration(row).scope),
     publicJudge(env, row),
     row.participationMode === "code" ? ledgerPool(env, row.id) : null,
     // 商户余额不足: claims wait (docs/payout-stop-design.md §6).
     fundsPausedOf(env, row),
+    // 在看人数 once it is over (docs/viewer-stats-design.md §3).
+    status === "ended" || status === "archived"
+      ? storedViewerStats(env, row.id)
+      : null,
   ]);
+  const projected = await withPageSwitch(
+    env,
+    projectPublicActivity(row, await author(env, row.authorId)),
+  );
   return {
-    ...(await withPageSwitch(
-      env,
-      projectPublicActivity(row, await author(env, row.authorId)),
-    )),
+    ...projected,
+    ...(viewers && viewersOver(projected) ? { viewers } : {}),
     // Protocol 5 has no shares: 奖池还剩 instead, a draft's whole pool too.
     ...(pool !== null
       ? { quantity: { mode: "pool" as const, left: formatSignedAmount(pool) } }

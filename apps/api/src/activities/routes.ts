@@ -1,6 +1,7 @@
 import {
   ACTIVITY_LIMITS,
   type ActivityHistoryFilters,
+  type ActivityViewersDetail,
   activityRewardFilterSchema,
   CLAIM_SCOPE_LIMITS,
   type ClaimResult,
@@ -32,6 +33,7 @@ import {
 } from "../auth/personal-token";
 import {
   type AuthenticatedSession,
+  getOptionalSession,
   requireAuth,
   requireProtectedMutation,
 } from "../auth/session";
@@ -65,8 +67,9 @@ import {
   listParticipations,
   listPublicRegistrations,
 } from "./registration-queries";
-import { getPublicActivity, listActivities } from "./service";
+import { activityStatus, getPublicActivity, listActivities } from "./service";
 import { type ActivityRow, findActivity } from "./storage";
+import { storedViewers } from "./viewer-stats";
 
 function validated<T>(
   result:
@@ -618,6 +621,29 @@ export const activityRoutes = new Hono<ApiContext>()
         headers: { Upgrade: "websocket", [LIVE_USER_HEADER]: session.user.id },
       },
     );
+  })
+  // 在看人数's card (docs/viewer-stats-design.md §3): while the 红包 runs
+  // or waits to open, its object's numbers now, for the signed-in people
+  // who see them; otherwise what the object last wrote to D1, which never
+  // wakes it.
+  .get("/activities/:id/viewers", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const id = c.req.param("id");
+    const activity = await requireLdcActivity(c.env, id);
+    const status = activityStatus(activity);
+    const watched =
+      status === "active" ||
+      (status === "draft" && activity.scheduledOpenAt !== null) ||
+      (status === "ended" &&
+        (activity.drawState === "waiting" ||
+          activity.drawState === "settling"));
+    if (watched && (await getOptionalSession(c))) {
+      const answer = await activityObject(c.env, id).fetch(
+        `https://activity.internal/internal/activities/${encodeURIComponent(id)}/viewers`,
+      );
+      if (answer.ok) return c.json(await answer.json<ActivityViewersDetail>());
+    }
+    return c.json(await storedViewers(c.env, id));
   })
   .get("/activities/:id/claim", async (c) => {
     const session = await requireActor(c);

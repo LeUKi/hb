@@ -15,6 +15,7 @@ import type {
   PublicActivity,
   PublicClaimScope,
   PublicJudge,
+  ViewerStats,
 } from "@hb/contracts";
 import { rewardSummaryOf, type Split, splitOf } from "./hongbao-text";
 import type { RosterTitle } from "./titles";
@@ -102,6 +103,10 @@ export type HongbaoActivity = {
   fundsPaused?: { stopAt: number };
   /** Ended for that: three days short (payout-stop §1). */
   fundsStopped?: true;
+  /** When it opened (a draft has not). */
+  openedAt?: number;
+  /** 在看人数 once it is over (docs/viewer-stats-design.md). */
+  viewers?: ViewerStats;
 };
 
 export type DurationUnit = "seconds" | "minutes" | "hours" | "days";
@@ -258,6 +263,8 @@ export function hongbaoOf(
       ? { fundsPaused: { stopAt: Date.parse(activity.fundsPaused.stopAt) } }
       : {}),
     ...(activity.fundsStopped ? { fundsStopped: true as const } : {}),
+    ...(activity.openedAt ? { openedAt: Date.parse(activity.openedAt) } : {}),
+    ...(activity.viewers ? { viewers: activity.viewers } : {}),
     ...(managed?.scheduleFailure
       ? {
           scheduleFailure: {

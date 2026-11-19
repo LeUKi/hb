@@ -63,6 +63,7 @@ import {
   MAX_LIVE_PER_USER,
   MAX_LIVE_SOCKETS,
   tellPaymentWatchers,
+  viewersOver,
 } from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
 import {
@@ -86,6 +87,14 @@ import {
   updateActivity,
 } from "./activities/service";
 import { findActivity } from "./activities/storage";
+import {
+  publicViewerStats,
+  type ViewerMinute,
+  type ViewerTally,
+  viewerCurve,
+  viewerMinute,
+  writeViewerStats,
+} from "./activities/viewer-stats";
 import { TOKEN_REQUEST_HEADER } from "./auth/personal-token";
 import { createDb } from "./db/client";
 import { merchants } from "./db/schema";
@@ -319,6 +328,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
+  /** 在看人数's tables made (viewer-stats §3): once per instance. */
+  private viewerTables = false;
   /** The channel's number (live.ts), read back once after hibernating. */
   private liveSeq = 0;
   private liveSeqRead: Promise<void> | null = null;
@@ -371,6 +382,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { status: 404 },
       );
     }
+    // 在看人数: over, the last of it goes to D1 (a page reconnecting after
+    // a restart may be the first to tell this object).
+    if (viewersOver(activity)) await this.endViewers();
     // Over: the page has the result. Only a payment of this person's
     // (or, for the sender, any) can still move.
     if (
@@ -419,7 +433,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       mini ? liveMiniMessage(activity, seq) : liveMessage(activity, seq),
     );
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
-    server.send(liveViewers(people, seq));
+    // Counted while it runs or waits to open; not a payment's wait after.
+    if (!liveEnded(activity)) {
+      this.noteViewer(id, userId);
+      await this.noteViewers(people);
+    }
+    server.send(liveViewers(people, seq, this.viewerTally()));
     // Its share still waiting (a page reloaded meanwhile): where it is.
     // One left pending outside the line (a restart, an error midway) goes
     // back in line; its person hears of it as any other (mine).
@@ -523,6 +542,173 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }
   }
 
+  /**
+   * 在看人数 (docs/viewer-stats-design.md §3): who was ever on the channel,
+   * a row for each minute with comings or goings, and the numbers so far.
+   * Kept in this object's SQLite; written only while it is awake anyway.
+   */
+  private viewerSql() {
+    const sql = this.ctx.storage.sql;
+    if (!this.viewerTables) {
+      sql.exec(
+        "CREATE TABLE IF NOT EXISTS viewer_people (user_id TEXT PRIMARY KEY) WITHOUT ROWID",
+      );
+      sql.exec(
+        "CREATE TABLE IF NOT EXISTS viewer_minutes (minute INTEGER PRIMARY KEY, top INTEGER NOT NULL, last INTEGER NOT NULL)",
+      );
+      sql.exec(`CREATE TABLE IF NOT EXISTS viewer_meta (id INTEGER PRIMARY KEY CHECK (id = 1),
+        activity_id TEXT NOT NULL, peak INTEGER NOT NULL DEFAULT 0, peak_at INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0, ended_at INTEGER, written TEXT)`);
+      this.viewerTables = true;
+    }
+    return sql;
+  }
+
+  private viewerMeta() {
+    return (
+      this.viewerSql()
+        .exec<{
+          activityId: string;
+          peak: number;
+          peakAt: number;
+          total: number;
+          endedAt: number | null;
+          written: string | null;
+        }>(
+          `SELECT activity_id AS activityId, peak, peak_at AS peakAt, total,
+            ended_at AS endedAt, written FROM viewer_meta WHERE id = 1`,
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  /** The numbers so far, for the channel's message; none before anyone. */
+  private viewerTally(): ViewerTally | null {
+    const meta = this.viewerMeta();
+    return meta && meta.total > 0
+      ? { peak: meta.peak, peakAt: meta.peakAt, total: meta.total }
+      : null;
+  }
+
+  /** Someone on the channel while it runs or waits to open: once ever. */
+  private noteViewer(activityId: string, userId: string) {
+    const sql = this.viewerSql();
+    sql.exec(
+      "INSERT INTO viewer_meta (id, activity_id) VALUES (1, ?) ON CONFLICT(id) DO NOTHING",
+      activityId,
+    );
+    if (this.viewerMeta()?.endedAt !== null) return;
+    const added = sql
+      .exec(
+        "INSERT INTO viewer_people (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING RETURNING user_id",
+        userId,
+      )
+      .toArray().length;
+    if (added > 0)
+      sql.exec("UPDATE viewer_meta SET total = total + 1 WHERE id = 1");
+  }
+
+  /**
+   * How many are on the channel now: this minute's row and the peak; once
+   * nobody is, D1 gets it all (nothing moves until someone comes back).
+   */
+  private async noteViewers(people: number) {
+    const meta = this.viewerMeta();
+    if (!meta || meta.endedAt !== null) return;
+    const now = Date.now();
+    const sql = this.viewerSql();
+    sql.exec(
+      `INSERT INTO viewer_minutes (minute, top, last) VALUES (?, ?, ?)
+        ON CONFLICT(minute) DO UPDATE SET top = max(top, excluded.top), last = excluded.last`,
+      viewerMinute(now),
+      people,
+      people,
+    );
+    if (people > meta.peak)
+      sql.exec(
+        "UPDATE viewer_meta SET peak = ?, peak_at = ? WHERE id = 1",
+        people,
+        now,
+      );
+    if (people === 0) await this.writeViewers();
+  }
+
+  /** The 红包 is over: nothing more counts, and D1 has the last of it. */
+  private async endViewers() {
+    const meta = this.viewerMeta();
+    if (!meta) return;
+    if (meta.endedAt === null)
+      this.viewerSql().exec(
+        "UPDATE viewer_meta SET ended_at = ? WHERE id = 1",
+        Date.now(),
+      );
+    await this.writeViewers();
+  }
+
+  private viewerMinutes() {
+    return this.viewerSql()
+      .exec<ViewerMinute>(
+        "SELECT minute, top, last FROM viewer_minutes ORDER BY minute",
+      )
+      .toArray();
+  }
+
+  /** Into D1, unless it has this already; a failure is tried next time. */
+  private async writeViewers() {
+    const meta = this.viewerMeta();
+    if (!meta || meta.total === 0) return;
+    // Only the latest minute's row moves; earlier ones are done.
+    const final = this.viewerSql()
+      .exec<ViewerMinute>(
+        "SELECT minute, top, last FROM viewer_minutes ORDER BY minute DESC LIMIT 1",
+      )
+      .toArray()[0];
+    const key = [
+      meta.peak,
+      meta.peakAt,
+      meta.total,
+      meta.endedAt,
+      final?.minute,
+      final?.top,
+      final?.last,
+    ].join("|");
+    if (meta.written === key) return;
+    try {
+      await writeViewerStats(
+        this.env,
+        meta.activityId,
+        meta,
+        viewerCurve(this.viewerMinutes(), meta.endedAt),
+      );
+      this.viewerSql().exec(
+        "UPDATE viewer_meta SET written = ? WHERE id = 1",
+        key,
+      );
+    } catch {
+      console.error("activity_viewers_write_failed", {
+        object: this.ctx.id.toString(),
+      });
+    }
+  }
+
+  /** The numbers and curve now, for the card while it runs. */
+  private viewersNow(id: string) {
+    if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+      return Response.json(
+        { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+        { status: 400 },
+      );
+    const tally = this.viewerTally();
+    return Response.json(
+      tally
+        ? {
+            viewers: publicViewerStats(tally),
+            curve: viewerCurve(this.viewerMinutes()),
+          }
+        : { viewers: null, curve: null },
+    );
+  }
+
   /** A live socket let go from this side, logged (§13). */
   private closeLive(socket: WebSocket, code: number, reason: string) {
     this.logLive("activity_live_close", socket, { code, reason });
@@ -622,6 +808,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       // Over already: that may have been the last payment anyone waited on.
       try {
         const activity = await getPublicActivity(this.env, id);
+        if (viewersOver(activity)) await this.endViewers();
         if (liveEnded(activity))
           await this.releaseSettled(id, activity.author.id);
       } catch {
@@ -662,7 +849,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       const people = livePeople(sockets);
       if (people === this.viewersSent) return;
       this.viewersSent = people;
-      const message = liveViewers(people, await this.nextLiveSeq());
+      await this.noteViewers(people);
+      const message = liveViewers(
+        people,
+        await this.nextLiveSeq(),
+        this.viewerTally(),
+      );
       for (const socket of sockets) {
         if (socket.readyState !== WebSocket.OPEN) continue;
         try {
@@ -771,6 +963,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     } catch {
       // The next change, or the page's slower polling, catches up.
       return;
+    }
+    // Over: 在看人数 stops here, and the end goes out with its numbers
+    // (D1 had them only as of the last time nobody was watching).
+    if (viewersOver(activity)) {
+      await this.endViewers();
+      const tally = this.viewerTally();
+      if (tally) activity = { ...activity, viewers: publicViewerStats(tally) };
     }
     const seq = await this.nextLiveSeq();
     const message = liveMessage(activity, seq);
@@ -1556,6 +1755,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
     if (live && request.method === "GET")
       return this.acceptLive(live[1] ?? "", request);
+    // 在看人数's card while it runs (viewer-stats §3).
+    const viewing = /^\/internal\/activities\/([a-f0-9-]{36})\/viewers$/i.exec(
+      url.pathname,
+    );
+    if (viewing && request.method === "GET")
+      return this.viewersNow(viewing[1] ?? "");
     const moved = /^\/internal\/activities\/([a-f0-9-]{36})\/live\/mine$/i.exec(
       url.pathname,
     );

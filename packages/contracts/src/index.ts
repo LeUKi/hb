@@ -996,6 +996,42 @@ export type PublicActivity = {
    * once it is drawn, the biggest prizes. Only on a single 红包's read.
    */
   rosterPreview?: RosterPreviewPerson[];
+  /**
+   * 在看人数 once it is over (docs/viewer-stats-design.md), for everyone:
+   * the most signed-in people on its page at once, and how many different
+   * ones looked. Missing when nobody was counted (over before 2026-11-19).
+   */
+  viewers?: ViewerStats;
+};
+
+/**
+ * 在看人数 (docs/viewer-stats-design.md): of the people on a 红包's live
+ * channel (signed in, each once however many tabs), the most at once and
+ * since when (`peakAt`), and how many different ones were ever on it.
+ */
+export type ViewerStats = {
+  peak: number;
+  peakAt: string;
+  total: number;
+};
+
+/**
+ * Its curve: from `start`, one point every `stepSeconds`, each the most
+ * people on the page in that stretch; after the last point, `last` (how
+ * many were on it then) until now, or until `end` once it is over.
+ */
+export type ViewerCurve = {
+  start: string;
+  stepSeconds: number;
+  values: number[];
+  last: number;
+  end?: string;
+};
+
+/** `GET /api/activities/:id/viewers`: the numbers and the curve. */
+export type ActivityViewersDetail = {
+  viewers: ViewerStats | null;
+  curve: ViewerCurve | null;
 };
 
 /**
@@ -1006,7 +1042,8 @@ export type PublicActivity = {
  * payment of theirs; for the sender, one in their 名单, or their own edit
  * elsewhere), so the page reads its own part again. `viewers`: how many
  * people have its page open on the channel, each counted once however many
- * tabs; sent on connecting and whenever it changes.
+ * tabs; sent on connecting and whenever it changes, with the most at once
+ * and how many different people looked so far (viewer-stats §3).
  */
 export type ActivityLiveMessage =
   | { type: "mine" }
@@ -1022,7 +1059,13 @@ export type ActivityLiveMessage =
   | { type: "queued"; ahead: number; seconds?: number; submissionId?: string }
   | ((
       | { type: "activity"; activity: PublicActivity }
-      | { type: "viewers"; count: number }
+      | {
+          type: "viewers";
+          count: number;
+          peak?: number;
+          peakAt?: string;
+          total?: number;
+        }
       /**
        * 代码判定: how many verdicts its code has given (PublicJudge.judged);
        * protocol 5, what the pool has left with it (PublicJudge.unclaimed),

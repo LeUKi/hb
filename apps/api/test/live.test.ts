@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import {
   type ActivityLiveMessage,
+  type ActivityViewersDetail,
   emptyActivityInput,
   type LdcActivityInput,
 } from "@hb/contracts";
@@ -209,6 +210,7 @@ beforeEach(async () => {
       "claims",
       "reward_inventory",
       "activity_passwords",
+      "activity_viewer_stats",
       "activities",
       "merchants",
       "sessions",
@@ -424,6 +426,118 @@ describe("a running 红包's live channel", () => {
       timeout: 3000,
     });
     expect(viewers(second.heard)).toBe(1);
+  });
+
+  it("tells the most at once and how many looked; the card reads them now, guests what D1 has (viewer-stats §3)", async () => {
+    const activity = await running(3);
+    const first = await actor();
+    const one = await connect(activity.id, first);
+    const other = await connect(activity.id, await actor());
+    // A second tab of someone already counted: still two people.
+    const tab = await connect(activity.id, first);
+    await vi.waitFor(() => expect(viewers(tab.heard)).toBe(2));
+    await vi.waitFor(() => expect(viewers(one.heard)).toBe(2));
+    other.socket.close(1000);
+    const told = () =>
+      one.heard
+        .filter(
+          (
+            message,
+          ): message is Extract<ActivityLiveMessage, { type: "viewers" }> =>
+            message !== "pong" && message.type === "viewers",
+        )
+        .at(-1);
+    await vi.waitFor(
+      () => expect(told()).toMatchObject({ count: 1, peak: 2, total: 2 }),
+      { timeout: 3000 },
+    );
+    expect(Date.parse(told()?.peakAt ?? "")).toBeGreaterThan(0);
+
+    const card = await app.request(
+      `${origin}/api/activities/${activity.id}/viewers`,
+      { headers: { Cookie: first.cookie } },
+      bindings,
+    );
+    expect(card.status).toBe(200);
+    const now = await card.json<ActivityViewersDetail>();
+    expect(now.viewers).toMatchObject({ peak: 2, total: 2 });
+    expect(now.curve).toMatchObject({ values: [2], last: 1, stepSeconds: 60 });
+    // Nobody wrote D1 yet (someone is still here): a guest has nothing.
+    const guest = await app.request(
+      `${origin}/api/activities/${activity.id}/viewers`,
+      {},
+      bindings,
+    );
+    expect(await guest.json()).toEqual({ viewers: null, curve: null });
+  });
+
+  it("writes D1 when the last viewer leaves and at the end; the public read has the numbers once over", async () => {
+    const activity = await running(3);
+    const one = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(viewers(one.heard)).toBe(1));
+    one.socket.close(1000);
+    const stored = () =>
+      env.DB.prepare(
+        "SELECT peak, total, curve FROM activity_viewer_stats WHERE activity_id = ?",
+      )
+        .bind(activity.id)
+        .first<{ peak: number; total: number; curve: string }>();
+    await vi.waitFor(
+      async () => expect(await stored()).toMatchObject({ peak: 1, total: 1 }),
+      {
+        timeout: 3000,
+      },
+    );
+    // Running: the public read does not carry it.
+    const before = await app.request(
+      `${origin}/api/activities/${activity.id}`,
+      {},
+      bindings,
+    );
+    expect(
+      (await before.json<{ activity: { viewers?: unknown } }>()).activity
+        .viewers,
+    ).toBeUndefined();
+
+    // Two more come, and the deadline ends it while they watch.
+    await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+      .bind(Date.now() + 600, activity.id)
+      .run();
+    const two = await connect(activity.id, await actor());
+    const three = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(viewers(two.heard)).toBe(2));
+    await vi.waitFor(() => expect(three.closed).toEqual([1000]), {
+      timeout: 3000,
+    });
+    await vi.waitFor(async () =>
+      expect(await stored()).toMatchObject({ peak: 2, total: 3 }),
+    );
+    const curve = JSON.parse((await stored())?.curve ?? "null");
+    expect(curve.values.at(-1)).toBe(2);
+    // Over: it says when, so the card draws up to the end.
+    expect(Date.parse(curve.end)).toBeGreaterThan(Date.parse(curve.start));
+
+    const after = await app.request(
+      `${origin}/api/activities/${activity.id}`,
+      {},
+      bindings,
+    );
+    expect(
+      (await after.json<{ activity: { viewers?: unknown } }>()).activity
+        .viewers,
+    ).toMatchObject({ peak: 2, total: 3 });
+    // Over: anyone reads the card from D1, and nobody new is counted.
+    const card = await app.request(
+      `${origin}/api/activities/${activity.id}/viewers`,
+      {},
+      bindings,
+    );
+    expect(await card.json<ActivityViewersDetail>()).toMatchObject({
+      viewers: { peak: 2, total: 3 },
+      curve: { values: curve.values },
+    });
+    expect((await upgrade(activity.id, await actor())).status).toBe(410);
+    expect(await stored()).toMatchObject({ peak: 2, total: 3 });
   });
 
   it("answers the keep-alive, and closes on anything else", async () => {

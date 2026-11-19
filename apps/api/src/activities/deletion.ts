@@ -78,6 +78,10 @@ export async function deleteActivity(
       env.DB.prepare("DELETE FROM reward_inventory WHERE activity_id = ?").bind(
         id,
       ),
+      // 在看人数 while it waited to open (docs/viewer-stats-design.md).
+      env.DB.prepare(
+        "DELETE FROM activity_viewer_stats WHERE activity_id = ?",
+      ).bind(id),
       // A 代码判定红包's code, tests, params and 密钥 go with it.
       dropJudgeStatement(env, id),
       dropKeysStatement(env, id),

@@ -11,10 +11,17 @@ export const liveActivityAtom = atom<string | null>(null);
 
 /**
  * How many people have that 红包's page open on its live channel, each
- * counted once (signed-in viewers only: nobody else is on it). Known only
- * while the channel is connected.
+ * counted once (signed-in viewers only: nobody else is on it), with the
+ * most at once and how many different people looked so far
+ * (docs/viewer-stats-design.md). Known only while the channel is connected.
  */
-export const liveViewersAtom = atom<{ id: string; count: number } | null>(null);
+export const liveViewersAtom = atom<{
+  id: string;
+  count: number;
+  peak?: number;
+  peakAt?: string;
+  total?: number;
+} | null>(null);
 
 /**
  * 代码判定: how many times that 红包's code has judged, pushed at most once

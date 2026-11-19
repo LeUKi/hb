@@ -2,6 +2,7 @@ import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import {
   type ActivityError,
   type ActivityPasswords,
+  type ActivityViewersDetail,
   type AuthorClaim,
   type AuthorClaimList,
   type ClaimDetail,
@@ -638,6 +639,125 @@ test.describe("红包页", () => {
     await expect.poll(() => sockets.length, { timeout: 5_000 }).toBe(2);
     sockets[1]?.send(JSON.stringify({ type: "viewers", count: 11 }));
     await expect(viewers).toHaveText("11 人在看");
+  });
+
+  test("在看人数（viewer-stats §6）：点开看此刻、同时最多、来看过和曲线；结束后谁都看得到看过几人", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const minute = 60_000;
+    const start = Math.floor((Date.now() - 30 * minute) / minute) * minute;
+    const values = Array.from({ length: 30 }, (_, index) =>
+      index === 12 ? 12 : 2 + (index % 5),
+    );
+    let curveReads = 0;
+    await page.route(
+      `**/api/activities/${state.activity.id}/viewers`,
+      (route) => {
+        curveReads += 1;
+        return route.fulfill({
+          json: {
+            viewers: {
+              peak: 12,
+              peakAt: new Date(start + 12 * minute).toISOString(),
+              total: 40,
+            },
+            curve: {
+              start: new Date(start).toISOString(),
+              stepSeconds: 60,
+              values,
+              last: 3,
+            },
+          } satisfies ActivityViewersDetail,
+        });
+      },
+    );
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    const chip = page.locator('[data-hb-part="viewers"] button');
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "viewers",
+        count: 3,
+        peak: 12,
+        peakAt: new Date(start + 12 * minute).toISOString(),
+        total: 40,
+      }),
+    );
+    await expect(chip).toHaveText("3 人在看");
+    await chip.click();
+    const card = page.getByRole("dialog", { name: "在看人数" });
+    await expect(card).toBeVisible();
+    await expect(card.getByText("此刻在看")).toBeVisible();
+    await expect(card.getByText("同时最多")).toBeVisible();
+    await expect(card.getByText("来看过")).toBeVisible();
+    await expect(card).toContainText("40");
+    const curve = card.getByRole("slider");
+    await expect(curve).toBeVisible();
+    // Read on opening (dev's strict mode may mount it twice).
+    const firstReads = curveReads;
+    expect(firstReads).toBeGreaterThan(0);
+    // The arrow keys step along it, the readout says each point.
+    await curve.focus();
+    await curve.press("ArrowLeft");
+    await expect(card).toContainText("现在 3 人在看");
+    // Someone comes while it is open: the numbers move with the channel.
+    sockets[0]?.send(
+      JSON.stringify({ type: "viewers", count: 4, peak: 12, total: 41 }),
+    );
+    await expect(card).toContainText("41");
+    await page.keyboard.press("Escape");
+    await expect(card).toBeHidden();
+    await expect(chip).toBeFocused();
+
+    // Over: in its place how many looked and the most at once, for anyone.
+    state.activity = {
+      ...state.activity,
+      status: "ended",
+      viewers: {
+        peak: 12,
+        peakAt: new Date(start + 12 * minute).toISOString(),
+        total: 41,
+      },
+    };
+    sockets[0]?.send(
+      JSON.stringify({ type: "activity", activity: publicRead(state) }),
+    );
+    await expect(chip).toHaveText("41 人看过 · 同时最多 12");
+    await chip.click();
+    await expect(card).toBeVisible();
+    await expect(card.getByText("此刻在看")).toHaveCount(0);
+    await expect(card.getByRole("slider")).toBeVisible();
+    // Read again on opening again: never a stale curve.
+    expect(curveReads).toBeGreaterThan(firstReads);
+    // A tap elsewhere puts it away.
+    await page.mouse.click(600, 500);
+    await expect(card).toBeHidden();
+  });
+
+  test("在看人数：游客看不到进行中的人数，结束后看得到看过几人", async ({
+    page,
+  }) => {
+    const state = await mockHongbao(page);
+    await openApp(page, path);
+    const chip = page.locator('[data-hb-part="viewers"] button');
+    await expect(page.locator("main")).toContainText(state.activity.title);
+    await expect(chip).toHaveCount(0);
+    state.activity = {
+      ...state.activity,
+      status: "ended",
+      viewers: { peak: 5, peakAt: new Date().toISOString(), total: 9 },
+    };
+    await page.reload();
+    await expect(chip).toHaveText("9 人看过 · 同时最多 5");
   });
 
   test("登录后：连接断了退回轮询，重连后补读自己那份", async ({ page }) => {

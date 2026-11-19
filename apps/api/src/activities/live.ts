@@ -8,6 +8,7 @@ import type {
 import type { ApiBindings } from "../env";
 import { activityObject } from "../runtime/objects";
 import type { ActivityRow } from "./storage";
+import { publicViewerStats, type ViewerTally } from "./viewer-stats";
 
 // A 红包's live channel: its ActivityDO (one per 红包) holds the viewers'
 // WebSockets, hibernating between changes. It pushes the public read after
@@ -56,6 +57,14 @@ export function liveEnded(activity: PublicActivity) {
   return activity.status !== "active";
 }
 
+/**
+ * Over for 在看人数 (docs/viewer-stats-design.md §3): ended or drawn. A
+ * draft whose timing was taken back leaves the channel too, but is not
+ * over: it may still open.
+ */
+export const viewersOver = (activity: PublicActivity) =>
+  activity.status !== "draft" && liveEnded(activity);
+
 // Everything sent to everyone carries the channel's number (`seq`, one
 // up each time, kept by the 红包's object): a page that sees one skipped
 // reads the 红包 whole again. What goes to one person carries none.
@@ -81,8 +90,18 @@ export const liveQueued = (
     ...waiting,
   } satisfies ActivityLiveMessage);
 
-export const liveViewers = (count: number, seq: number) =>
-  JSON.stringify({ type: "viewers", count, seq } satisfies ActivityLiveMessage);
+/** How many are watching, with the most at once and everyone so far (viewer-stats §3). */
+export const liveViewers = (
+  count: number,
+  seq: number,
+  tally: ViewerTally | null = null,
+) =>
+  JSON.stringify({
+    type: "viewers",
+    count,
+    ...(tally ? publicViewerStats(tally) : {}),
+    seq,
+  } satisfies ActivityLiveMessage);
 
 export const liveJudged = (
   count: number,

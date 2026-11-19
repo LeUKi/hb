@@ -3426,6 +3426,24 @@ export const personalTokens = sqliteTable(
 );
 
 /**
+ * 在看人数 (docs/viewer-stats-design.md): the most people on a 红包's live
+ * channel at once and when, how many different people were ever on it, and
+ * its curve (JSON, at most 240 points), as its ActivityDO last wrote them:
+ * when the last viewer left, and when it saw the 红包 over. Read once it is
+ * over, so that read never wakes the object.
+ */
+export const activityViewerStats = sqliteTable("activity_viewer_stats", {
+  activityId: text("activity_id")
+    .primaryKey()
+    .references(() => activities.id),
+  peak: integer("peak").notNull(),
+  peakAt: integer("peak_at").notNull(),
+  total: integer("total").notNull(),
+  curve: text("curve"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+/**
  * 个人令牌's switch (docs/personal-token-design.md §8): off, every request
  * with a token is refused at once; the tokens themselves stay.
  */

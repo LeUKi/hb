@@ -252,7 +252,8 @@ export function useActivityLive(
           seq = Math.max(seq ?? 0, message.seq);
         }
         if (message?.type === "viewers") {
-          setViewers({ id, count: message.count });
+          const { count, peak, peakAt, total } = message;
+          setViewers({ id, count, peak, peakAt, total });
           return;
         }
         if (message?.type === "judged") {

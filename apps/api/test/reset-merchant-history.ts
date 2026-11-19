@@ -13,6 +13,8 @@ export async function resetMerchantHistory(db: D1Database) {
     db.prepare("DELETE FROM merchant_config_changes"),
     db.prepare("DELETE FROM merchant_client_ids"),
     db.prepare("DELETE FROM activity_random_proofs"),
+    // 在看人数 rows hold their 红包: gone before any test clears activities.
+    db.prepare("DELETE FROM activity_viewer_stats"),
     ...triggers.results.map((trigger) => db.prepare(trigger.sql)),
   ]);
 }
