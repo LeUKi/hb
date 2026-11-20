@@ -1440,10 +1440,24 @@ test.describe("代码判定红包", () => {
     await openApp(page, path);
     await page.locator("#code-entry").click();
     const dialog = page.getByRole("dialog", { name: "判定器" });
+    // Its name on the row and as the dialog's title, whose under it
+    // (play-again-design §4, §5); not in the 广场: no 用它发红包.
+    await expect(page.locator("#code-entry")).toContainText("判定器「猜数字」");
     await expect(
-      dialog.getByText("判定器「猜数字」· @author · 第 3 版"),
+      dialog.getByRole("heading", { name: "判定器「猜数字」" }),
     ).toBeVisible();
+    await expect(dialog.getByText("@author · 第 3 版")).toBeVisible();
+    await expect(dialog.getByText("用它发红包")).toHaveCount(0);
     await expect(dialog.getByText("最大：100")).toBeVisible();
+    // The params first, the code after them, what to check it by last.
+    const top = async (text: string) =>
+      (await dialog.getByText(text, { exact: true }).boundingBox())?.y ?? 0;
+    expect(await top("最大：100")).toBeLessThan(
+      await top("判定器代码 · 结束后公开"),
+    );
+    expect(await top("判定器代码 · 结束后公开")).toBeLessThan(
+      await top("核对"),
+    );
     await expect(dialog.getByText("奖金：1.50 LDC")).toBeVisible();
     await expect(
       dialog.getByText("AI 密钥：发红包的人自己的，不公开"),
@@ -4421,5 +4435,74 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
           .catch((error: { code?: string }) => error.code),
       ),
     ).toBe("not_embedded");
+  });
+});
+
+// 接着玩 (docs/play-again-design.md §2.1): a 代码判定红包 offers its own
+// 判定器 when others may send with it, else the 判定器广场.
+test.describe("代码判定红包 · 接着玩", () => {
+  const named = {
+    id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+    name: "猜数字",
+    version: 3,
+    author: { username: "author", displayName: "小满" },
+    listed: true,
+    featured: false,
+    bySiteOwner: false,
+    basedOn: null,
+  };
+
+  test("判定器在广场里：用同样的玩法发一个红包，去发红包页时选好它；弹窗里也有用它发红包", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    state.activity = { ...state.activity, status: "ended" };
+    state.judge = {
+      ...publicJudge(),
+      protocol: 3,
+      code: judgeCode,
+      seed,
+      judge: named,
+      params: [
+        {
+          param: { key: "max", label: "最大", type: "integer", min: 2 },
+          value: 100,
+        },
+      ],
+    };
+    await mockLive(page);
+    await openApp(page, path);
+    const line = page.locator('[data-hb-line="same-judge"]');
+    await expect(line).toContainText("用同样的玩法发一个红包");
+    await expect(line).toContainText("填几个参数就能发，不用写代码");
+    await expect(
+      line.getByRole("link", { name: "用它发红包" }),
+    ).toHaveAttribute("href", `/new?judge=${named.id}`);
+    await page.locator("#code-entry").click();
+    const dialog = page.getByRole("dialog", { name: "判定器" });
+    await expect(
+      dialog.getByRole("link", { name: "用它发红包" }),
+    ).toHaveAttribute("href", `/new?judge=${named.id}`);
+    await expect(dialog.getByRole("link", { name: "判定器页" })).toBeVisible();
+  });
+
+  test("判定器不在广场里：想发个小游戏红包，去判定器广场", async ({ page }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    state.activity = { ...state.activity, status: "ended" };
+    state.judge = {
+      ...publicJudge(),
+      code: judgeCode,
+      seed,
+      judge: { ...named, listed: false },
+    };
+    await mockLive(page);
+    await openApp(page, path);
+    await expect(page.locator('[data-hb-line="same-judge"]')).toHaveCount(0);
+    await expect(page.locator('[data-hb-line="judge-square"]')).toContainText(
+      "想发个小游戏红包？",
+    );
+    await expect(page.locator('[data-hb-line="square"]')).toBeVisible();
   });
 });

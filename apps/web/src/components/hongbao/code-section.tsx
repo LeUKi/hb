@@ -1,22 +1,32 @@
 import type { JudgeParam, PublicJudge } from "@hb/contracts";
 import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
+import {
+  Braces,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   revealsAtEnd,
   shownParams,
   sortedJson,
 } from "../../../../../kit/runtime/params.mjs";
+import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
 import { useIdentity } from "../../lib/session";
 import { activeUnitAtom, amountText } from "../../lib/units";
+import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
 import { radius, Squircle } from "../ui/squircle";
@@ -181,35 +191,75 @@ function ParamsFact({
   );
 }
 
+type NamedJudge = NonNullable<PublicJudge["judge"]>;
+
 /**
- * 判定器「猜数字」· @作者 · 第 3 版 (judge-square §10, §15.4): 站长精选
- * said as chosen or as the 站长's copy of another's; its name a link to
- * its page while it is in the 广场, or for its author.
+ * Under the dialog's title 判定器「猜数字」(judge-square §10, §15.4): whose
+ * and which version, 站长精选 said as chosen or as the 站长's copy of
+ * another's; 判定器页 a link while it is in the 广场, or for its author.
  */
-function JudgeLine({ judge }: { judge: NonNullable<PublicJudge["judge"]> }) {
+function JudgeSourceLine({ judge }: { judge: NamedJudge }) {
   const { user } = useIdentity();
   const improved = judge.featured && judge.bySiteOwner && judge.basedOn;
   const linked = judge.listed || user?.username === judge.author.username;
   const version = judge.version !== null ? ` · 第 ${judge.version} 版` : "";
   return (
-    <p className="text-sm text-ink">
-      判定器「
-      {linked ? (
-        <Link
-          to="/judges/$judgeId"
-          params={{ judgeId: judge.id }}
-          className="text-accent-ink hover:underline"
-        >
-          {judge.name}
-        </Link>
-      ) : (
-        judge.name
-      )}
-      」
+    <p className="text-sm text-ink-2">
       {improved
-        ? `· 站长精选 · 基于 @${judge.basedOn}${version}`
-        : `· @${judge.author.username}${version}${judge.featured ? " · 站长精选" : ""}`}
+        ? `站长精选 · 基于 @${judge.basedOn}${version}`
+        : `@${judge.author.username}${version}${judge.featured ? " · 站长精选" : ""}`}
+      {linked && (
+        <>
+          {" · "}
+          <Link
+            to="/judges/$judgeId"
+            params={{ judgeId: judge.id }}
+            className="text-accent-ink hover:underline"
+          >
+            判定器页
+          </Link>
+        </>
+      )}
     </p>
+  );
+}
+
+/**
+ * 用它发红包 (judge-square §6) with a 判定器 others may take: one in the
+ * 广场, or one's own. A guest signs in first, as on the 广场's cards.
+ */
+export function UseJudgeButton({
+  judgeId,
+  variant = "secondary",
+  label = "用它发红包",
+}: {
+  judgeId: string;
+  variant?: "primary" | "secondary";
+  label?: string;
+}) {
+  const { user } = useIdentity();
+  const navigate = useNavigate();
+  const { openAccount } = useOmniboxController();
+  return user ? (
+    <ButtonLink
+      variant={variant}
+      href={`/new?judge=${encodeURIComponent(judgeId)}`}
+      onGo={() => void navigate({ to: "/new", search: { judge: judgeId } })}
+    >
+      {label}
+    </ButtonLink>
+  ) : (
+    <Button variant={variant} size="sm" onClick={openAccount}>
+      {label}
+    </Button>
+  );
+}
+
+/** Others may send with it (§8): in the 广场, or the viewer's own. */
+export function useJudgeUsable(judge: NamedJudge | undefined) {
+  const { user } = useIdentity();
+  return Boolean(
+    judge && (judge.listed || user?.username === judge.author.username),
   );
 }
 
@@ -253,10 +303,16 @@ function useChecks(activityId: string, judge?: PublicJudge) {
 }
 
 /**
- * 代码一节 (05 §9): where a 口令红包 has its 口令, one line into the 代码
- * dialog; the long strings stay off the page.
+ * The 判定器 row (05 §9): its name and whose once it has one
+ * (play-again-design §4), whether its code is out; opens the dialog.
  */
-export function CodeEntry({ published }: { published: boolean }) {
+export function CodeEntry({
+  published,
+  judge,
+}: {
+  published: boolean;
+  judge?: NamedJudge;
+}) {
   const router = useRouter();
   return (
     <section data-hb-part="code">
@@ -273,8 +329,11 @@ export function CodeEntry({ published }: { published: boolean }) {
             aria-hidden="true"
           />
           <span className="flex min-w-0 flex-1 items-baseline gap-2">
-            <span className="text-base font-medium text-ink">判定器</span>
-            <span className="truncate text-xs text-ink-3">
+            <span className="max-w-[70%] shrink-0 truncate text-base font-medium text-ink">
+              {judge ? `判定器「${judge.name}」` : "判定器"}
+            </span>
+            <span className="min-w-0 truncate text-xs text-ink-3">
+              {judge && `@${judge.author.username} · `}
               {published ? "代码已公开" : "代码结束后公开"}
             </span>
           </span>
@@ -288,6 +347,15 @@ export function CodeEntry({ published }: { published: boolean }) {
   );
 }
 
+/** Lines of code shown before 展开全部 (play-again-design §5). */
+const CODE_PEEK = 8;
+
+/**
+ * The dialog's body (play-again-design §5, user 2026-11-20: the code came
+ * first and its params were a long scroll away): what the 判定器 is and
+ * whose, then the params its sender filled, 联网, the code (its first lines
+ * till 展开全部), and last what to check it by.
+ */
 function CodeBody({
   activityId,
   onClose,
@@ -300,7 +368,9 @@ function CodeBody({
   const code = judge?.code ?? page?.activity.senderCode;
   const published = Boolean(judge?.code);
   const checks = useChecks(activityId, judge);
+  const usable = useJudgeUsable(judge?.judge);
   const [copied, setCopied] = useState(false);
+  const [whole, setWhole] = useState(false);
   useEffect(() => {
     if (!copied) return;
     const timer = window.setTimeout(() => setCopied(false), 1400);
@@ -313,12 +383,20 @@ function CodeBody({
       </p>
     );
   const { activity, view } = page;
+  const named = judge.judge;
+  const lines = code ? code.split("\n").length : 0;
+  const params = judge.params ?? [];
+  const keys = judge.keys ?? [];
+  const sealedLater = judge.sealedParams && !judge.sealedParams.salt;
   return (
     <>
       <header className="grid gap-1 px-5 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="code-title" className="text-lg font-semibold text-ink">
-            判定器
+        <div className="flex items-start justify-between gap-3">
+          <h2
+            id="code-title"
+            className="min-w-0 pt-1 text-lg font-semibold break-words text-ink"
+          >
+            {named ? `判定器「${named.name}」` : "判定器"}
           </h2>
           <Button
             variant="ghost"
@@ -330,6 +408,7 @@ function CodeBody({
             <X />
           </Button>
         </div>
+        {named && <JudgeSourceLine judge={named} />}
         <p className="flex min-w-0 items-center gap-1.5 text-sm text-ink-2">
           <Avatar
             name={activity.author.displayName}
@@ -340,104 +419,25 @@ function CodeBody({
             {activity.author.displayName}的红包 · {activity.title}
           </span>
         </p>
+        {named && usable && (
+          <div className="pt-1.5">
+            <UseJudgeButton judgeId={named.id} />
+          </div>
+        )}
       </header>
-      <div className="view-scroll relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-4 overflow-y-auto overscroll-contain px-5 pb-5">
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
-          <div className="flex min-h-9 items-center justify-between gap-3">
-            <span className="text-sm font-medium text-ink-3">
-              {published ? "判定器代码 · 已公开" : "判定器代码 · 结束后公开"}
-            </span>
-            {code && (
-              <Button
-                variant="quiet"
-                size="sm"
-                className="-mr-2"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(code).then(() => {
-                    haptic("light");
-                    setCopied(true);
-                  });
-                }}
-              >
-                {copied ? <Check /> : <Copy />}
-                {copied ? "已复制" : "复制代码"}
-              </Button>
-            )}
-          </div>
-          {code && (
-            <CodeEditor
-              value={code}
-              language="js"
-              readOnly
-              labelledBy="code-title"
-              rows={4}
-              maxRows={22}
-            />
-          )}
-          {!published && activity.senderCode && (
-            <p className="text-xs text-ink-3">
-              只有你看得到：别人要等红包结束后才看得到代码。
-            </p>
-          )}
-        </div>
-        {judge.judge && (
+      <div className="view-scroll relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-5 overflow-y-auto overscroll-contain px-5 pb-5">
+        {(params.length > 0 || keys.length > 0 || sealedLater) && (
           <div className="grid gap-1">
-            <span className="text-xs text-ink-3">判定器</span>
-            <JudgeLine judge={judge.judge} />
-          </div>
-        )}
-        {((judge.params?.length ?? 0) > 0 || (judge.keys?.length ?? 0) > 0) && (
-          <ParamsFact params={judge.params ?? []} keys={judge.keys ?? []} />
-        )}
-        {judge.sealedParams && (
-          <>
-            {!judge.sealedParams.salt && (
-              <p className="text-sm text-ink">
-                另有 {judge.sealedParams.count} 项参数结束后公开
+            {(params.length > 0 || keys.length > 0) && (
+              <ParamsFact params={params} keys={keys} />
+            )}
+            {sealedLater && judge.sealedParams && (
+              <p className="text-sm text-ink-2">
+                {params.length > 0 || keys.length > 0 ? "另有" : "有"}{" "}
+                {judge.sealedParams.count} 项参数结束后公开
               </p>
             )}
-            <Fact
-              label="参数封存值"
-              value={judge.sealedParams.commitment}
-              note={
-                judge.sealedParams.salt
-                  ? "参数封存值 = SHA-256（按键排序的结束后公开的参数 JSON、换行、盐）"
-                  : "这几项参数结束后和盐一起公开，和这个封存值对得上，就说明开放后没换过。"
-              }
-              matched={checks?.params ? "和封存值一致" : undefined}
-            />
-            {judge.sealedParams.salt && (
-              <Fact
-                label="盐"
-                value={judge.sealedParams.salt}
-                note="开放时随机取的，和结束后公开的参数一起算出上面的封存值。"
-              />
-            )}
-          </>
-        )}
-        {judge.fingerprint && (
-          <Fact
-            label="代码指纹"
-            value={judge.fingerprint}
-            note={
-              published && !view.ended
-                ? "开放时记下的 SHA-256。代码一直公开，谁都能核对它没有换过。"
-                : "开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
-            }
-            matched={checks?.code ? "和开放时一致" : undefined}
-          />
-        )}
-        {judge.seedCommitment && (
-          <Fact
-            label={judge.seed ? "随机种子" : "随机种子的封存值"}
-            value={judge.seed ?? judge.seedCommitment}
-            note={
-              judge.seed
-                ? "判定器用的随机数都从它算出。和开放时公布的封存值一致，就说明开放后没换过。"
-                : "判定器用的随机数都从这个种子算出。种子结束后公开，和这个封存值对得上，就说明开放后没换过。"
-            }
-            matched={checks?.seed ? "和封存值一致" : undefined}
-          />
+          </div>
         )}
         {judge.network ? (
           <div className="grid gap-1">
@@ -468,6 +468,107 @@ function CodeBody({
               </p>
             </div>
           )
+        )}
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <span className="text-sm font-medium text-ink-3">
+              {published ? "判定器代码 · 已公开" : "判定器代码 · 结束后公开"}
+            </span>
+            {code && (
+              <Button
+                variant="quiet"
+                size="sm"
+                className="-mr-2"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(code).then(() => {
+                    haptic("light");
+                    setCopied(true);
+                  });
+                }}
+              >
+                {copied ? <Check /> : <Copy />}
+                {copied ? "已复制" : "复制代码"}
+              </Button>
+            )}
+          </div>
+          {code && (
+            <CodeEditor
+              value={code}
+              language="js"
+              readOnly
+              labelledBy="code-title"
+              rows={Math.min(4, lines)}
+              maxRows={whole ? Math.max(lines, CODE_PEEK) : CODE_PEEK}
+            />
+          )}
+          {code && lines > CODE_PEEK && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="justify-self-center gap-0.5 pr-1.5"
+              aria-expanded={whole}
+              onClick={() => setWhole((value) => !value)}
+            >
+              {whole ? "收起" : `展开全部 ${lines} 行`}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn("transition-transform", whole && "rotate-180")}
+              />
+            </Button>
+          )}
+          {!published && activity.senderCode && (
+            <p className="text-xs text-ink-3">
+              只有你看得到：别人要等红包结束后才看得到代码。
+            </p>
+          )}
+        </div>
+        {(judge.fingerprint || judge.sealedParams || judge.seedCommitment) && (
+          <div className="grid gap-4">
+            <span className="text-sm font-medium text-ink-3">核对</span>
+            {judge.fingerprint && (
+              <Fact
+                label="代码指纹"
+                value={judge.fingerprint}
+                note={
+                  published && !view.ended
+                    ? "开放时记下的 SHA-256。代码一直公开，谁都能核对它没有换过。"
+                    : "开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
+                }
+                matched={checks?.code ? "和开放时一致" : undefined}
+              />
+            )}
+            {judge.sealedParams && (
+              <Fact
+                label="参数封存值"
+                value={judge.sealedParams.commitment}
+                note={
+                  judge.sealedParams.salt
+                    ? "参数封存值 = SHA-256（按键排序的结束后公开的参数 JSON、换行、盐）"
+                    : "这几项参数结束后和盐一起公开，和这个封存值对得上，就说明开放后没换过。"
+                }
+                matched={checks?.params ? "和封存值一致" : undefined}
+              />
+            )}
+            {judge.sealedParams?.salt && (
+              <Fact
+                label="盐"
+                value={judge.sealedParams.salt}
+                note="开放时随机取的，和结束后公开的参数一起算出上面的封存值。"
+              />
+            )}
+            {judge.seedCommitment && (
+              <Fact
+                label={judge.seed ? "随机种子" : "随机种子的封存值"}
+                value={judge.seed ?? judge.seedCommitment}
+                note={
+                  judge.seed
+                    ? "判定器用的随机数都从它算出。和开放时公布的封存值一致，就说明开放后没换过。"
+                    : "判定器用的随机数都从这个种子算出。种子结束后公开，和这个封存值对得上，就说明开放后没换过。"
+                }
+                matched={checks?.seed ? "和封存值一致" : undefined}
+              />
+            )}
+          </div>
         )}
       </div>
     </>

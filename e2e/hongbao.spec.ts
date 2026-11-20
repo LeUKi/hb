@@ -2426,3 +2426,92 @@ test.describe("红包页 · 排队", () => {
     await expect(hint.getByRole("button", { name: "取消排队" })).toHaveCount(0);
   });
 });
+
+// 接着玩 (docs/play-again-design.md, user 2026-11-20).
+test.describe("接着玩", () => {
+  test("领完以后：一行也发一个同样玩法的红包，一行判定器广场，一行红包广场；按钮只有字那么宽", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    await openApp(page, path);
+    await expect(page.locator("main")).toContainText(state.activity.title);
+    // Not before taking part: nothing to pull them away from 开.
+    await expect(page.locator('[data-hb-part="play-again"]')).toHaveCount(0);
+
+    state.claimMine();
+    await page.reload();
+    const again = page.locator('[data-hb-part="play-again"]');
+    await expect(again.getByRole("heading")).toHaveText("接着玩");
+    await expect(again.getByRole("listitem")).toHaveCount(3);
+    const same = again.locator('[data-hb-line="same-mode"]');
+    await expect(same).toContainText("也发一个同样玩法的红包");
+    await expect(same).toContainText("口令 · 固定均分");
+    // To 发红包 on the same 玩法 (form.spec opens it so).
+    await expect(same.getByRole("link", { name: "发红包" })).toHaveAttribute(
+      "href",
+      "/new?mode=fixed&participation=password",
+    );
+    const line = await same.boundingBox();
+    const button = await same
+      .getByRole("link", { name: "发红包" })
+      .boundingBox();
+    expect(button && line && button.width < line.width / 3).toBe(true);
+    await expect(
+      again
+        .locator('[data-hb-line="judge-square"]')
+        .getByRole("link", { name: "判定器广场" }),
+    ).toHaveAttribute("href", "/judges");
+    // 红包广场 as a way there, not a list of other 红包.
+    await expect(
+      again
+        .locator('[data-hb-line="square"]')
+        .getByRole("link", { name: "红包广场" }),
+    ).toHaveAttribute("href", "/square");
+  });
+
+  test("发红包的人自己看：只有再发一个同样的", async ({ page }) => {
+    await mockSession(page, author);
+    await mockHongbao(page);
+    const managed: ManagedActivity = {
+      id,
+      title: "周末红包",
+      rewardType: "ldc",
+      participationMode: "password",
+      forceDedicated: false,
+      status: "active",
+      version: 2,
+      createdAt: openedAt,
+      openedAt,
+      deadlineAt: publicActivity().deadlineAt,
+      topicUrl: null,
+      totalCount: 3,
+      claimedCount: 1,
+      author: publicActivity().author,
+      config: {
+        ...emptyActivityInput(),
+        title: "周末红包",
+        passwords: [passwordOf.mine, passwordOf.other],
+        merchantId: "55555555-6666-4777-8888-999999999999",
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+    };
+    await page.route(`**/api/me/activities/${id}`, (route) =>
+      route.fulfill({ json: { activity: managed } }),
+    );
+    await page.route(`**/api/me/activities/${id}/claims**`, (route) =>
+      route.fulfill({
+        json: { items: [], nextCursor: null } satisfies AuthorClaimList,
+      }),
+    );
+    await openApp(page, path);
+    const again = page.locator('[data-hb-part="play-again"]');
+    await expect(again.getByRole("heading")).toHaveText("再发一个");
+    await expect(again.getByRole("listitem")).toHaveCount(1);
+    await expect(again).toContainText("照这个红包填好，口令要重新写");
+    await expect(again.getByRole("link", { name: "再发一个" })).toHaveAttribute(
+      "href",
+      `/new?from=${id}`,
+    );
+  });
+});

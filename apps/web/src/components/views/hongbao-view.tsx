@@ -17,6 +17,7 @@ import { MyJudgments } from "../hongbao/my-judgments";
 import { PageActions } from "../hongbao/page-actions";
 import { Sparks } from "../hongbao/parts";
 import { PasswordSection } from "../hongbao/passwords";
+import { PlayAgain } from "../hongbao/play-again";
 import { type HongbaoData, useHongbao } from "../hongbao/use-hongbao";
 import { useHongbaoPageData } from "../hongbao/use-hongbao-data";
 import { RefreshContext, RefreshNotice } from "../page/page";
@@ -184,7 +185,10 @@ function HongbaoPage({
         )}
         {/* 代码判定红包 has its code where others have their 口令 (05 §9). */}
         {activity.judge ? (
-          <CodeEntry published={Boolean(activity.judge.code)} />
+          <CodeEntry
+            published={Boolean(activity.judge.code)}
+            judge={activity.judge.judge}
+          />
         ) : (
           <PasswordSection
             activityId={activity.id}
@@ -193,6 +197,13 @@ function HongbaoPage({
             onVerify={hongbao.openVerify}
           />
         )}
+        {/* 接着玩 (docs/play-again-design.md): once taken part or over. */}
+        <PlayAgain
+          activity={activity}
+          view={view}
+          tookPart={opened}
+          author={Boolean(hongbao.author)}
+        />
       </div>
       {flecks && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[100cqh]">

@@ -29,6 +29,15 @@ declare module "@tanstack/react-router" {
   }
 }
 
+/** The 玩法 /new may open on (not 代码判定: that one picks a 判定器). */
+export const presetModes = ["fixed", "random", "custom", "timed_draw"] as const;
+export type NewSearch = {
+  judge?: string;
+  mode?: (typeof presetModes)[number];
+  participation?: "password" | "direct";
+  from?: string;
+};
+
 const rootRoute = createRootRoute({ component: Shell });
 
 const startRoute = createRoute({
@@ -134,11 +143,24 @@ const newRoute = createRoute({
   path: "/new",
   staticData: { chrome: "docked", command: "new" },
   // 用它发红包 (docs/judge-square-design.md §6): a 判定器 picked already.
-  validateSearch: (search: Record<string, unknown>): { judge?: string } => ({
+  // 也发一个 / 再发一个同样的 (docs/play-again-design.md §2): a 玩法 and
+  // 怎么领 chosen, or one's own sent 红包 to start from.
+  validateSearch: (search: Record<string, unknown>): NewSearch => ({
     judge:
       typeof search.judge === "string" && search.judge
         ? search.judge
         : undefined,
+    mode:
+      typeof search.mode === "string" &&
+      (presetModes as readonly string[]).includes(search.mode)
+        ? (search.mode as NewSearch["mode"])
+        : undefined,
+    participation:
+      search.participation === "password" || search.participation === "direct"
+        ? search.participation
+        : undefined,
+    from:
+      typeof search.from === "string" && search.from ? search.from : undefined,
   }),
 });
 const historyRoute = createRoute({

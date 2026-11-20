@@ -122,6 +122,8 @@ export function HongbaoForm({
   csrfToken,
   onSaved,
   startJudge,
+  preset,
+  copied = false,
 }: {
   activity?: ManagedActivity;
   user: SessionUser;
@@ -130,6 +132,13 @@ export function HongbaoForm({
   onSaved?: () => void;
   /** /new?judge=<编号>: one's own 判定器 to start with (judge-square §6). */
   startJudge?: string;
+  /**
+   * A new 红包's starting point, not an unsaved change: a 玩法 chosen, or
+   * one's own sent 红包 (docs/play-again-design.md §2).
+   */
+  preset?: FormState;
+  /** `preset` is a sent 红包's copy: its 从哪发 stays as it was. */
+  copied?: boolean;
 }) {
   const router = useRouter();
   const { roomy } = useWindowInfo();
@@ -149,7 +158,7 @@ export function HongbaoForm({
   const scheduleWrites = useActivityWrites(user.id, csrfToken, activity?.id);
   // What is saved: the form is dirty when it differs; a save moves it.
   const [baseline, setBaseline] = useState<FormState>(() =>
-    activity ? formOf(activity) : emptyForm(),
+    activity ? formOf(activity) : (preset ?? emptyForm()),
   );
   const [form, setForm] = useState(baseline);
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
@@ -170,7 +179,7 @@ export function HongbaoForm({
   const fishReady = funding?.available === true;
   const fishDefault = useRef(false);
   useEffect(() => {
-    if (editing || fishDefault.current) return;
+    if (editing || copied || fishDefault.current) return;
     if (!merchantLoaded || funding === undefined) return;
     fishDefault.current = true;
     if (merchant || !fishReady || dirty) return;
@@ -180,7 +189,7 @@ export function HongbaoForm({
     });
     setBaseline(start);
     setForm(start);
-  }, [editing, merchantLoaded, merchant, funding, fishReady, dirty]);
+  }, [editing, copied, merchantLoaded, merchant, funding, fishReady, dirty]);
   const submit = useSubmit({
     activity,
     user,

@@ -1516,3 +1516,62 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).toMatchObject({ merchantId: "" });
   });
 });
+
+// 也发一个 and 再发一个同样的 (docs/play-again-design.md §2): /new opened
+// on a 玩法, or on one's own sent 红包.
+test.describe("发红包：带着玩法打开", () => {
+  test("也发一个：/new?mode=timed_draw&participation=direct 打开就是限时开奖", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new?mode=timed_draw&participation=direct");
+    await expect(
+      page.getByRole("button", { name: /^限时开奖/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // A 玩法 /new can't open on is left alone.
+    await openApp(page, "/new?mode=code");
+    await expect(page.getByRole("button", { name: /^拼手气/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("再发一个同样的：/new?from= 照自己发过的红包填好，口令空着", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const input = {
+      ...emptyActivityInput(),
+      title: "周末红包",
+      passwords: ["旧口令2026"],
+      merchantId,
+      money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      beforeInfo: "周末快乐",
+    } satisfies CreateActivityInput["activity"];
+    await page.route(`**/api/me/activities/${createdId}`, (route) =>
+      route.fulfill({
+        json: {
+          activity: {
+            ...managed(input),
+            status: "active",
+            openedAt: new Date().toISOString(),
+          },
+        },
+      }),
+    );
+    await openApp(page, `/new?from=${createdId}`);
+    await expect(
+      page.getByRole("button", { name: /^固定均分/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "下一步" }).click();
+    await expect(page.locator("#hb-fixed-unit")).toHaveValue("0.10");
+    await expect(page.locator("#hb-fixed-count")).toHaveValue("3");
+    await page.locator("#hb-fixed-count").press("Enter");
+    await expect(page.getByLabel("口令 1")).toHaveValue("");
+    await page.getByLabel("口令 1").fill("新口令2026");
+    await page.getByLabel("口令 1").press("Enter");
+    await expect(page.locator("#hb-title")).toHaveValue("周末红包");
+  });
+});

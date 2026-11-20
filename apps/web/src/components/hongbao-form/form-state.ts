@@ -827,6 +827,70 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
 }
 
 /**
+ * 再发一个同样的 (docs/play-again-design.md §2.2): a sent 红包 as a new
+ * one's starting point. Not its 口令 (spent) nor a fixed time (passed);
+ * of its 判定器's params only those everyone saw from opening (`shown`):
+ * the ones 结束后公开 were told at the end. A 判定器 it was sent with is
+ * picked afresh (/new?judge=), the version that passes now, so only what
+ * is around it is kept here; code from before 判定器 is deployed again.
+ */
+export function copyFormOf(
+  activity: ManagedActivity,
+  shown: ReadonlySet<string>,
+  now = Date.now(),
+): FormState {
+  const base = emptyForm(now);
+  const form = formOf(activity, now);
+  const params = Object.fromEntries(
+    Object.entries(form.judge.params).filter(([key]) => shown.has(key)),
+  );
+  return {
+    ...form,
+    passwords: [""],
+    timing: form.timing.kind === "at" ? base.timing : form.timing,
+    judge:
+      form.mode !== "code"
+        ? base.judge
+        : form.judge.judgeId
+          ? {
+              ...base.judge,
+              total: form.judge.total,
+              sharesBefore: form.judge.sharesBefore,
+              prompt: form.judge.prompt,
+              params,
+            }
+          : {
+              ...base.judge,
+              total: form.judge.total,
+              sharesBefore: form.judge.sharesBefore,
+              prompt: form.judge.prompt,
+              code: form.judge.code,
+              tests: form.judge.tests,
+              params,
+            },
+  };
+}
+
+/** The 判定器 a sent 红包 was sent with, to pick again for its copy. */
+export function copiedJudgeOf(activity: ManagedActivity) {
+  return activity.config.money.mode === "code"
+    ? (activity.config.judge?.judgeId ?? null)
+    : null;
+}
+
+/**
+ * 也发一个同样玩法的红包 (play-again-design §2.1): a new 红包 on that 玩法
+ * and 怎么领, nothing else filled.
+ */
+export function presetFormOf(
+  mode: Exclude<RewardMode, "code">,
+  participation: "password" | "direct",
+  now = Date.now(),
+): FormState {
+  return { ...withMode(emptyForm(now), mode), participation };
+}
+
+/**
  * The form as production saves it, paid by `merchantId` (none for a
  * 🐟额红包). Checked first.
  */
