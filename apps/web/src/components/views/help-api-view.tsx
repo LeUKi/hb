@@ -1,5 +1,6 @@
 import { BALANCE_LIMITS } from "@hb/contracts";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
+import type { HighlightLanguage, Token } from "../../lib/code-highlight";
 import { PlusBadge } from "../balance/plus";
 import { HelpFrame } from "../help/help-doc";
 import { PageHeader, PageSection, Panel } from "../page/page";
@@ -10,19 +11,59 @@ import { CopyButton } from "../ui/copy-button";
 // machine-readable twin /api/open/openapi.json (apps/api balance/openapi.ts).
 // Keep the two together when either changes.
 
+/** Which examples are coloured, by their label when none is given. */
+function languageOf(label: string): HighlightLanguage | null {
+  if (/\.m?js$|^JavaScript$/.test(label)) return "js";
+  if (/\.json$/.test(label)) return "json";
+  if (label === "Python") return "python";
+  return null;
+}
+
+let highlighter: Promise<typeof import("../../lib/code-highlight")> | null =
+  null;
+
+/**
+ * The example's tokens once the highlighter has loaded (on demand, once):
+ * until then, and for a language it has no parser for, the plain text.
+ */
+function useTokens(code: string, language: HighlightLanguage | null) {
+  const [tokens, setTokens] = useState<{ code: string; lines: Token[][] }>();
+  useEffect(() => {
+    if (!language) return;
+    let live = true;
+    highlighter ??= import("../../lib/code-highlight");
+    highlighter.then(
+      (module) => {
+        if (live)
+          setTokens({ code, lines: module.highlightLines(code, language) });
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [code, language]);
+  return tokens?.code === code ? tokens.lines : null;
+}
+
 /**
  * A copyable block of code (also on /help/code); `wrap` for prose, such as
- * the prompt for an AI, kept to a scrolling height.
+ * the prompt for an AI, kept to a scrolling height. JavaScript, JSON and
+ * Python are coloured as the 判定器 editor colours them.
  */
 export function Block({
   label,
   code,
   wrap = false,
+  lang,
 }: {
   label: string;
   code: string;
   wrap?: boolean;
+  /** What to colour it as; by default read from the label ("judge.js"). */
+  lang?: HighlightLanguage;
 }) {
+  const lines = useTokens(code, lang ?? languageOf(label));
   return (
     <Panel className="relative grid gap-1 p-3">
       <span className="flex items-center justify-between gap-2">
@@ -32,11 +73,29 @@ export function Block({
       <pre
         className={
           wrap
-            ? "max-h-[24rem] overflow-y-auto font-mono text-[13px] leading-5 break-words whitespace-pre-wrap text-ink-2"
-            : "overflow-x-auto font-mono text-[13px] leading-5 text-ink-2 whitespace-pre"
+            ? "hb-code-tokens max-h-[24rem] overflow-y-auto font-mono text-[13px] leading-5 break-words whitespace-pre-wrap text-ink-2"
+            : "hb-code-tokens overflow-x-auto font-mono text-[13px] leading-5 text-ink-2 whitespace-pre"
         }
       >
-        {code}
+        {lines
+          ? lines.map((line, index) => (
+              // Lines and tokens only ever come in this order.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              <Fragment key={index}>
+                {index > 0 && "\n"}
+                {line.map((token, at) =>
+                  token.className ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                    <span key={at} className={token.className}>
+                      {token.text}
+                    </span>
+                  ) : (
+                    token.text
+                  ),
+                )}
+              </Fragment>
+            ))
+          : code}
       </pre>
     </Panel>
   );

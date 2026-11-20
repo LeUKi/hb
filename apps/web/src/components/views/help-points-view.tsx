@@ -224,6 +224,7 @@ export function HelpPointsView() {
         <Block
           label="POST {接口地址}/balance，请求体 {}"
           code={balanceAnswer}
+          lang="json"
           wrap
         />
         <Panel className={text}>
@@ -239,8 +240,13 @@ export function HelpPointsView() {
         title="4. 发放"
         description="有人领到时，红包站用红包作者的密钥调一次，从他的账户转给领取者。"
       >
-        <Block label="POST {接口地址}/transfer" code={transferAsk} wrap />
-        <Block label="转好了" code={transferAnswer} wrap />
+        <Block
+          label="POST {接口地址}/transfer"
+          code={transferAsk}
+          lang="json"
+          wrap
+        />
+        <Block label="转好了" code={transferAnswer} lang="json" wrap />
         <Fields
           items={transferResults.map(([name, note]) => ({ name, note }))}
         />
@@ -267,6 +273,7 @@ export function HelpPointsView() {
         <Block
           label={`POST {接口地址}/query，请求体 { "out_trade_no" }`}
           code={queryAnswer}
+          lang="json"
           wrap
         />
         <Panel className={text}>

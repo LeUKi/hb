@@ -236,3 +236,4 @@
 - 问题按入口写成数据（`apps/web/src/components/help/*-help.tsx`、`start-faq.tsx`、`points-faq.tsx`）：编号、问题、回答、所在的章。回答是 React 节点，能放链接；数字取自代码里的常量（`@hb/contracts`、开发包的限制），每个问题上方写着出处。
 - 版式 `HelpFrame`（`components/help/help-doc.tsx`）：右边的目录从页面自己的小标题读出来（带编号的 `h2` 和其中的问题块），所以问题页和五份开发文档共用；还有手机上的“目录”按钮和弹层、滚到问题和高亮。
 - 原来 `/help` 上的输入框说明、命令列表和常见问题拆进了各入口页；“做一个玩法”原来的“三样东西各做什么”并进了 `q-three-parts`；五份开发文档每节都有了编号。旧地址都不变。
+- 开发文档里的代码例子有高亮（2026-11-20 用户问“为什么展示代码时没有代码高亮”）：JavaScript、JSON、Python 按判定器编辑器的配色上色，浅色面板上用深一些的同色系，深色下就是编辑器的原色；提示词、curl、返回头这些照旧是纯文字。用的是判定器编辑器同一套解析器，不开编辑器，按需加载（`lib/code-highlight.ts`，`Block` 在 `views/help-api-view.tsx`）；标签以 `.js`/`.json` 结尾或写着 JavaScript、Python 的自动上色，别的用 `lang` 指明。

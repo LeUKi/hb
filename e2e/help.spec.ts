@@ -93,13 +93,28 @@ test.describe("帮助中心", () => {
     await expect(page.locator("#cannot")).toBeInViewport();
   });
 
-  test("开发文档也有目录：判定器开发文档跳到联网", async ({ page }) => {
+  test("开发文档也有目录：判定器开发文档跳到联网，例子里的代码有高亮", async ({
+    page,
+  }) => {
     await mockSession(page, viewer);
     await openApp(page, "/help/code");
     const rail = page.getByRole("complementary", { name: "本页目录" });
     await rail.getByRole("button", { name: "联网" }).click();
     await expect(page).toHaveURL(/\/help\/code#network$/);
     await expect(page.locator("#network")).toBeInViewport();
+    // Its examples coloured as the 判定器 editor colours them; prose not.
+    const example = page
+      .locator("section", { has: page.locator("#network") })
+      .locator("pre")
+      .first();
+    await expect(
+      example.locator(".tok-keyword", { hasText: "export" }).first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator("section", { has: page.locator("#ai") })
+        .locator("pre [class^=tok-]"),
+    ).toHaveCount(0);
   });
 
   test("每个入口页：标题对，问题编号是固定的短词且不重复", async ({ page }) => {

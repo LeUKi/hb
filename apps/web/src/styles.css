@@ -828,6 +828,35 @@
   .help-question[data-flash] {
     animation: help-flash 1.6s var(--ease-snappy) both;
   }
+  /* The help docs' code examples (lib/code-highlight.ts): the 判定器
+     editor's colours (05 §14), deepened to read on a light panel; in 深色
+     the editor's own. */
+  .hb-code-tokens {
+    --tok-keyword: #9e5800;
+    --tok-string: #3d7526;
+    --tok-number: #b24a22;
+    --tok-comment: #998a82;
+    --tok-punctuation: #8c7b73;
+    --tok-property: #7b5420;
+  }
+  .hb-code-tokens :is(.tok-keyword, .tok-operatorKeyword) {
+    color: var(--tok-keyword);
+  }
+  .hb-code-tokens :is(.tok-string, .tok-string2) {
+    color: var(--tok-string);
+  }
+  .hb-code-tokens :is(.tok-number, .tok-bool, .tok-atom, .tok-literal) {
+    color: var(--tok-number);
+  }
+  .hb-code-tokens .tok-comment {
+    color: var(--tok-comment);
+  }
+  .hb-code-tokens :is(.tok-punctuation, .tok-operator) {
+    color: var(--tok-punctuation);
+  }
+  .hb-code-tokens .tok-propertyName {
+    color: var(--tok-property);
+  }
   @keyframes help-flash {
     0%,
     30% {
@@ -3105,4 +3134,14 @@ html[data-embed] .build-stamp {
       background: rgb(0 0 0 / 0.55);
     }
   }
+}
+
+/* 深色: the help docs' code examples in the 判定器 editor's own colours. */
+:root[data-mode="dark"] .hb-code-tokens {
+  --tok-keyword: #e7bd70;
+  --tok-string: #c7d68f;
+  --tok-number: #f2a983;
+  --tok-comment: #9c8f78;
+  --tok-punctuation: #b8aa90;
+  --tok-property: #f0cf8a;
 }

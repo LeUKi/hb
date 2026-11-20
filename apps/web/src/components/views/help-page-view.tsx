@@ -216,11 +216,11 @@ export function HelpPageView() {
             ，红包站已经按人分开，不用后端。后端要信“这是谁”时，才用下面的令牌：浏览器里的昵称谁都能伪造，令牌是红包站签名的。
           </p>
         </Panel>
-        <Block label="网页：要令牌" code={identityCode} />
+        <Block label="网页：要令牌" lang="js" code={identityCode} />
         <Fields
           items={identityReasons.map(([name, note]) => ({ name, note }))}
         />
-        <Block label="后端：验证" code={verifyCode(origin)} />
+        <Block label="后端：验证" lang="js" code={verifyCode(origin)} />
         <Panel className={text}>
           <p>
             令牌是 JWT（ES256），有效 10 分钟，过期了网页再调一次{" "}
@@ -281,7 +281,7 @@ export function HelpPageView() {
             Cookie，同意后刷新。Safari 只同意近期直接打开过你网站的人。
           </p>
         </Panel>
-        <Block label="使用已登录的账号" code={accessCode} />
+        <Block label="使用已登录的账号" lang="js" code={accessCode} />
       </PageSection>
       <PageSection id="popup" title="4. 没登录过：在新窗口里登录">
         <Panel className={text}>
@@ -290,7 +290,7 @@ export function HelpPageView() {
             等登录页也不许被嵌入，所以登录要在点击里用新窗口打开。
           </p>
         </Panel>
-        <Block label="打开登录窗口" code={loginCode} />
+        <Block label="打开登录窗口" lang="js" code={loginCode} />
         <Panel className={text}>
           <p>
             LINUX DO
