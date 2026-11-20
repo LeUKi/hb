@@ -4,6 +4,7 @@ import { fixedAddresses } from "../../../../../kit/runtime/network.mjs";
 import { refused } from "../../lib/activities";
 import { fetchJudgePage } from "../../lib/judge";
 import { addressLabel } from "../judges/judge-bits";
+import { noticeWords } from "../judges/judge-notice";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { type FormState, withJudgeDefaults } from "./form-state";
@@ -77,7 +78,10 @@ export function useBorrowJudge() {
       }
       const network = version.network;
       const fixed = network ? fixedAddresses(network) : null;
-      if (fixed && fixed.length > 0 && !sameAddresses(fixed, acked)) {
+      const online =
+        fixed !== null && fixed.length > 0 && !sameAddresses(fixed, acked);
+      // 过时 and 公告 (judge-square §20): its author's words, every pick.
+      if (online || page.outdated || page.notice) {
         const params = version.declarations?.params ?? [];
         const filled = (network ?? []).flatMap((entry) =>
           typeof entry !== "string" && "param" in entry
@@ -85,7 +89,12 @@ export function useBorrowJudge() {
             : [],
         );
         const go = await new Promise<boolean>((resolve) =>
-          setAsking({ page, network: fixed, filled, answer: resolve }),
+          setAsking({
+            page,
+            network: online && fixed ? fixed : [],
+            filled,
+            answer: resolve,
+          }),
         );
         if (!go) return { cancelled: true };
       }
@@ -138,12 +147,43 @@ export function useBorrowJudge() {
     }
   };
 
+  const notice = asking
+    ? noticeWords({
+        outdated: asking.page.outdated,
+        notice: asking.page.notice,
+      })
+    : null;
+  const online = (asking?.network.length ?? 0) > 0;
+  const sendsTo = asking
+    ? `它会把领的人提交的内容发到 ${asking.network.join("、")}。那不是本站，也不是你的服务器。${asking.filled.length ? `也会发到你自己填的${asking.filled.join("、")}。` : ""}`
+    : "";
+  const risk = asking && (
+    <>
+      <p>
+        判定结果由对方的服务器决定，对方随时能改，可能让奖池被领走，或者谁都领不到。
+      </p>
+      <p>只在你信任 @{asking.page.author.username} 时使用。</p>
+    </>
+  );
   const dialog = (
     <ConfirmDialog
       open={asking !== null}
       onClose={() => answer(false)}
-      title="这个判定器会联网"
-      text={`它会把领的人提交的内容发到 ${asking?.network.join("、") ?? ""}。那不是本站，也不是你的服务器。${asking?.filled.length ? `也会发到你自己填的${asking.filled.join("、")}。` : ""}`}
+      title={
+        asking?.page.outdated
+          ? "作者把这个判定器标为过时"
+          : notice
+            ? "作者的公告"
+            : "这个判定器会联网"
+      }
+      // 过时 and 公告 first (judge-square §20); 联网 after, as it was.
+      text={
+        notice ? (
+          <span className="whitespace-pre-wrap">{notice.lines[0]}</span>
+        ) : (
+          sendsTo
+        )
+      }
       actions={
         <>
           <Button onClick={() => answer(false)}>返回</Button>
@@ -153,12 +193,17 @@ export function useBorrowJudge() {
         </>
       }
     >
-      <div className="grid gap-1 text-sm text-ink-2">
-        <p>
-          判定结果由对方的服务器决定，对方随时能改，可能让奖池被领走，或者谁都领不到。
-        </p>
-        <p>只在你信任 @{asking?.page.author.username} 时使用。</p>
-      </div>
+      {(!notice || online) && (
+        <div className="grid gap-1 text-sm text-ink-2">
+          {notice && (
+            <>
+              <p className="font-medium text-ink">这个判定器还会联网</p>
+              <p>{sendsTo}</p>
+            </>
+          )}
+          {risk}
+        </div>
+      )}
     </ConfirmDialog>
   );
 

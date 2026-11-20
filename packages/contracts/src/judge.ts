@@ -190,6 +190,27 @@ export const judgeDescriptionSchema = z
     `说明最多 ${JUDGE_NAME_LIMITS.description} 个字`,
   );
 
+/**
+ * 公告 and 过时 (docs/judge-square-design.md §20): its author's words to
+ * those who send 红包 with it, and whether they still keep it up. Set on
+ * the platform, not in the code: no deploy, no version.
+ */
+export const JUDGE_NOTICE_MAX = 200;
+export const judgeNoticeSchema = z.strictObject({
+  /** Empty: no 公告. */
+  notice: z
+    .string()
+    .trim()
+    .refine(
+      (value) => characters(value) <= JUDGE_NOTICE_MAX,
+      `公告最多 ${JUDGE_NOTICE_MAX} 个字`,
+    ),
+  outdated: z.boolean(),
+});
+export type JudgeNoticeInput = z.infer<typeof judgeNoticeSchema>;
+/** A 公告 as shown: its words, and when they last changed. */
+export type JudgeNotice = { text: string; at: string };
+
 /** The params a sender filled (§3): checked against the version it opens with. */
 const paramsSchema = z
   .record(z.string(), z.unknown())
@@ -431,6 +452,9 @@ export type MyJudge = {
   takenDown: { at: string; reason: string } | null;
   /** The version 站长精选 has, if it has one. */
   featured: number | null;
+  /** 过时 and 公告 (§20), as its author set them. */
+  outdated: boolean;
+  notice: JudgeNotice | null;
   /** Its numbers, as the 广场 shows them (§8). */
   stats: JudgeStats;
 };
@@ -492,6 +516,10 @@ export type SquareJudge = {
    * a 红包 with it yet; others wait for it. Absent when not, and for 站长精选.
    */
   updating?: number;
+  /** 过时 (§20): its author no longer keeps it up. */
+  outdated?: true;
+  /** 公告 (§20): its author's words to those who send 红包 with it. */
+  notice?: JudgeNotice;
   stats: JudgeStats;
 };
 
@@ -670,6 +698,9 @@ export type PublicJudge = {
     featured: boolean;
     bySiteOwner: boolean;
     basedOn: string | null;
+    /** 过时 and 公告 (§20): its sender's page shows them to its sender. */
+    outdated?: true;
+    notice?: JudgeNotice;
   };
   /**
    * Its params from opening (§3): the ones everyone sees, as declared, and

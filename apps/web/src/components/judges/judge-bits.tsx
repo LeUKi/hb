@@ -77,14 +77,31 @@ export const OLD_JUDGE_HINT =
   "按旧规则（有份数）写的判定器，要按新规则重新跑一遍测试才能发新红包。";
 
 /**
- * 精选, 联网, 带附带网页 and 旧判定器, each explaining itself (§15.4;
- * judge-page §11.3; multi-prize §3.6).
+ * 过时, 精选, 联网, 带附带网页 and 旧判定器, each explaining itself (§20,
+ * §15.4; judge-page §11.3; multi-prize §3.6).
  */
 export function JudgeTags({ judge }: { judge: SquareJudge }) {
-  if (!judge.featured && !judge.network && !judge.page && !judge.old)
+  if (
+    !judge.featured &&
+    !judge.network &&
+    !judge.page &&
+    !judge.old &&
+    !judge.outdated
+  )
     return null;
   return (
     <span className="flex flex-wrap gap-1.5">
+      {/* 过时 (§20): its author no longer keeps it up. */}
+      {judge.outdated && (
+        <Squircle radius={radius.tag}>
+          <TagHint
+            hint="作者已不再维护它，用之前留意风险。"
+            className={cn(tagClass, "bg-fill-2 text-ink-2")}
+          >
+            过时
+          </TagHint>
+        </Squircle>
+      )}
       {judge.old && (
         <Squircle radius={radius.tag}>
           <TagHint

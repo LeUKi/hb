@@ -23,6 +23,7 @@ import {
   statsLine,
   writtenAddress,
 } from "../judges/judge-bits";
+import { JudgeNoticeCallout } from "../judges/judge-notice";
 import { waitingWords } from "../judges/square-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
@@ -515,6 +516,8 @@ export function PublicJudgePage({
           )
         }
       />
+      {/* 过时 and 公告 (§20): its author's words, before anything else. */}
+      <JudgeNoticeCallout outdated={judge.outdated} notice={judge.notice} />
       <Reveal show={Boolean(judge.takenDown)}>
         <Callout tone="danger" icon={AlertTriangle} title="已被站长撤下">
           原因：{takenDownReason}

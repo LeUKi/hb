@@ -118,6 +118,8 @@ function mineDetail(): MyJudgeDetail {
     featurable: true,
     takenDown: null,
     featured: null,
+    outdated: false,
+    notice: null,
     stats: { hongbao: 0, judged: 0, claimed: 0 },
     publicN: null,
     updating: null,
@@ -164,6 +166,7 @@ async function mockSquare(page: Page, user: MockUser | null) {
   const asked = {
     lists: [] as string[],
     listings: [] as { listed: boolean; featurable: boolean }[],
+    notices: [] as { notice: string; outdated: boolean }[],
     deploys: [] as Record<string, unknown>[],
     saved: [] as { activity: { judge?: Record<string, unknown> } }[],
   };
@@ -243,6 +246,24 @@ async function mockSquare(page: Page, user: MockUser | null) {
         listed: body.listed,
         featurable: body.featurable,
         codePublic: body.listed ? "always" : mine.codePublic,
+      };
+      return route.fulfill({ json: { judge: mine } });
+    }
+    if (rest === `/${MINE}/notice`) {
+      const body = route.request().postDataJSON();
+      asked.notices.push(body);
+      mine = {
+        ...mine,
+        outdated: body.outdated,
+        notice: body.notice
+          ? {
+              text: body.notice,
+              at:
+                mine.notice && mine.notice.text === body.notice
+                  ? mine.notice.at
+                  : new Date().toISOString(),
+            }
+          : null,
       };
       return route.fulfill({ json: { judge: mine } });
     }
@@ -1062,6 +1083,69 @@ test.describe("判定器广场", () => {
       version: 1,
       networkAck: ["https://api.example.com/hb/"],
     });
+  });
+
+  test("公告和过时（§20）：作者写公告、按保存就生效；标为过时一按就存", async ({
+    page,
+  }) => {
+    const { asked } = await mockSquare(page, member);
+    await openApp(page, `/judges/${MINE}`);
+    const section = page.locator("section", {
+      has: page.getByRole("heading", { name: "公告" }),
+    });
+    await section.getByLabel(/公告/).fill("  服务器周六晚上维护一小时。");
+    await section.getByRole("button", { name: "保存" }).click();
+    await expect(section.getByText("已保存")).toBeVisible();
+    expect(asked.notices).toEqual([
+      { notice: "服务器周六晚上维护一小时。", outdated: false },
+    ]);
+    await section.getByRole("switch", { name: "标为过时" }).click();
+    await expect(
+      section.getByRole("switch", { name: "标为过时" }),
+    ).toBeChecked();
+    expect(asked.notices[1]).toEqual({
+      notice: "服务器周六晚上维护一小时。",
+      outdated: true,
+    });
+  });
+
+  test("别人的判定器标为过时、有公告：卡上写过时，判定器页先写公告，用它发红包先看公告再继续", async ({
+    page,
+  }) => {
+    await mockSquare(page, member);
+    const notice = { text: "多轮版在另一个判定器里。", at: deployedAt };
+    const day = `${new Date(deployedAt).getMonth() + 1}月${new Date(deployedAt).getDate()}日`;
+    await page.route("**/api/judges?**", (route) =>
+      route.fulfill({
+        json: {
+          items: [{ ...guess, outdated: true, notice }],
+          nextCursor: null,
+        },
+      }),
+    );
+    await page.route(`**/api/judges/${GUESS}`, (route) =>
+      route.fulfill({
+        json: { judge: { ...guessPage, outdated: true, notice } },
+      }),
+    );
+    await openApp(page, "/judges");
+    await expect(
+      page
+        .getByRole("article")
+        .filter({ hasText: guess.name })
+        .getByText("过时"),
+    ).toBeVisible();
+    await openApp(page, `/judges/${GUESS}`);
+    await expect(page.getByText(`作者公告 · ${day}`)).toBeVisible();
+    await expect(page.getByText("作者已把它标为过时。")).toBeVisible();
+    await openApp(page, `/new?judge=${GUESS}`);
+    const asking = page.getByRole("dialog", {
+      name: "作者把这个判定器标为过时",
+    });
+    await expect(asking.getByText("多轮版在另一个判定器里。")).toBeVisible();
+    await asking.getByRole("button", { name: "我知道，继续用" }).click();
+    await expect(asking).toBeHidden();
+    await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
   });
 
   test("用它发红包（别人的）：/new?judge= 到第 2 步，挑好它，上面写接下来先填发多少再填参数", async ({

@@ -7,6 +7,7 @@ import type {
   JudgeCheckInput,
   JudgeDeclarations,
   JudgeListingInput,
+  JudgeNoticeInput,
   JudgePage,
   JudgeParamsCheck,
   JudgeParamsCheckInput,
@@ -316,6 +317,31 @@ export function useSetJudgeListing(userId: string, judgeId: string) {
       (
         await readResponse<{ judge: MyJudgeDetail }>(
           await api.api.me.judges[":id"].listing.$put(
+            { param: { id: judgeId }, json },
+            { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+          ),
+        )
+      ).judge,
+    onSuccess: (judge) => {
+      queryClient.setQueryData(myJudgeKey(userId, judgeId), judge);
+      void queryClient.invalidateQueries({
+        queryKey: myJudgesKey(userId),
+        exact: true,
+      });
+      void queryClient.invalidateQueries({ queryKey: judgeSquareKey });
+    },
+  });
+}
+
+/** 公告 and 过时 (§20): at once, no deploy. */
+export function useSetJudgeNotice(userId: string, judgeId: string) {
+  const queryClient = useQueryClient();
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async (json: JudgeNoticeInput) =>
+      (
+        await readResponse<{ judge: MyJudgeDetail }>(
+          await api.api.me.judges[":id"].notice.$put(
             { param: { id: judgeId }, json },
             { headers: { "X-CSRF-Token": csrfToken ?? "" } },
           ),

@@ -80,6 +80,9 @@ type JudgeRecord = {
   featurable: number;
   taken_down_at: number | null;
   taken_down_reason: string | null;
+  notice: string | null;
+  notice_at: number | null;
+  outdated_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -414,6 +417,11 @@ async function summaryOf(env: ApiBindings, row: ListedJudge): Promise<MyJudge> {
         ? { at: iso(row.taken_down_at), reason: row.taken_down_reason }
         : null,
     featured: row.featured_n,
+    outdated: row.outdated_at !== null,
+    notice:
+      row.notice !== null && row.notice_at !== null
+        ? { text: row.notice, at: iso(row.notice_at) }
+        : null,
     stats: {
       hongbao: row.stat_hongbao ?? 0,
       judged: row.stat_judged ?? 0,

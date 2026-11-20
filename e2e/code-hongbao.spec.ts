@@ -1153,6 +1153,42 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText("答案-1", { exact: true })).toBeVisible();
   });
 
+  test("用别人的判定器（judge-square §20）：判定器作者写了公告、标为过时，红包作者在自己的红包页上看到，领的人看不到", async ({
+    page,
+  }) => {
+    const at = new Date(Date.UTC(2026, 10, 20, 4)).toISOString();
+    const day = `${new Date(at).getMonth() + 1}月${new Date(at).getDate()}日`;
+    const borrowed = (): Partial<PublicJudge> => ({
+      judge: {
+        id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+        name: "五子棋",
+        version: 1,
+        author: { username: "maker", displayName: "做棋的人" },
+        listed: true,
+        featured: false,
+        bySiteOwner: false,
+        basedOn: null,
+        outdated: true,
+        notice: { text: "多轮版在另一个判定器里。", at },
+      },
+    });
+    await mockSession(page, author);
+    const state = await mockCodeHongbao(page);
+    await mockLive(page);
+    await mockSenderReads(page);
+    state.judge = { ...publicJudge(), ...borrowed() };
+    await openApp(page, path);
+    const tools = page.locator("[data-hb-part=author]");
+    await expect(tools.getByText(`判定器作者的公告 · ${day}`)).toBeVisible();
+    await expect(tools.getByText("多轮版在另一个判定器里。")).toBeVisible();
+    await expect(tools.getByText("判定器作者已把它标为过时。")).toBeVisible();
+
+    await mockSession(page, null);
+    await openApp(page, path);
+    await expect(page.getByRole("button", { name: "开" })).toBeVisible();
+    await expect(page.getByText("多轮版在另一个判定器里。")).toHaveCount(0);
+  });
+
   test("代码弹窗（红包作者）：只读的代码带行号，复制代码；指纹、封存值和不联网；名单写输入和代码给的数", async ({
     page,
     context,
@@ -3855,11 +3891,15 @@ test.describe("发红包 · 代码判定", () => {
     await mockDeploys(page);
     const asked = await mockMyJudges(page);
     await openApp(page, `/judges/${GUESS_ID}`);
+    // 设置's own 保存: the 公告 below has one too (judge-square §20).
+    const settings = page.locator("section", {
+      has: page.getByRole("heading", { name: "设置", exact: true }),
+    });
     const name = page.getByRole("textbox", { name: "名字" });
     await expect(name).toHaveValue("猜数字");
     await name.fill("猜大小");
-    await page.getByRole("button", { name: "保存" }).click();
-    await expect(page.getByText("已保存")).toBeVisible();
+    await settings.getByRole("button", { name: "保存" }).click();
+    await expect(settings.getByText("已保存")).toBeVisible();
     expect(asked.updates.at(-1)).toEqual({
       name: "猜大小",
       description: "猜中的领",
@@ -3869,7 +3909,7 @@ test.describe("发红包 · 代码判定", () => {
       page.getByRole("heading", { name: "猜大小", level: 1 }),
     ).toBeVisible();
     await name.fill("");
-    await page.getByRole("button", { name: "保存" }).click();
+    await settings.getByRole("button", { name: "保存" }).click();
     await expect(page.getByText("先给判定器起个名字")).toBeVisible();
     expect(asked.updates).toHaveLength(1);
     await name.fill("猜大小");

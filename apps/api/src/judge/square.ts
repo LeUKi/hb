@@ -7,6 +7,7 @@ import {
   JUDGE_OLDEST_PROTOCOL,
   type JudgeDeclarations,
   type JudgeListingInput,
+  type JudgeNoticeInput,
   type JudgePage,
   type JudgePageVersion,
   type JudgeSource,
@@ -110,6 +111,9 @@ type CardRow = {
   page: string | null;
   old: number | null;
   updating: number | null;
+  outdatedAt: number | null;
+  notice: string | null;
+  noticeAt: number | null;
   hongbao: number | null;
   judged: number | null;
   claimed: number | null;
@@ -130,6 +134,7 @@ const CARD = (version: string) => `j.id, j.name, j.description,
   (SELECT ov.protocol < ${JUDGE_OLDEST_PROTOCOL} FROM judge_versions ov
     WHERE ov.judge_id = j.id AND ov.n = ${version}) AS old,
   ${UPDATING_N("j.id")} AS updating,
+  j.outdated_at AS outdatedAt, j.notice, j.notice_at AS noticeAt,
   s.hongbao, s.judged, s.claimed, s.last_opened_at AS lastOpenedAt`;
 const CARD_JOINS = `JOIN users u ON u.id = j.author_id
   LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
@@ -179,7 +184,27 @@ function cardOf(env: ApiBindings, row: CardRow, pages: boolean): SquareJudge {
       : {}),
     ...(row.old === 1 ? { old: true as const } : {}),
     ...(row.updating !== null ? { updating: row.updating } : {}),
+    ...noticeOf(row),
     stats: statsOf(row),
+  };
+}
+
+/** 过时 and 公告 (§20) as a 判定器's public side carries them: only when set. */
+export function noticeOf(row: {
+  outdatedAt: number | null;
+  notice: string | null;
+  noticeAt: number | null;
+}) {
+  return {
+    ...(row.outdatedAt !== null ? { outdated: true as const } : {}),
+    ...(row.notice !== null && row.noticeAt !== null
+      ? {
+          notice: {
+            text: row.notice,
+            at: new Date(row.noticeAt).toISOString(),
+          },
+        }
+      : {}),
   };
 }
 
@@ -485,6 +510,30 @@ export async function setMyJudgeListing(
       updated_at = MAX(updated_at, ?3) WHERE id = ?4`,
   )
     .bind(Number(input.featurable), Number(input.listed), now, judge.id)
+    .run();
+}
+
+/**
+ * 公告 and 过时 (§20): set by its author on the platform, at once, no
+ * deploy. An unchanged 公告 keeps its time; an empty one is none.
+ */
+export async function setMyJudgeNotice(
+  env: ApiBindings,
+  userId: string,
+  judgeId: string,
+  input: JudgeNoticeInput,
+) {
+  const judge = await ownJudge(env, judgeId, userId);
+  const now = Date.now();
+  const notice = input.notice === "" ? null : input.notice;
+  await env.DB.prepare(
+    `UPDATE judges SET
+      notice_at = CASE WHEN ?1 IS NULL THEN NULL WHEN notice IS ?1 THEN notice_at ELSE ?3 END,
+      notice = ?1,
+      outdated_at = CASE WHEN ?2 THEN COALESCE(outdated_at, ?3) ELSE NULL END,
+      updated_at = MAX(updated_at, ?3) WHERE id = ?4`,
+  )
+    .bind(notice, Number(input.outdated), now, judge.id)
     .run();
 }
 

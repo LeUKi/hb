@@ -34,6 +34,7 @@ import { ParamsFields, paramsFor } from "../hongbao-form/params-fields";
 import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
 import { JudgeHelpLinks, networkWords, statsLine } from "../judges/judge-bits";
+import { NoticeSettings } from "../judges/judge-notice";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -865,7 +866,11 @@ function JudgePage({
   user: SessionUser;
 }) {
   const navigate = useNavigate();
-  const [changed, setChanged] = useState({ settings: false, deploy: false });
+  const [changed, setChanged] = useState({
+    settings: false,
+    deploy: false,
+    notice: false,
+  });
   const withdraw = useWithdrawJudgeVersion(user.id, judge.id);
   const [withdrawing, setWithdrawing] = useState<number | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
@@ -939,6 +944,18 @@ function JudgePage({
           }
         />
       </PageSection>
+      {/* 过时 and 公告 (§20): for those who send 红包 with it. */}
+      <PageSection title="公告">
+        <NoticeSettings
+          judge={judge}
+          userId={user.id}
+          onChanged={(notice) =>
+            setChanged((current) =>
+              current.notice === notice ? current : { ...current, notice },
+            )
+          }
+        />
+      </PageSection>
       <PageSection title="判定器广场">
         <SquareSettings judge={judge} userId={user.id} />
       </PageSection>
@@ -1000,7 +1017,7 @@ function JudgePage({
         />
       </PageSection>
       <LeaveGuard
-        when={changed.settings || changed.deploy}
+        when={changed.settings || changed.deploy || changed.notice}
         message="改过的内容还没保存，离开后会丢失。"
       />
     </Page>

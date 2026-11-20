@@ -31,6 +31,7 @@ import {
 import { dropKeysStatement } from "./keys";
 import { ledgerPool } from "./ledger";
 import { declarationsFor, revealedParams } from "./params";
+import { noticeOf } from "./square";
 import {
   codeOf,
   findJudgeRow,
@@ -115,6 +116,7 @@ async function judgeOf(env: ApiBindings, judge: JudgeRow) {
   const row = await env.DB.prepare(
     `SELECT j.name, j.code_public AS codePublic, u.username, u.display_name AS displayName,
         u.provider, u.external_id AS externalId, bu.username AS basedOn,
+        j.outdated_at AS outdatedAt, j.notice, j.notice_at AS noticeAt,
         (j.listed_at IS NOT NULL AND j.taken_down_at IS NULL) AS listed,
         EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = j.id) AS featured
       FROM judges j JOIN users u ON u.id = j.author_id
@@ -130,6 +132,9 @@ async function judgeOf(env: ApiBindings, judge: JudgeRow) {
       provider: string;
       externalId: string;
       basedOn: string | null;
+      outdatedAt: number | null;
+      notice: string | null;
+      noticeAt: number | null;
       listed: number;
       featured: number;
     }>();
@@ -144,6 +149,7 @@ async function judgeOf(env: ApiBindings, judge: JudgeRow) {
           featured: row.featured === 1,
           bySiteOwner: isAdministrator(env, row.provider, row.externalId),
           basedOn: row.basedOn,
+          ...noticeOf(row),
         },
         always: row.codePublic === "always",
       }

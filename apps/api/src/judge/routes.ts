@@ -8,6 +8,7 @@ import {
   judgeFeatureChangeSchema,
   judgeFeatureSchema,
   judgeListingSchema,
+  judgeNoticeSchema,
   judgeParamsCheckSchema,
   judgeParamsFillSchema,
   judgeTakeDownSchema,
@@ -70,6 +71,7 @@ import {
   judgePageCode,
   listSquareJudges,
   setMyJudgeListing,
+  setMyJudgeNotice,
 } from "./square";
 import { judgeUsageReport } from "./usage";
 
@@ -200,6 +202,23 @@ export const judgeRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       await setMyJudgeListing(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({
+        judge: await getMyJudge(c.env, session.user.id, c.req.param("id")),
+      });
+    },
+  )
+  // 公告 and 过时 (§20): its author's, at once, no deploy.
+  .put(
+    "/me/judges/:id/notice",
+    validator("json", parsedWith(judgeNoticeSchema)),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      await setMyJudgeNotice(
         c.env,
         session.user.id,
         c.req.param("id"),

@@ -1912,6 +1912,14 @@ export const judges = sqliteTable(
     takenDownAt: integer("taken_down_at"),
     takenDownReason: text("taken_down_reason"),
     takenDownBy: text("taken_down_by").references(() => users.id),
+    /**
+     * 公告 (§20): its author's words to those who send 红包 with it, up to
+     * JUDGE_NOTICE_MAX characters; when they last changed them.
+     */
+    notice: text("notice"),
+    noticeAt: integer("notice_at"),
+    /** 标为过时 (§20): when its author said it is no longer kept up. */
+    outdatedAt: integer("outdated_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

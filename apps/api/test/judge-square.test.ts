@@ -651,3 +651,111 @@ describe("在更新 and 撤回 (§17)", () => {
     );
   });
 });
+
+describe("过时 and 公告 (§20)", () => {
+  async function setNotice(
+    user: Actor,
+    id: string,
+    body: { notice: string; outdated: boolean },
+  ) {
+    const response = await app.request(
+      `${origin}/api/me/judges/${id}/notice`,
+      {
+        method: "PUT",
+        headers: {
+          Cookie: user.cookie,
+          Origin: origin,
+          "Content-Type": "application/json",
+          "X-CSRF-Token": user.csrf,
+        },
+        body: JSON.stringify(body),
+      },
+      bindings,
+    );
+    return {
+      status: response.status,
+      body: (await response.json()) as {
+        judge?: MyJudgeDetail;
+        error?: { code: string };
+      },
+    };
+  }
+
+  it("is set by its author at once, no deploy; the 广场, its page and the 红包 opened with it carry them", async () => {
+    const judge = await made();
+    await listed(judge.id);
+    const hongbao = await opened(judge);
+    await refreshJudgeStats(bindings);
+    let mine = await getMyJudge(bindings, author.id, judge.id);
+    expect(mine).toMatchObject({ outdated: false, notice: null });
+
+    const set = await setNotice(author, judge.id, {
+      notice: "  服务器周六晚上维护一小时。  ",
+      outdated: true,
+    });
+    expect(set.status).toBe(200);
+    expect(set.body.judge).toMatchObject({
+      outdated: true,
+      notice: { text: "服务器周六晚上维护一小时。" },
+      latest: { n: 1 },
+    });
+    const at = set.body.judge?.notice?.at;
+
+    const card = (
+      await get<SquareJudgeList>("/judges?tab=all")
+    ).body.items.find((item) => item.id === judge.id);
+    expect(card).toMatchObject({
+      outdated: true,
+      notice: { text: "服务器周六晚上维护一小时。", at },
+    });
+    expect(
+      (await get<{ judge: JudgePage }>(`/judges/${judge.id}`)).body.judge,
+    ).toMatchObject({
+      outdated: true,
+      notice: { text: "服务器周六晚上维护一小时。" },
+    });
+    const shown = await getPublicActivity(bindings, hongbao.id);
+    expect(shown.judge?.judge).toMatchObject({
+      outdated: true,
+      notice: { text: "服务器周六晚上维护一小时。", at },
+    });
+
+    // The same words keep their time; 过时 off; an empty one is none.
+    mine = (
+      await setNotice(author, judge.id, {
+        notice: "服务器周六晚上维护一小时。",
+        outdated: false,
+      })
+    ).body.judge as MyJudgeDetail;
+    expect(mine).toMatchObject({ outdated: false, notice: { at } });
+    mine = (await setNotice(author, judge.id, { notice: "", outdated: false }))
+      .body.judge as MyJudgeDetail;
+    expect(mine).toMatchObject({ outdated: false, notice: null });
+    const plain = (await get<{ judge: JudgePage }>(`/judges/${judge.id}`)).body
+      .judge;
+    expect(plain).not.toHaveProperty("outdated");
+    expect(plain).not.toHaveProperty("notice");
+  });
+
+  it("is its author's alone, and up to 200 characters", async () => {
+    const judge = await made();
+    const other = await actor();
+    expect(
+      (await setNotice(other, judge.id, { notice: "x", outdated: true }))
+        .status,
+    ).toBe(404);
+    const long = await setNotice(author, judge.id, {
+      notice: "长".repeat(201),
+      outdated: false,
+    });
+    expect(long.status).toBe(400);
+    expect(
+      (
+        await setNotice(author, judge.id, {
+          notice: "长".repeat(200),
+          outdated: false,
+        })
+      ).status,
+    ).toBe(200);
+  });
+});

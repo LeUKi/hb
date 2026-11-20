@@ -512,6 +512,13 @@
       "when": 1795092415603,
       "tag": "0072_viewer_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1795167750202,
+      "tag": "0073_judge_notice",
+      "breakpoints": true
     }
   ]
 }

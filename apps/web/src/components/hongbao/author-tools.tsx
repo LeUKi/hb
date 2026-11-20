@@ -19,6 +19,7 @@ import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { useIdentity, useSessionUser } from "../../lib/session";
 import { savedDraftAtom } from "../../lib/store";
 import { CancelScheduleDialog } from "../hongbao-form/cancel-schedule-dialog";
+import { JudgeNoticeCallout } from "../judges/judge-notice";
 import { Callout, Panel } from "../page/page";
 import { Button, buttonVariants } from "../ui/button";
 import { ButtonLink, MoreLink } from "../ui/button-link";
@@ -243,6 +244,17 @@ export function AuthorTools({
           领取者只能在红包页输入口令。请通过“分享”复制文案，文案中带有红包入口。
         </Callout>
       )}
+      {/* 过时 and 公告 (judge-square §20): another's 判定器 it runs on. */}
+      {code &&
+        !ended &&
+        activity.judge?.judge &&
+        activity.judge.judge.author.username !== user?.username && (
+          <JudgeNoticeCallout
+            whose="判定器作者"
+            outdated={activity.judge.judge.outdated}
+            notice={activity.judge.judge.notice}
+          />
+        )}
       {code && activity.judge?.paused && !ended && (
         <Callout
           tone="warning"
