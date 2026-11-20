@@ -3,7 +3,8 @@ import { squirclePath } from "./squircle-path";
 // The single source of brand identity. Pure data: the Vite config also reads it
 // to inject the page title, the favicon and the boot-loader mark into
 // index.html, so a rename (or dropping the brand entirely) only touches this
-// file. The name appears in the browser tab only; the site itself shows the
+// file — and public/og.png, the mark drawn for link previews
+// (docs/link-preview-design.md §3), redrawn by hand. The name appears in the browser tab only; the site itself shows the
 // mark (the lit red tile with its gold dot), never the name.
 
 export type BrandMark =
@@ -76,10 +77,6 @@ export function brandIconSvg() {
 export function brandHtmlReplacements(): Record<string, string> {
   const icon = brandIconSvg();
   return {
-    __BRAND_TITLE__: escapeHtml(documentTitle()),
-    __BRAND_DESCRIPTION__: escapeHtml(
-      brand.name ? `${brand.name} · ${brand.description}` : brand.description,
-    ),
     "<!--brand-icon-->": icon
       ? `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(icon)}" />`
       : "",

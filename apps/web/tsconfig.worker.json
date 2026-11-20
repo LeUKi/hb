@@ -7,7 +7,10 @@
   },
   "include": [
     "src/worker.ts",
+    "src/lib/brand.ts",
+    "src/lib/page-meta.ts",
     "src/lib/site-move.ts",
+    "src/lib/squircle-path.ts",
     "worker-configuration.d.ts"
   ]
 }

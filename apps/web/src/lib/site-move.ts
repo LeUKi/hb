@@ -30,9 +30,9 @@ export function secureLocation(url: URL) {
 }
 
 /**
- * For index.html: pages are static assets that never reach the Worker, so
- * the page itself goes on before anything else loads — off a moved host, and
- * off plain http.
+ * For index.html: the Worker moves pages too, but should one be served as
+ * a plain static asset, the page itself goes on before anything else loads
+ * — off a moved host, and off plain http.
  */
 export function siteMoveScript() {
   return `<script>(() => { const to = ${JSON.stringify(movedHosts)}[location.hostname]; const rest = location.pathname + location.search + location.hash; if (to) location.replace(to + rest); else if (location.protocol === "http:" && !${localHost}.test(location.hostname)) location.replace("https://" + location.host + rest); })();</script>`;

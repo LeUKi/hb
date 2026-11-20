@@ -207,7 +207,7 @@
 
 ## 11 域名 hb.lafi.sh
 
-**进度**：2026-10-15 生产换到 `hb.lafi.sh`（发布记录见 部署准备）。旧域名仍挂在网页 Worker 上：经过 Worker 的请求 301 到新域名同一路径，页面是不经过 Worker 的静态资源，由 `index.html` 开头的脚本跳转（`apps/web/src/lib/site-move.ts`）。
+**进度**：2026-10-15 生产换到 `hb.lafi.sh`（发布记录见 部署准备）。旧域名仍挂在网页 Worker 上：经过 Worker 的请求 301 到新域名同一路径；页面原先是不经过 Worker 的静态资源，由 `index.html` 开头的脚本跳转（`apps/web/src/lib/site-move.ts`）。2026-11-20 起页面也先经过 Worker（链接预览，[link-preview-design](../link-preview-design.md)），脚本留作后备。
 
 - **评价**：hb 是“红包”的拼音首字母，也是仓库名；短、好记，手机上好输入。
 - **迁移注意**：

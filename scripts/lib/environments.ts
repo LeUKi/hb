@@ -92,6 +92,24 @@ const DO_LOCATION_HINTS = [
   "me",
 ];
 
+/**
+ * Whether the web Worker sees /api (and all under it) before the assets: by
+ * its own rules, or by "/*" (every page, for its link previews) with no
+ * "!" rule taking any of it back.
+ */
+function reachesWorker(rules: string[], prefix: string) {
+  const all = rules.includes("/*");
+  const own = rules.includes(prefix) && rules.includes(`${prefix}/*`);
+  const excluded = rules.some(
+    (rule) =>
+      rule.startsWith("!") &&
+      (rule === `!${prefix}` ||
+        rule.startsWith(`!${prefix}/`) ||
+        rule === "!/*"),
+  );
+  return (all || own) && !excluded;
+}
+
 export function validateEnvironment(
   environment: Environment,
   web: WorkerConfig,
@@ -124,8 +142,7 @@ export function validateEnvironment(
   if (
     web.assets?.binding !== "ASSETS" ||
     web.assets.not_found_handling !== "single-page-application" ||
-    !web.assets.run_worker_first.includes("/api") ||
-    !web.assets.run_worker_first.includes("/api/*")
+    !reachesWorker(web.assets.run_worker_first, "/api")
   )
     fail("gateway SPA routing");
   const database = api.d1_databases?.find((value) => value.binding === "DB");
