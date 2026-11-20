@@ -849,6 +849,24 @@ describe("社区小程序's live channel", () => {
     expect(message.activity).not.toHaveProperty("author");
   });
 
+  it("keeps its sockets, which send no pings, when the object lets silent pages go (06 §13)", async () => {
+    const activity = await running();
+    const first = await connect(activity.id);
+    // Three minutes on: a page's socket this quiet would go; the 社区's stays.
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.now() + 3 * 60_000 + 1_000);
+    try {
+      const second = await connect(activity.id);
+      expect(second.closed).toEqual([]);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(first.closed).toEqual([]);
+      expect(first.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("keeps a socket past its token's end: the alarm waits for the 红包's own time alone", async () => {
     const activity = await running();
     const now = Math.floor(Date.now() / 1000);

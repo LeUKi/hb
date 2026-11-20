@@ -540,6 +540,25 @@ describe("a running 红包's live channel", () => {
     expect(await stored()).toMatchObject({ peak: 2, total: 3 });
   });
 
+  it("lets go of a page's socket that stopped pinging when someone comes, and counts it no more (06 §13)", async () => {
+    const activity = await running(3);
+    const quiet = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(viewers(quiet.heard)).toBe(1));
+    // Three minutes on without a ping (a laptop shut): the next page to
+    // connect has it let go, as 4002, and the count is that page alone.
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.now() + 3 * 60_000 + 1_000);
+    try {
+      const next = await connect(activity.id, await actor());
+      await vi.waitFor(() => expect(quiet.closed).toEqual([4002]));
+      expect(next.closed).toEqual([]);
+      await vi.waitFor(() => expect(viewers(next.heard)).toBe(1));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("answers the keep-alive, and closes on anything else", async () => {
     const activity = await running(3);
     const { socket, heard, closed } = await connect(activity.id, await actor());

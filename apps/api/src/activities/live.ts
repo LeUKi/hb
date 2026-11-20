@@ -41,6 +41,16 @@ export const LIVE_DEADLINE_MARGIN_MS = 250;
 /** What the browser sends to keep the line open; answered without waking. */
 export const LIVE_PING = "ping";
 export const LIVE_PONG = "pong";
+/**
+ * A web page's socket that has not pinged for this long is let go: its
+ * page pings every 30 s (once a minute in a background tab), so its peer
+ * went without closing — a laptop shut, a phone off the network. Such a
+ * socket stayed open for hours and kept its 红包's object awake
+ * (docs/redesign/06-production.md §13, 2026-11-20).
+ */
+export const LIVE_SILENT_MS = 3 * 60_000;
+/** Closed for that: not final, so a page that was only asleep comes back. */
+export const LIVE_SILENT_CODE = 4002;
 
 /**
  * Nothing more will change for anyone watching: the result is out. A draft

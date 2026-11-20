@@ -46,6 +46,8 @@ import {
   LIVE_MINI_TAG,
   LIVE_PING,
   LIVE_PONG,
+  LIVE_SILENT_CODE,
+  LIVE_SILENT_MS,
   LIVE_TAG,
   LIVE_USER_HEADER,
   liveAnnounce,
@@ -209,9 +211,9 @@ function livePeople(sockets: WebSocket[]) {
 
 /**
  * A request to an ActivityDO still unanswered after this long is logged,
- * and again when it ends (docs/redesign/06-production.md §13): since
- * 2026-11-04 objects have stayed awake for one to three hours at no CPU,
- * each time for exactly a chain of long calls of one kind not yet known.
+ * and again when it ends (docs/redesign/06-production.md §13). None was
+ * in the 24 hours to 2026-11-20 while four objects stayed awake for hours:
+ * not a request, most likely sockets whose pages vanished (dropSilent).
  */
 const SLOW_REQUEST_MS = 60_000;
 
@@ -395,6 +397,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { error: { code: "ACTIVITY_ENDED", message: "红包已结束" } },
         { status: 410 },
       );
+    this.dropSilent();
     if (this.ctx.getWebSockets(LIVE_TAG).length >= MAX_LIVE_SOCKETS)
       return Response.json(
         { error: { code: "LIVE_BUSY", message: "实时更新人数已满" } },
@@ -709,6 +712,29 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
   }
 
+  /**
+   * Web pages' sockets that stopped pinging, let go (LIVE_SILENT_MS): looked
+   * at only while this object is awake anyway — a socket comes or goes, a
+   * push — never on a timer of its own, which would keep it awake. The
+   * runtime answers the pings and keeps when each last did, without waking
+   * this. The 社区小程序's sockets send none (the 社区's own server holds
+   * them, and a hidden page closes its own): left alone. Whether any went.
+   */
+  private dropSilent() {
+    const now = Date.now();
+    let dropped = false;
+    for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
+      if (socket.readyState !== WebSocket.OPEN || this.isMini(socket)) continue;
+      const last =
+        this.ctx.getWebSocketAutoResponseTimestamp(socket)?.getTime() ??
+        liveSince(socket);
+      if (last === 0 || now - last < LIVE_SILENT_MS) continue;
+      this.closeLive(socket, LIVE_SILENT_CODE, "silent");
+      dropped = true;
+    }
+    return dropped;
+  }
+
   /** A live socket let go from this side, logged (§13). */
   private closeLive(socket: WebSocket, code: number, reason: string) {
     this.logLive("activity_live_close", socket, { code, reason });
@@ -845,6 +871,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     this.viewersTimer = setTimeout(async () => {
       this.viewersTimer = null;
       this.viewersPushedAt = Date.now();
+      this.dropSilent();
       const sockets = this.ctx.getWebSockets(LIVE_TAG);
       const people = livePeople(sockets);
       if (people === this.viewersSent) return;
@@ -955,6 +982,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   private async broadcast(id: string) {
+    if (this.dropSilent()) this.announceViewers();
     const sockets = this.ctx.getWebSockets(LIVE_TAG);
     if (sockets.length === 0) return;
     let activity: PublicActivity;

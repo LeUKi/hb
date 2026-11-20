@@ -35,7 +35,12 @@ import {
 // (a payment; for the sender, their 名单 or their own edit elsewhere). The
 // page then polls nothing; guests, and anyone the channel turns away, poll.
 
-/** Under Cloudflare's idle timeout; answered by the runtime, not the DO. */
+/**
+ * Under Cloudflare's idle timeout; answered by the runtime, not the DO.
+ * Well under the 3 minutes after which the DO lets a silent socket go
+ * (api activities/live.ts LIVE_SILENT_MS), a background tab's once a
+ * minute included.
+ */
 const HEARTBEAT_MS = 30_000;
 const PONG_WAIT_MS = 10_000;
 /** Back on the page: a line that does not answer by then is gone. */
