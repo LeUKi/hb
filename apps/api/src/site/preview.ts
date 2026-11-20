@@ -33,6 +33,17 @@ function line(text: string, max = 120) {
   return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : flat;
 }
 
+/**
+ * Markdown (a 三方积分's 介绍) as the words it shows: links and pictures
+ * by their text, no emphasis, heading or list marks.
+ */
+export function plainText(markdown: string) {
+  return markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/(\*\*|__|\*|_|~~|`)(\S(?:.*?\S)?)\1/g, "$2");
+}
+
 const nameOf = (user: { username: string; displayName: string | null }) =>
   user.displayName || user.username;
 
@@ -193,7 +204,8 @@ async function pointsPreview(
   return {
     title: `${line(row.name, 40)} · 三方积分`,
     description: line(
-      row.intro.trim() || `${row.issuer} 发行的积分，大家可以用它发红包。`,
+      plainText(row.intro).trim() ||
+        `${row.issuer} 发行的积分，大家可以用它发红包。`,
       160,
     ),
     tab: "三方积分",

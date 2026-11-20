@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { activities, judges, pointsSystems, tipCards } from "../src/db/schema";
-import { drawPreview } from "../src/site/preview";
+import { drawPreview, plainText } from "../src/site/preview";
 import { actor, origin } from "./code-fixtures";
 
 // Link previews (docs/link-preview-design.md §2): what anyone sees without
@@ -133,6 +133,14 @@ describe("/api/site/preview", () => {
       { ...opened, mode: "random", openedAt: null },
     ])
       expect(drawPreview(row), JSON.stringify(row)).toBeNull();
+  });
+
+  it("says a 三方积分's 介绍 as the words it shows", () => {
+    expect(
+      plainText(
+        "## 额度\n**Payload** 是 [某 API](https://api.example.com/) 的额度，见 ![图](x.png)。\n- 可用于 `调用`",
+      ),
+    ).toBe("额度\nPayload 是 某 API 的额度，见 图。\n可用于 调用");
   });
 
   it("has nothing to say of a deleted 红包, a stranger's 判定器 or a draft 三方积分", async () => {
