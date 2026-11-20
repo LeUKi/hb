@@ -106,7 +106,8 @@ function CommandTable() {
             <Squircle radius={radius.row}>
               <CommandLink
                 command={command}
-                className="flex min-h-10 items-center gap-3 px-1.5 py-1.5 transition-colors hover:bg-fill-2"
+                // 登录 is a button, which centres its words: left, as the links.
+                className="flex min-h-10 items-center gap-3 px-1.5 py-1.5 text-left transition-colors hover:bg-fill-2"
               >
                 <Icon className="size-[18px] shrink-0 text-ink-2" />
                 <span className="w-24 shrink-0 font-mono text-ink">
