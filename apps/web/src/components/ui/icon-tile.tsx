@@ -12,16 +12,23 @@ import { Squircle } from "./squircle";
 export function IconTile({
   icon: Icon,
   large = false,
+  solid = false,
 }: {
   icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   /** 40px with a 20px mark, for a card with a second line of words. */
   large?: boolean;
+  /** The one to look at first (帮助中心 on the start page): solid gold. */
+  solid?: boolean;
 }) {
   return (
     <Squircle radius={10}>
       <span
         className={cn(
-          "grid shrink-0 place-items-center bg-gold-soft text-gold-ink",
+          "grid shrink-0 place-items-center",
+          // Words on gold keep the dark gold ink in 深色 too (styles.css).
+          solid
+            ? "bg-linear-to-b from-gold-top to-gold-bottom text-[#6a4510] shadow-[inset_0_1px_0_rgb(255_255_255/0.7)]"
+            : "bg-gold-soft text-gold-ink",
           large ? "size-10" : "size-9",
         )}
       >

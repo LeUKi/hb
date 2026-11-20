@@ -1,11 +1,11 @@
 import { atom, useAtomValue, useSetAtom } from "jotai";
-import { type LucideIcon, SquareSlash } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { type ReactNode, useState } from "react";
 import { useBootDone } from "../../lib/boot";
 import { brand } from "../../lib/brand";
 import { cn } from "../../lib/cn";
-import { commands, isVisible, roleOf } from "../../lib/commands";
+import { commandById, commands, isVisible, roleOf } from "../../lib/commands";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useRecentInputs } from "../../lib/recent-inputs";
 import { useSessionUser } from "../../lib/session";
@@ -87,7 +87,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * How the cards lie (07 §1): up to four in one line on a wide window, then
- * three a line; two a line on a phone. 全部命令, last, widens to fill its
+ * three a line; two a line on a phone. 帮助中心, last, widens to fill its
  * line, so no line ends in a gap.
  */
 const wideColumns = {
@@ -121,15 +121,17 @@ function CommandCard({
   icon: Icon,
   title,
   typed,
+  solid = false,
 }: {
   icon: LucideIcon;
   title: string;
   /** What to type for it ("/history"). */
   typed: string;
+  solid?: boolean;
 }) {
   return (
     <>
-      <IconTile icon={Icon} />
+      <IconTile icon={Icon} solid={solid} />
       <span className="grid min-w-0 gap-0.5">
         <span className="truncate text-sm font-medium text-ink">{title}</span>
         <span className="truncate font-mono text-xs text-ink-3">{typed}</span>
@@ -168,6 +170,7 @@ export function StartView() {
     (command) => command.quick && isVisible(command, role),
   );
   const layout = cardGrid(quick.length);
+  const help = commandById("help");
 
   return (
     <div className="flex min-h-full flex-col items-center px-4 pb-6 @wide/window:px-8">
@@ -259,19 +262,22 @@ export function StartView() {
                   </CommandLink>
                 </Squircle>
               ))}
+              {/* 帮助中心 (docs/help-center-design.md §2.1), last and
+                  widened, in gold: where to go when unsure. All commands
+                  are still a / away in the 输入框. */}
               <Squircle radius={radius.choice}>
-                <button
-                  type="button"
-                  className={cn(cardClass, layout.last)}
-                  title="全部命令 · /"
-                  onClick={() => {
-                    setDraft("/");
-                    setMessage(null);
-                    focusOmniboxInput();
-                  }}
+                <CommandLink
+                  command={help}
+                  className={cn(cardClass, "choice-gold", layout.last)}
+                  title="帮助中心 · /help"
                 >
-                  <CommandCard icon={SquareSlash} title="全部命令" typed="/" />
-                </button>
+                  <CommandCard
+                    icon={help.icon}
+                    title="帮助中心"
+                    typed="/help"
+                    solid
+                  />
+                </CommandLink>
               </Squircle>
             </nav>
           </Reveal>

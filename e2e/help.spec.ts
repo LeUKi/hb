@@ -62,13 +62,20 @@ test.describe("帮助中心", () => {
     await rail.getByRole("button", { name: "领到以后" }).click();
     await expect(page).toHaveURL(/\/help\/claim#after$/);
     await expect(page.locator("#after")).toBeInViewport();
-    // Only where the reader is opens up to its questions.
+    // Every question always listed: nothing opens or closes as one moves.
     await expect(
       rail.getByRole("button", { name: "领到的什么时候到账？" }),
     ).toBeVisible();
     await expect(
       rail.getByRole("button", { name: "口令没错，为什么匹配不到红包？" }),
-    ).toHaveCount(0);
+    ).not.toHaveAttribute("aria-current");
+    // The last one, which the page cannot bring to the top: still the one
+    // marked once the scroll is over.
+    const last = rail.getByRole("button", { name: "能用脚本领吗？" });
+    await last.click();
+    await expect(page).toHaveURL(/#q-token$/);
+    await page.waitForTimeout(1200);
+    await expect(last).toHaveAttribute("aria-current", "location");
     await expect(
       page
         .locator("#q-when-paid")
@@ -76,7 +83,7 @@ test.describe("帮助中心", () => {
     ).toBeVisible();
   });
 
-  test("手机：没有右栏，“目录”打开弹层，选一项后收起并滚过去", async ({
+  test("手机：没有右栏，“目录”的弹层列出全部章和问题，选一项后收起并滚过去", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -87,10 +94,18 @@ test.describe("帮助中心", () => {
     ).toBeHidden();
     await page.getByRole("button", { name: "目录" }).click();
     const sheet = page.getByRole("dialog", { name: "目录" });
-    await sheet.getByRole("button", { name: "领不到" }).click();
+    await sheet.getByRole("button", { name: "领不到", exact: true }).click();
     await expect(sheet).toBeHidden();
     await expect(page).toHaveURL(/\/help\/claim#cannot$/);
     await expect(page.locator("#cannot")).toBeInViewport();
+    // A question of another section is right there, not behind a tap.
+    await page.getByRole("button", { name: "目录" }).click();
+    await sheet
+      .getByRole("button", { name: "提示没有 Credit 账户怎么办？" })
+      .click();
+    await expect(sheet).toBeHidden();
+    await expect(page).toHaveURL(/#q-no-credit$/);
+    await expect(page.locator("#q-no-credit")).toBeInViewport();
   });
 
   test("开发文档也有目录：判定器开发文档跳到联网，例子里的代码有高亮", async ({

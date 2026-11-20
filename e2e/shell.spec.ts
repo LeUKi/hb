@@ -26,6 +26,11 @@ test.describe("外壳", () => {
     await expect(
       page.getByRole("link", { name: /红包记录\s*\/history/ }),
     ).toBeVisible();
+    // 帮助中心 in 全部命令's place, last (docs/help-center-design.md §2.1).
+    await expect(
+      page.getByRole("link", { name: /帮助中心\s*\/help/ }),
+    ).toHaveAttribute("href", "/help");
+    await expect(page.getByRole("button", { name: /全部命令/ })).toHaveCount(0);
   });
 
   test("第三方脚本被拦截（如 Cloudflare 统计）：照常进入", async ({ page }) => {

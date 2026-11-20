@@ -158,12 +158,20 @@ export const fishChapters: HelpChapter[] = [
         a: (
           <>
             <p>
-              要已经开通的人邀请。请对方在🐟额页标题旁的 PLUS
-              标签里点“邀请别人开通”，填你的 LINUX DO
-              用户名，把生成的链接发给你。
+              要已经开通的人邀请。可以在社区
+              <a
+                href="/api/site/owner"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-accent-ink hover:underline"
+              >
+                私信站长 ↗
+              </a>
+              ，说一下想用它做什么，正常的请求都会给你邀请；也可以请身边已经开通的朋友邀请你。
             </p>
             <p>
-              用这个账号登录后打开链接，点“接受邀请”就开通了。站长有时也发不写用户名的通用链接，谁拿到都能接受。
+              邀请你的人会填你的 LINUX DO
+              用户名，生成一条链接发给你。用这个账号登录后打开链接，点“接受邀请”就开通了。
             </p>
           </>
         ),
@@ -176,7 +184,7 @@ export const fishChapters: HelpChapter[] = [
           <ul className="grid gap-1.5">
             <li>
               <b className="font-medium text-ink">邀请已过期</b>
-              ：一对一的邀请链接 {inviteDays} 天内有效，请对方再发一条。
+              ：邀请链接 {inviteDays} 天内有效，请对方再发一条。
             </li>
             <li>
               <b className="font-medium text-ink">邀请是给别的账号的</b>
@@ -189,7 +197,7 @@ export const fishChapters: HelpChapter[] = [
             </li>
             <li>
               <b className="font-medium text-ink">名额已经用完或已经停用</b>
-              ：通用链接的人数和有效期由站长定，站长也能停用，这一条就不能再用了。
+              ：这条链接不能再用了，请发链接的人另发一条给你。
             </li>
             <li>
               <b className="font-medium text-ink">没有找到这个邀请</b>
@@ -211,7 +219,7 @@ export const fishChapters: HelpChapter[] = [
             </p>
             <p>
               每条链接只给这个用户名用，{inviteDays}{" "}
-              天内有效，接受一次就失效；邀请几个人都可以。不写用户名的通用链接只有站长能生成。
+              天内有效，接受一次就失效；邀请几个人都可以。
             </p>
           </>
         ),

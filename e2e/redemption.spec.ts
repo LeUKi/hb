@@ -167,9 +167,7 @@ test.describe("兑奖", () => {
     await expectPath(page, "/square");
   });
 
-  test("手机上点最近输入、全部命令：打开的输入框里填着它们", async ({
-    page,
-  }) => {
+  test("手机上点最近输入：打开的输入框里填着它", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 760 });
     await mockSession(page, viewer);
     await mockDiscover(page, [{ status: 200, body: discovered("none", []) }]);
@@ -193,12 +191,6 @@ test.describe("兑奖", () => {
       .click();
     await expect(omniboxInput(page)).toBeFocused();
     await expect(omniboxInput(page)).toHaveValue("测试口令2099");
-
-    await fresh();
-    await page.getByRole("button", { name: /全部命令/ }).click();
-    await expect(omniboxInput(page)).toBeFocused();
-    await expect(omniboxInput(page)).toHaveValue("/");
-    await expect(page.getByRole("option", { name: /红包广场/ })).toBeVisible();
   });
 
   test("首页最近输入：清空先问一次，清空后这一行收起", async ({ page }) => {

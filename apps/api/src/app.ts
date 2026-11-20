@@ -31,6 +31,7 @@ import {
   maintenanceResponse,
 } from "./runtime/maintenance-mode";
 import { stageLoadTestRoutes } from "./runtime/stage-load-test";
+import { siteRoutes } from "./site/routes";
 import { tipRoutes } from "./tips/routes";
 
 export const app = new Hono<ApiContext>()
@@ -164,3 +165,4 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", roadmapRoutes);
 // 在看人数's card (docs/viewer-stats-design.md §3), the same way.
 (app as unknown as Hono<ApiContext>).route("/api", viewerRoutes);
+(app as unknown as Hono<ApiContext>).route("/api", siteRoutes);

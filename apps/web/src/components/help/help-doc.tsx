@@ -1,6 +1,5 @@
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { Link2, ListTree } from "lucide-react";
-import { motion } from "motion/react";
 import {
   type ReactNode,
   useCallback,
@@ -11,7 +10,7 @@ import {
   useState,
 } from "react";
 import { cn } from "../../lib/cn";
-import { ease, useReducedMotionPref } from "../../lib/motion";
+import { useReducedMotionPref } from "../../lib/motion";
 import { PageHeader, PageSection, Panel } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -137,6 +136,11 @@ export function HelpFrame({ children }: { children: ReactNode }) {
     if (content.current) setOutline(readOutline(content.current));
   }, []);
 
+  // A jump (an index entry, an address) holds its entry lit until the
+  // reader scrolls themself: the smooth scroll passing other headings, or a
+  // last question the page cannot bring to the top, never moves it.
+  const held = useRef(false);
+
   // Where the reader is: the last heading just under the 顶栏. Read on
   // scroll only; nothing runs while the page sits still.
   useEffect(() => {
@@ -145,6 +149,7 @@ export function HelpFrame({ children }: { children: ReactNode }) {
     let frame = 0;
     const read = () => {
       frame = 0;
+      if (held.current) return;
       const line =
         scroller.getBoundingClientRect().top +
         (Number.parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0) +
@@ -181,13 +186,52 @@ export function HelpFrame({ children }: { children: ReactNode }) {
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(read);
     };
+    // The reader's own scrolling lets a jump go.
+    const own = () => {
+      held.current = false;
+    };
+    const ownKey = (event: KeyboardEvent) => {
+      if (
+        [
+          "ArrowUp",
+          "ArrowDown",
+          "PageUp",
+          "PageDown",
+          "Home",
+          "End",
+          " ",
+        ].includes(event.key)
+      )
+        own();
+    };
     read();
     scroller.addEventListener("scroll", onScroll, { passive: true });
+    scroller.addEventListener("wheel", own, { passive: true });
+    scroller.addEventListener("touchstart", own, { passive: true });
+    window.addEventListener("keydown", ownKey);
     return () => {
       scroller.removeEventListener("scroll", onScroll);
+      scroller.removeEventListener("wheel", own);
+      scroller.removeEventListener("touchstart", own);
+      window.removeEventListener("keydown", ownKey);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [outline, find]);
+
+  /** Lights an entry at once, and holds it while the page gets there. */
+  const hold = useCallback(
+    (id: string) => {
+      const chapter = outline.find(
+        (item) =>
+          item.id === id ||
+          item.questions.some((question) => question.id === id),
+      );
+      if (!chapter) return;
+      held.current = true;
+      setSpot({ chapter: chapter.id, question: chapter.id === id ? null : id });
+    },
+    [outline],
+  );
 
   // Arriving with #…: once laid out, that section or question at the top,
   // a question lit up. At once, not animated: the page is just arriving.
@@ -195,34 +239,25 @@ export function HelpFrame({ children }: { children: ReactNode }) {
     if (!hash || outline.length === 0) return;
     const element = find(hash);
     if (!element) return;
+    hold(hash);
     element.scrollIntoView({ block: "start" });
     if (element.dataset.question !== undefined) flash(element);
-  }, [hash, outline, find]);
+  }, [hash, outline, find, hold]);
 
   const go = useCallback(
     (id: string) => {
       const element = find(id);
       if (!element) return;
+      hold(id);
       element.scrollIntoView({
         block: "start",
         behavior: reduced ? "auto" : "smooth",
       });
-      // Lit at once, not only once the scroll has passed it.
-      const chapter = outline.find(
-        (item) =>
-          item.id === id ||
-          item.questions.some((question) => question.id === id),
-      );
-      if (chapter)
-        setSpot({
-          chapter: chapter.id,
-          question: chapter.id === id ? null : id,
-        });
       // The address follows, without a history entry of its own.
       window.history.replaceState(window.history.state, "", `#${id}`);
       if (element.dataset.question !== undefined) flash(element);
     },
-    [reduced, outline, find],
+    [reduced, find, hold],
   );
 
   return (
@@ -252,7 +287,9 @@ export function HelpFrame({ children }: { children: ReactNode }) {
         )}
       </div>
       <aside className="hidden @roomy/window:block" aria-label="本页目录">
-        <div className="sticky top-6 max-h-[calc(100cqh-var(--bar-h)-3rem)] overflow-y-auto overscroll-contain pb-4">
+        {/* Taller than the window, it scrolls in itself, without a bar
+            (as the page does), keeping the reader's entry in view. */}
+        <div className="scrollbar-none sticky top-6 max-h-[calc(100cqh-var(--bar-h)-3rem)] overflow-y-auto overscroll-contain pb-4">
           <Index outline={outline} spot={spot} onGo={go} />
         </div>
       </aside>
@@ -348,68 +385,100 @@ function Question({ question }: { question: HelpQuestion }) {
   );
 }
 
+/**
+ * Brings an entry into view within the index's own scrolling list (the
+ * rail, the sheet), at once and never the page under it.
+ */
+function keepInView(element: HTMLElement | null) {
+  let box = element?.parentElement ?? null;
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY))
+    box = box.parentElement;
+  if (!element || !box || box.scrollHeight <= box.clientHeight) return;
+  const item = element.getBoundingClientRect();
+  const view = box.getBoundingClientRect();
+  if (item.top < view.top + 8) box.scrollTop -= view.top + 8 - item.top;
+  else if (item.bottom > view.bottom - 8)
+    box.scrollTop += item.bottom - (view.bottom - 8);
+}
+
+/**
+ * Every section and every question, always: nothing opens or closes as the
+ * reader moves, so the list never changes height under the eye. The one
+ * where they are is marked in place, without sliding.
+ */
 function Index({
   outline,
   spot,
   onGo,
-  layoutGroup = "rail",
+  label = true,
 }: {
   outline: Outline;
   spot: Spot;
   onGo: (id: string) => void;
-  layoutGroup?: string;
+  /** 本页 over it (the rail; the sheet has its own title). */
+  label?: boolean;
 }) {
-  const reduced = useReducedMotionPref();
-  const mark = (on: boolean) =>
-    on && (
-      <motion.span
-        layoutId={`help-index-mark-${layoutGroup}`}
-        className="absolute top-1.5 bottom-1.5 -left-px w-0.5 rounded-full bg-accent"
-        transition={{ duration: reduced ? 0 : 0.28, ease }}
-        aria-hidden="true"
-      />
+  const list = useRef<HTMLUListElement>(null);
+  const current = spot.question ?? spot.chapter;
+  useEffect(() => {
+    if (!current) return;
+    keepInView(
+      list.current?.querySelector<HTMLElement>(
+        `[data-entry="${CSS.escape(current)}"]`,
+      ) ?? null,
+    );
+  }, [current]);
+  const entry = (on: boolean) =>
+    cn(
+      "relative text-left transition-colors duration-150",
+      "before:absolute before:top-1 before:bottom-1 before:-left-px before:w-0.5 before:rounded-full before:bg-accent before:opacity-0 before:transition-opacity before:duration-150",
+      on && "before:opacity-100",
     );
   return (
     <nav>
-      {layoutGroup === "rail" && (
-        <div className="px-3 pb-2 text-xs text-ink-3">本页</div>
-      )}
-      <ul className="grid border-line border-l">
+      {label && <div className="px-3 pb-2 text-xs text-ink-3">本页</div>}
+      <ul ref={list} className="grid border-line border-l">
         {outline.map((chapter) => {
           const here = chapter.id === spot.chapter;
+          const on = here && !spot.question;
           return (
             <li key={chapter.id} className="grid">
               <button
                 type="button"
+                data-entry={chapter.id}
                 onClick={() => onGo(chapter.id)}
-                aria-current={here && !spot.question ? "location" : undefined}
+                aria-current={on ? "location" : undefined}
                 className={cn(
-                  "relative py-1.5 pr-2 pl-3 text-left text-sm transition-colors",
-                  here ? "font-medium text-ink" : "text-ink-2 hover:text-ink",
+                  entry(on),
+                  "py-1.5 pr-2 pl-3 text-sm",
+                  on
+                    ? "font-medium text-accent-ink"
+                    : here
+                      ? "font-medium text-ink"
+                      : "text-ink-2 hover:text-ink",
                 )}
               >
-                {mark(here && !spot.question)}
                 {chapter.title}
               </button>
-              {/* Only where the reader is: the rest stay short. */}
-              {here && (
-                <ul className="grid pb-1">
+              {chapter.questions.length > 0 && (
+                <ul className="grid pb-1.5">
                   {chapter.questions.map((question) => {
-                    const on = question.id === spot.question;
+                    const lit = question.id === spot.question;
                     return (
                       <li key={question.id} className="grid">
                         <button
                           type="button"
+                          data-entry={question.id}
                           onClick={() => onGo(question.id)}
-                          aria-current={on ? "location" : undefined}
+                          aria-current={lit ? "location" : undefined}
                           className={cn(
-                            "relative py-1 pr-2 pl-6 text-left text-[0.8125rem] leading-snug transition-colors",
-                            on
+                            entry(lit),
+                            "py-1 pr-2 pl-6 text-[0.8125rem] leading-snug",
+                            lit
                               ? "text-accent-ink"
                               : "text-ink-3 hover:text-ink-2",
                           )}
                         >
-                          {mark(on)}
                           {question.q}
                         </button>
                       </li>
@@ -450,7 +519,9 @@ function IndexSheet({
             关闭
           </Button>
         </div>
-        <Index outline={outline} spot={spot} onGo={onGo} layoutGroup="sheet" />
+        {/* All of it here too: a section's questions are a tap away, not
+            behind a second one. */}
+        <Index outline={outline} spot={spot} onGo={onGo} label={false} />
       </div>
     </WindowDialog>
   );

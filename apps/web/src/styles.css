@@ -823,6 +823,22 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
+  /* 帮助中心 on the start page: the card to look at first, in faint gold. */
+  .choice.choice-gold {
+    background: color-mix(
+      in srgb,
+      var(--color-gold) 16%,
+      rgb(255 255 255 / 0.6)
+    );
+    --sq-ring: color-mix(in srgb, var(--color-gold-mark) 45%, transparent);
+  }
+  .choice.choice-gold:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-gold) 22%,
+      rgb(255 255 255 / 0.85)
+    );
+  }
   /* 帮助中心 (docs/help-center-design.md §2.4): the question asked for
      lights up in faint gold, then lets go. */
   .help-question[data-flash] {
@@ -3144,4 +3160,13 @@ html[data-embed] .build-stamp {
   --tok-comment: #9c8f78;
   --tok-punctuation: #b8aa90;
   --tok-property: #f0cf8a;
+}
+
+/* 深色: 帮助中心's card, its gold lower. */
+:root[data-site-dark] .choice.choice-gold {
+  background: rgb(237 203 134 / 0.1);
+  --sq-ring: rgb(237 203 134 / 0.32);
+}
+:root[data-site-dark] .choice.choice-gold:hover {
+  background: rgb(237 203 134 / 0.16);
 }
