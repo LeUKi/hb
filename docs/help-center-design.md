@@ -109,6 +109,7 @@
 - 限时开奖怎么开，怎么知道没作弊？`q-draw-proof`（draw-proof-design，开奖证明）
 - 代码判定红包怎么玩？`q-code-play`
 - 判定器出错了怎么办？`q-judge-error`
+- 代码判定红包一直领不到，是谁的问题？`q-code-stuck`（2026-11-20 加，[判定器广场](judge-square-design.md) 第 19 节）
 - 附带网页让我登录，安全吗？`q-page-login`（hb.identity：网站拿不到你的账号）
 
 **通知、排行榜和账号**
@@ -131,6 +132,7 @@
 **选玩法**
 - 五种玩法怎么选？`q-pick-mode`
 - 能用别人写的判定器吗？`q-use-judge`（判定器广场 → 用它发红包）
+- 用别人的判定器，出了问题怎么办？`q-borrowed-judge`（2026-11-20 加）
 - 想做自己的小游戏 `q-own-game`（→ 做玩法）
 - 怎么再发一个同样的？`q-again`（接着玩、/new?from=）
 

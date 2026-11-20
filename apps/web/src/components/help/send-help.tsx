@@ -208,6 +208,21 @@ export const sendChapters: HelpChapter[] = [
           </>
         ),
       },
+      // source: docs/judge-square-design.md; the 联网 confirm (hongbao-form/use-borrow-judge.tsx)
+      {
+        id: "q-borrowed-judge",
+        q: "用别人的判定器，出了问题怎么办？",
+        a: (
+          <>
+            <p>
+              你的红包开放以后一直用开放时的那一版判定器，红包站核对得了代码，核对不了它连的服务器和附带网页：作者改了它们，你的红包可能就领不到了，红包站管不了。
+            </p>
+            <p>
+              所以只用你信任的作者的判定器。开放以后，在判定记录里能看到大家每次收到的回复；很多人反复收到同一句、却没有领到的，联系判定器的作者。
+            </p>
+          </>
+        ),
+      },
       // source: docs/help-center-design.md §4.5, docs/judge-square-design.md §16.3
       {
         id: "q-own-game",

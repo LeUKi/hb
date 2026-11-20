@@ -630,6 +630,10 @@ export async function judge(submission) {
               note: '领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就把地址写成 { url: "https://api.example.com/hongbao/", token: true }：本站转发时加上请求头 X-Hb-Token，是本站签的 JWT（ES256，1 分钟），内容是 iss（https://hb.lafi.sh/judge）、aud（对方的来源）、hongbao（红包编号）、sender（发红包的人的 LINUX DO 数字 ID）、judge 和 judgeVersion（判定器编号和第几版：别人写一个判定器也能请求你的接口，核对 judge 是你的才认）；公钥同附带网页的身份令牌（/api/page-identity/keys），接口只认验得过的请求。要玩法参数和红包状态，读红包信息 /api/hongbao/<红包编号>，见附带网页接入说明的“后端”。发给 { param } 的请求也带它，写成字符串的地址（第三方服务）不带。本站还给每个请求加 X-Hb-Hongbao（红包 ID，公开的，谁都能伪造）和自己的 User-Agent。',
             },
             {
+              name: "旧版",
+              note: "开放过的红包一直跑开放时的那一版代码，也一直请求你的接口。改接口的返回，或者另做一个判定器共用这个接口时，旧代码发来的请求要照旧回答，不然那些红包会领不到：按 X-Hb-Token 里的 judge 和 judgeVersion 分出是哪一版。附带网页也一样，见附带网页接入说明的“能做和不能做的”。",
+            },
+            {
               name: "谁看得到",
               note: "红包皮上标“联网”，列出这些地址；领的人第一次提交前会看到提交可能发送到这些地址。你看得到每次的请求和返回（下载完整记录，能重放）；红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。",
             },

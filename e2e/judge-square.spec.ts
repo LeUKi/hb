@@ -716,6 +716,8 @@ test.describe("判定器广场", () => {
         "部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。",
       ),
     ).toBeVisible();
+    // Its versions talk to no server and no page: nothing to keep working.
+    await expect(page.getByText(/改服务器或附带网页时/)).toHaveCount(0);
     const code = page.getByRole("textbox", { name: /^judge\.js/ });
     await code.click();
     await page.keyboard.press("End");
@@ -729,6 +731,31 @@ test.describe("判定器广场", () => {
     await expect(
       page.getByRole("link", { name: "用第 2 版发红包" }),
     ).toHaveAttribute("href", `/new?judge=${MINE}`);
+  });
+
+  test("开放过红包、会联网的判定器：部署新版本和写一个新的时，都提醒让旧版照样能用", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    const network = [{ url: "https://api.example.com/hongbao/" }];
+    state.mine = {
+      ...mineDetail(),
+      opened: 1,
+      usable: { n: 1, declarations: null, network },
+      versions: [{ ...mineVersion(1, 1), network }],
+    };
+    await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByText(
+        "开放过的红包会一直用它们开放时的那一版。改服务器或附带网页时，要让旧版也照样能用，不然那些红包会领不到。",
+      ),
+    ).toBeVisible();
+    await openApp(page, "/judges/new");
+    await expect(
+      page.getByText(
+        "新判定器要是和你别的判定器共用服务器或附带网页，改它们时要让旧的也照样能用：开放过的红包会一直用它们开放时的那一版。",
+      ),
+    ).toBeVisible();
   });
 
   test("作者在更新的判定器（§17）：卡上和判定器页把用它发红包换成原因，判定器页写等哪一版；发红包里也挑不了", async ({

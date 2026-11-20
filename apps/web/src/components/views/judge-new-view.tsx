@@ -9,6 +9,7 @@ import {
   peekNewJudge,
   prefetchOwnJudgePage,
   useJudgePage,
+  useMyJudges,
 } from "../../lib/judge";
 import { type SessionUser, useIdentity } from "../../lib/session";
 import { JudgeNameFields, JudgeWriter } from "../hongbao-form/code-step";
@@ -272,6 +273,16 @@ function NewJudge({
       gone = true;
     };
   }, [made, madeN, navigate, queryClient, user.id]);
+  // Another of mine opened 红包 that talk to my server or page: a new one
+  // may share them, and those keep running their old code.
+  const mine = useMyJudges(user.id);
+  const reachesOut = (mine.data ?? []).some(
+    (judge) =>
+      judge.opened > 0 &&
+      Boolean(
+        judge.usable?.network?.length || judge.usable?.declarations?.meta?.page,
+      ),
+  );
   const changed =
     !made &&
     (form.judge.code !== start.judge.code ||
@@ -309,7 +320,16 @@ function NewJudge({
           judge={deploy}
           gated={false}
           testsNote={seed ? "别人的测试不公开，要自己写。" : undefined}
-          beforeDeploy={<NewSettings value={settings} onChange={setSettings} />}
+          beforeDeploy={
+            <>
+              <NewSettings value={settings} onChange={setSettings} />
+              {reachesOut && (
+                <p className="text-sm text-ink-2">
+                  新判定器要是和你别的判定器共用服务器或附带网页，改它们时要让旧的也照样能用：开放过的红包会一直用它们开放时的那一版。
+                </p>
+              )}
+            </>
+          }
         />
         <p role="status" className="sr-only">
           {said}

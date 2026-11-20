@@ -723,6 +723,13 @@ function DeployForm({
     !judge.takenDown &&
     judge.featured === null &&
     judge.publicN !== null;
+  // A version some 红包 opened with talks to a server or a page of the
+  // author's: those keep running it while the server and page change.
+  const reachesOut = judge.versions.some(
+    (version) =>
+      version.opened > 0 &&
+      Boolean(version.network?.length || version.declarations?.meta?.page),
+  );
   const deployed =
     deploy.result?.check && deploy.ready && deploy.version
       ? deploy.version.n
@@ -740,10 +747,19 @@ function DeployForm({
         judge={deploy}
         gated={false}
         beforeDeploy={
-          othersUse && (
-            <p className="text-sm text-ink-2">
-              部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。
-            </p>
+          (othersUse || reachesOut) && (
+            <div className="grid gap-1.5 text-sm text-ink-2">
+              {othersUse && (
+                <p>
+                  部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。
+                </p>
+              )}
+              {reachesOut && (
+                <p>
+                  开放过的红包会一直用它们开放时的那一版。改服务器或附带网页时，要让旧版也照样能用，不然那些红包会领不到。
+                </p>
+              )}
+            </div>
           )
         }
       />
