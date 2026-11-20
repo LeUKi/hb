@@ -6,6 +6,7 @@ import { hongbaoInfoRoutes } from "./activities/hongbao-info";
 import { pageIdentityRoutes } from "./activities/page-identity";
 import { passwordRoutes } from "./activities/password-routes";
 import { ActivityValidationError, activityRoutes } from "./activities/routes";
+import { viewerRoutes } from "./activities/viewer-routes";
 import { activityImageRoutes } from "./activity-images/routes";
 import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
@@ -56,14 +57,12 @@ export const app = new Hono<ApiContext>()
   })
   .get("/api/health", (c) => c.json({ status: "ok" as const }))
   .route("/api", authRoutes)
-  .route("/api", adminRoutes)
   .route("/api", balanceAdminRoutes)
   .route("/api", activityImageRoutes)
   .route("/api", activityRoutes)
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
   .route("/api", rankRoutes)
-  .route("/api", roadmapRoutes)
   .route("/api", judgeRoutes)
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)
@@ -158,3 +157,10 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", noticeRoutes);
 // 个人令牌 (docs/personal-token-design.md §5), the same way.
 (app as unknown as Hono<ApiContext>).route("/api", personalTokenRoutes);
+// 网站管理 and 施工中 (docs/roadmap-design.md), the same way: the web reads
+// them with plain fetch, and 在看人数 on PublicActivity (2026-11-19) took the
+// chain to the edge of what TypeScript instantiates; these give it room.
+(app as unknown as Hono<ApiContext>).route("/api", adminRoutes);
+(app as unknown as Hono<ApiContext>).route("/api", roadmapRoutes);
+// 在看人数's card (docs/viewer-stats-design.md §3), the same way.
+(app as unknown as Hono<ApiContext>).route("/api", viewerRoutes);
