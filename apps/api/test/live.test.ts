@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import {
   type ActivityLiveMessage,
   type ActivityViewersDetail,
@@ -554,6 +554,26 @@ describe("a running 红包's live channel", () => {
       await vi.waitFor(() => expect(quiet.closed).toEqual([4002]));
       expect(next.closed).toEqual([]);
       await vi.waitFor(() => expect(viewers(next.heard)).toBe(1));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("gives a socket with no ping time its 3 minutes from when the object began again (a deploy)", async () => {
+    const activity = await running(3);
+    const quiet = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(viewers(quiet.heard)).toBe(1));
+    const later = Date.now() + 3 * 60_000 + 1_000;
+    // The object began again a minute ago, with no ping time kept.
+    const object = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
+    await runInDurableObject(object, (instance) => {
+      (instance as unknown as { startedAt: number }).startedAt = later - 60_000;
+    });
+    const clock = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      const next = await connect(activity.id, await actor());
+      await vi.waitFor(() => expect(viewers(next.heard)).toBe(2));
+      expect(quiet.closed).toEqual([]);
     } finally {
       clock.mockRestore();
     }

@@ -330,6 +330,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
+  /**
+   * When this instance began (a deploy, a wake): a socket the runtime has
+   * no ping time for is given its 3 minutes from here (dropSilent).
+   */
+  private readonly startedAt = Date.now();
   /** 在看人数's tables made (viewer-stats §3): once per instance. */
   private viewerTables = false;
   /** The channel's number (live.ts), read back once after hibernating. */
@@ -725,10 +730,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     let dropped = false;
     for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
       if (socket.readyState !== WebSocket.OPEN || this.isMini(socket)) continue;
+      // No ping time: since it joined, or since this instance began, should
+      // a deploy or a wake have left the runtime without one (2026-11-20).
       const last =
         this.ctx.getWebSocketAutoResponseTimestamp(socket)?.getTime() ??
-        liveSince(socket);
-      if (last === 0 || now - last < LIVE_SILENT_MS) continue;
+        Math.max(liveSince(socket), this.startedAt);
+      if (now - last < LIVE_SILENT_MS) continue;
       this.closeLive(socket, LIVE_SILENT_CODE, "silent");
       dropped = true;
     }
