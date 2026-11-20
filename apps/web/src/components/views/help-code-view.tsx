@@ -2,7 +2,8 @@ import { JUDGE_LIMITS } from "@hb/contracts";
 import type { ReactNode } from "react";
 import { KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
 import { approachLines, keyPoints } from "../../lib/kit-guide";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpFrame } from "../help/help-doc";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 import { StartLink } from "./help-start-view";
@@ -223,7 +224,7 @@ function See({ to, children }: { to: string; children: ReactNode }) {
 
 export function HelpCodeView() {
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="代码判定红包 · 开发文档"
@@ -237,7 +238,7 @@ export function HelpCodeView() {
       >
         <Block label="提示词" code={aiPrompt(window.location.origin)} wrap />
       </PageSection>
-      <PageSection title="怎么开始">
+      <PageSection id="start" title="怎么开始">
         <Panel className="grid gap-1.5 px-4 py-3 text-sm text-ink-2">
           <p>
             1. 取
@@ -286,6 +287,7 @@ export function HelpCodeView() {
         </Panel>
       </PageSection>
       <PageSection
+        id="submission"
         title="judge(submission, tools)"
         description="judge.js 是一个 ES 模块，导出 judge，可以是 async。金额都是整数，单位是分（0.01）；时间都是毫秒。"
       >
@@ -369,6 +371,7 @@ export function HelpCodeView() {
         />
       </PageSection>
       <PageSection
+        id="return"
         title="返回"
         description="都不写（{}）就是什么都不变，他接着能玩。"
       >
@@ -548,7 +551,7 @@ export function HelpCodeView() {
         />
         <Block label="tests.json" code={OTHERS_TESTS} />
       </PageSection>
-      <PageSection title="能用的">
+      <PageSection id="allowed" title="能用的">
         <Fields
           items={[
             {
@@ -824,6 +827,7 @@ export function judge(submission, tools) {
         />
       </PageSection>
       <PageSection
+        id="random"
         title="随机数"
         description="本站开放时生成一个秘密种子，只公布它的封存值，结束后公开种子。同一个种子、同一个人、同一个第几次，本地和线上取出来的数一模一样。"
       >
@@ -867,6 +871,7 @@ export function judge(submission, tools) {
         />
       </PageSection>
       <PageSection
+        id="tools"
         title="tools"
         description="全是同步的，本地和线上同一份实现。"
       >
@@ -923,6 +928,7 @@ export function judge(submission, tools) {
         />
       </PageSection>
       <PageSection
+        id="tests"
         title="测试"
         description={`tests.json 是一个对象，测试写在它的 tests 里。一条测试就是一次提交，只写跟它有关的；也可以写 steps，让几个人依次提交。所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（一步算一次）。它只是数据，不算进代码，不公开。`}
       >
@@ -1016,7 +1022,7 @@ export function judge(submission, tools) {
           ]}
         />
       </PageSection>
-      <PageSection title="出错和限制">
+      <PageSection id="errors" title="出错和限制">
         <Panel className="grid gap-1.5 px-4 py-3 text-sm text-ink-2">
           <p>
             每次判定 CPU 最多 50
@@ -1070,6 +1076,6 @@ export function judge(submission, tools) {
           ]}
         />
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

@@ -5,12 +5,7 @@ import { type ReactNode, useState } from "react";
 import { useBootDone } from "../../lib/boot";
 import { brand } from "../../lib/brand";
 import { cn } from "../../lib/cn";
-import {
-  type CommandId,
-  commands,
-  isVisible,
-  roleOf,
-} from "../../lib/commands";
+import { commands, isVisible, roleOf } from "../../lib/commands";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useRecentInputs } from "../../lib/recent-inputs";
 import { useSessionUser } from "../../lib/session";
@@ -28,6 +23,7 @@ import { CommandLink } from "../shell/command-link";
 import { useSlot } from "../shell/slots";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
+import { IconTile } from "../ui/icon-tile";
 import { radius, Squircle } from "../ui/squircle";
 
 const statusDot = {
@@ -89,17 +85,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Each 常用命令 its own colour, so they read apart at a glance. */
-const tints: Partial<Record<CommandId, string>> = {
-  history: "bg-accent-soft text-accent-ink",
-  square: "bg-gold-soft text-gold-ink",
-  rank: "bg-warning-soft text-warning",
-  // The 判定器's own lacquer and gold (JudgeMark).
-  judges: "bg-[#2c2724] text-[#f3d38b]",
-  // 施工中's gold (roadmap-design §1), a shade over 红包广场's.
-  roadmap: "bg-gold-soft-strong text-gold-ink",
-};
-
 /**
  * How the cards lie (07 §1): up to four in one line on a wide window, then
  * three a line; two a line on a phone. 全部命令, last, widens to fill its
@@ -129,28 +114,22 @@ function cardGrid(cards: number) {
 }
 
 /**
- * A 常用命令 as a card: its icon on a tinted tile, its name, and what to
+ * A 常用命令 as a card: its icon on its tile, its name, and what to
  * type for it, side by side (four to a line, two on a phone).
  */
 function CommandCard({
   icon: Icon,
   title,
   typed,
-  tint = "bg-fill-2 text-ink-2",
 }: {
   icon: LucideIcon;
   title: string;
   /** What to type for it ("/history"). */
   typed: string;
-  tint?: string;
 }) {
   return (
     <>
-      <Squircle radius={10}>
-        <span className={cn("grid size-9 shrink-0 place-items-center", tint)}>
-          <Icon className="size-[18px]" aria-hidden="true" />
-        </span>
-      </Squircle>
+      <IconTile icon={Icon} />
       <span className="grid min-w-0 gap-0.5">
         <span className="truncate text-sm font-medium text-ink">{title}</span>
         <span className="truncate font-mono text-xs text-ink-3">{typed}</span>
@@ -276,7 +255,6 @@ export function StartView() {
                       icon={command.icon}
                       title={command.title}
                       typed={`/${command.name}`}
-                      tint={tints[command.id]}
                     />
                   </CommandLink>
                 </Squircle>

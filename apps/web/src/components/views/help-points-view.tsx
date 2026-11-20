@@ -1,6 +1,8 @@
 import { PAYMENT_RESEND_MINUTES, POINTS_LIMITS } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpChapters, HelpFrame } from "../help/help-doc";
+import { pointsFaq } from "../help/points-faq";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 
@@ -110,12 +112,13 @@ const text = "grid gap-2 px-4 py-3 text-sm leading-6 text-ink-2";
 export function HelpPointsView() {
   const origin = window.location.origin;
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="三方积分 · 接入说明"
         description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。红包作者从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
       />
+      <HelpChapters chapters={pointsFaq} />
       <PageSection
         id="ai"
         title="给 AI 的说明"
@@ -356,6 +359,6 @@ export function HelpPointsView() {
           </p>
         </Panel>
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

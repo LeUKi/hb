@@ -417,6 +417,29 @@ const helpTokenRoute = createRoute({
   path: "/help/token",
   staticData: { chrome: "docked", command: "help", subpage: "个人令牌" },
 });
+// 帮助中心's 领红包 (docs/help-center-design.md §4.1).
+const helpClaimRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/claim",
+  staticData: { chrome: "docked", command: "help", subpage: "领红包" },
+});
+// 帮助中心's 发红包 (docs/help-center-design.md §4.2).
+const helpSendRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/send",
+  staticData: { chrome: "docked", command: "help", subpage: "发红包" },
+});
+// 帮助中心's 收打赏 and 🐟额和 PLUS (docs/help-center-design.md §4.3, §4.4).
+const helpTipsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/tips",
+  staticData: { chrome: "docked", command: "help", subpage: "收打赏" },
+});
+const helpFishRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/fish",
+  staticData: { chrome: "docked", command: "help", subpage: "🐟额和 PLUS" },
+});
 // Production's connection check: kept, with no entry (06 §5).
 const statusRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -491,6 +514,10 @@ const routeTree = rootRoute.addChildren([
   helpPageRoute,
   helpPointsRoute,
   helpTokenRoute,
+  helpClaimRoute,
+  helpSendRoute,
+  helpTipsRoute,
+  helpFishRoute,
   statusRoute,
   notFoundRoute,
 ]);

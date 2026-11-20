@@ -3,7 +3,8 @@ import {
   KIT_AGENTS_URL,
   KIT_SDK_TYPES_URL,
 } from "../../lib/judge";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpFrame } from "../help/help-doc";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 import { StartLink } from "./help-start-view";
@@ -160,7 +161,7 @@ const text = "grid gap-2 px-4 py-3 text-sm leading-6 text-ink-2";
 export function HelpPageView() {
   const origin = window.location.origin;
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="附带网页 · 接入说明"
@@ -384,6 +385,6 @@ export function HelpPageView() {
           ]}
         />
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

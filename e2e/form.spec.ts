@@ -598,9 +598,18 @@ test.describe("发红包", () => {
     page,
   }) => {
     await mockSession(page, { ...viewer, balancePlus: true });
+    // 帮助 → 做玩法 → its 详细文档 (docs/help-center-design.md §1).
     await openApp(page, "/help");
-    await page.getByRole("link", { name: /附带网页 · 接入说明/ }).click();
+    await page.getByRole("link", { name: /^做玩法/ }).click();
+    await page
+      .locator("section", {
+        has: page.getByRole("heading", { name: "详细文档" }),
+      })
+      .getByRole("link", { name: "附带网页 · 接入说明" })
+      .click();
     await expect(page).toHaveURL(/\/help\/page$/);
+    // 做一个玩法 has its own #ai: let it finish leaving.
+    await expect(page.locator("#ai")).toHaveCount(1);
     await expect(
       page.getByRole("heading", { name: /附带网页 · 接入说明/ }),
     ).toBeVisible();
@@ -660,7 +669,7 @@ test.describe("发红包", () => {
   }) => {
     await mockSession(page, viewer);
     await openApp(page, "/help");
-    await page.getByRole("link", { name: /三方积分 · 接入说明/ }).click();
+    await page.getByRole("link", { name: /^发行三方积分/ }).click();
     await expect(page).toHaveURL(/\/help\/points$/);
     for (const title of [
       "给 AI 的说明",
@@ -692,7 +701,7 @@ test.describe("发红包", () => {
   }) => {
     await mockSession(page, viewer);
     await openApp(page, "/help");
-    await page.getByRole("link", { name: "做一个玩法" }).click();
+    await page.getByRole("link", { name: /^做玩法/ }).click();
     await expect(page).toHaveURL(/\/help\/start$/);
     await expect(
       page.getByRole("heading", { name: "做一个玩法" }),

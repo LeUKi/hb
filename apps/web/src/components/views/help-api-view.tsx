@@ -1,7 +1,8 @@
 import { BALANCE_LIMITS } from "@hb/contracts";
 import type { ReactNode } from "react";
 import { PlusBadge } from "../balance/plus";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpFrame } from "../help/help-doc";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { CopyButton } from "../ui/copy-button";
 
@@ -134,7 +135,7 @@ page = requests.get(
 for transfer in page["items"]:
     print(transfer["from"]["username"], transfer["amount"], transfer["remark"])`;
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title={
@@ -145,7 +146,7 @@ for transfer in page["items"]:
         }
         description="开通🐟额 PLUS 后，在🐟额页新建开放接口密钥，从你的服务器调用。"
       />
-      <PageSection title="认证">
+      <PageSection id="auth" title="认证">
         <Fields
           items={[
             { name: "地址", note: <Code>{base}</Code> },
@@ -175,7 +176,7 @@ for transfer in page["items"]:
           ]}
         />
       </PageSection>
-      <PageSection title="接口">
+      <PageSection id="endpoints" title="接口">
         <Panel as="ul" className="grid px-4">
           {endpoints.map(([path, use]) => (
             <li
@@ -191,6 +192,7 @@ for transfer in page["items"]:
         </Panel>
       </PageSection>
       <PageSection
+        id="transfer"
         title="转账"
         description="收款人要来过本站。到🐟额的当场到账、不收费；到 Credit 账户的和转出一样排队发放。"
       >
@@ -238,6 +240,7 @@ for transfer in page["items"]:
         </p>
       </PageSection>
       <PageSection
+        id="batch"
         title="批量转账"
         description={`一次 1–${BALANCE_LIMITS.transferBatchMax} 笔，按顺序一笔一笔转，各自成败；中途断了原样重发整批，转过的会原样返回。`}
       >
@@ -249,7 +252,7 @@ for transfer in page["items"]:
           。批量试转会按顺序累计算可用和上限。
         </p>
       </PageSection>
-      <PageSection title="查单、详情、可用和流水">
+      <PageSection id="query" title="查单、详情、可用和流水">
         <Fields
           items={[
             {
@@ -290,7 +293,7 @@ for transfer in page["items"]:
         <Block label="JavaScript" code={javascript} />
         <Block label="Python" code={python} />
       </PageSection>
-      <PageSection title="频率">
+      <PageSection id="rate" title="频率">
         <Panel className="grid gap-1 px-4 py-3 text-sm text-ink-2">
           <p>
             每个密钥最近 60 秒最多转 {BALANCE_LIMITS.apiTransfersPerMinute}{" "}
@@ -305,7 +308,7 @@ for transfer in page["items"]:
           </p>
         </Panel>
       </PageSection>
-      <PageSection title="错误码">
+      <PageSection id="errors" title="错误码">
         <Panel as="dl" className="grid px-4">
           {errors.map(([code, status, note]) => (
             <div
@@ -320,7 +323,7 @@ for transfer in page["items"]:
           ))}
         </Panel>
       </PageSection>
-      <PageSection title="接入">
+      <PageSection id="setup" title="接入">
         <Panel className="grid gap-1 px-4 py-3 text-sm text-ink-2">
           <p>
             机器读的说明：
@@ -338,6 +341,6 @@ for transfer in page["items"]:
           </p>
         </Panel>
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

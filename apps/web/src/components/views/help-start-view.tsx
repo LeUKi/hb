@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { KIT_AGENTS_PAGE_URL, KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
 import { approaches, approachLines, keyPoints } from "../../lib/kit-guide";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpChapters, HelpFrame } from "../help/help-doc";
+import { startFaq } from "../help/start-faq";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block } from "./help-api-view";
 
@@ -91,21 +93,6 @@ ${approachLines}
 
 我的玩法是：（在这里写清楚：玩什么、怎么算输赢、奖池多大、谁能玩、要不要网页、一个人多久操作一次）`;
 
-const parts = [
-  [
-    "判定器",
-    "决定给谁多少钱，钱只经过它。代码在红包站的沙箱里跑，红包开放时就定在当时那一版。",
-  ],
-  [
-    "附带网页",
-    "给人看、给人点。显示在红包页旁边，手机上在底部抽屉里；普通红包也能带。",
-  ],
-  [
-    "你的服务",
-    "需要时才有：存档、调 AI、跑整个游戏。它算出的结果要经判定器核对，才会发钱。",
-  ],
-] as const;
-
 const docs = [
   {
     to: "/help/code",
@@ -133,13 +120,14 @@ const docRow =
 
 export function HelpStartView() {
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="做一个玩法"
         description="红包的玩法可以写成判定器，可以配一个网页，也可以接自己的服务。先按需求选一种做法，再看对应的说明。"
       />
       <PageSection
+        id="ways"
         title="选一种做法"
         description={
           <>
@@ -181,17 +169,8 @@ export function HelpStartView() {
       >
         <Block label="提示词" code={aiPrompt(window.location.origin)} wrap />
       </PageSection>
-      <PageSection title="三样东西各做什么">
-        <Panel as="dl" className="grid px-4">
-          {parts.map(([name, note]) => (
-            <div key={name} className={docRow}>
-              <dt className="font-medium text-ink">{name}</dt>
-              <dd className="text-ink-2">{note}</dd>
-            </div>
-          ))}
-        </Panel>
-      </PageSection>
-      <PageSection title="详细文档">
+      <HelpChapters chapters={startFaq} />
+      <PageSection id="docs" title="详细文档">
         <Panel as="ul" className="grid px-4">
           {docs.map((doc) => (
             <li key={doc.to} className={docRow}>
@@ -216,6 +195,6 @@ export function HelpStartView() {
           ))}
         </Panel>
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

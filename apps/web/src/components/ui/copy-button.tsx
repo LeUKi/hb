@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -13,11 +13,14 @@ export function CopyButton({
   value,
   label,
   className,
+  icon: Icon = Copy,
 }: {
   value: string;
   /** What is copied, for the accessible name ("复制 Client ID"). */
   label: string;
   className?: string;
+  /** The idle icon: a link copied shows a link. */
+  icon?: LucideIcon;
 }) {
   const [state, setState] = useState<"idle" | "done" | "failed">("idle");
   useEffect(() => {
@@ -49,7 +52,7 @@ export function CopyButton({
         {state === "done" ? (
           <Check className="text-success" aria-hidden="true" />
         ) : (
-          <Copy aria-hidden="true" />
+          <Icon aria-hidden="true" />
         )}
       </Button>
       {/* Grows in and folds away, so the text beside it moves smoothly. */}

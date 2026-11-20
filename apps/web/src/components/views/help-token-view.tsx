@@ -4,7 +4,8 @@ import {
   PERSONAL_TOKEN_RATE_LIMITS,
 } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { HelpFrame } from "../help/help-doc";
+import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 
@@ -63,7 +64,7 @@ page = requests.get("${base}/me/claims", headers=headers, timeout=10).json()
 for claim in page["items"]:
     print(claim["claimedAt"], claim["activity"]["title"], claim.get("amount"))`;
   return (
-    <Page>
+    <HelpFrame>
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="个人令牌"
@@ -81,7 +82,7 @@ for claim in page["items"]:
           </>
         }
       />
-      <PageSection title="认证">
+      <PageSection id="auth" title="认证">
         <Fields
           items={[
             { name: "地址", note: <Code>{base}</Code> },
@@ -119,6 +120,7 @@ for claim in page["items"]:
         />
       </PageSection>
       <PageSection
+        id="endpoints"
         title="接口"
         description="只有下面这些认令牌，别的接口不认。"
       >
@@ -137,6 +139,7 @@ for claim in page["items"]:
         </Panel>
       </PageSection>
       <PageSection
+        id="claim"
         title="领取"
         description="和网页上领一样：领取范围、信任等级、口令尝试间隔、每个账号的次数，都照样检查。"
       >
@@ -167,6 +170,7 @@ for claim in page["items"]:
         </p>
       </PageSection>
       <PageSection
+        id="redeem"
         title="口令兑换"
         description="不知道口令是哪个红包的，就交给口令兑换：只找到一个时直接领，找到几个时返回它们，让你自己挑。"
       >
@@ -178,10 +182,10 @@ for claim in page["items"]:
           ，再到那个红包领）。发红包的人关了“允许用令牌领”的红包，带令牌找不到。
         </p>
       </PageSection>
-      <PageSection title="看记录">
+      <PageSection id="records" title="看记录">
         <Block label="Python" code={python} />
       </PageSection>
-      <PageSection title="不能做的">
+      <PageSection id="cannot" title="不能做的">
         <Panel className="grid gap-1 px-4 py-3 text-sm text-ink-2">
           <p>
             要人机验证的红包：人机验证只在本站网页上过得了，这类红包只能在网页上领。
@@ -196,7 +200,7 @@ for claim in page["items"]:
           <p>发红包、改设置、新建和停用令牌：只能在网页上做。</p>
         </Panel>
       </PageSection>
-      <PageSection title="频率">
+      <PageSection id="rate" title="频率">
         <Panel className="grid gap-1 px-4 py-3 text-sm text-ink-2">
           <p>
             按账号算，一个账号的所有令牌合在一起，每分钟最多：读取{" "}
@@ -211,7 +215,7 @@ for claim in page["items"]:
           </p>
         </Panel>
       </PageSection>
-      <PageSection title="错误码">
+      <PageSection id="errors" title="错误码">
         <Panel as="dl" className="grid px-4">
           {errors.map(([code, status, note]) => (
             <div
@@ -230,6 +234,6 @@ for claim in page["items"]:
           <Code>message</Code> 给人看就行。
         </p>
       </PageSection>
-    </Page>
+    </HelpFrame>
   );
 }

@@ -21,7 +21,7 @@
 | `/merchant` | LDC 商户配置 | merchant shop ldc LDC商户 LDC商户配置 商户 商户配置 ldcshanghu shanghu sh peizhi pz | 普通 | 已登录 |
 | `/payments` | 付款记录 | payments pay 付款 发放 fukuan fk fafang ff | 普通 | 已登录 |
 | `/admin` | 网站管理 | admin 管理 后台 guanli gl houtai ht | 管理员 | 仅管理员 |
-| `/help` | 帮助（输入说明、命令、常见问题） | help 帮助 说明 bangzhu bz | 游客 | 所有人 |
+| `/help` | 帮助（帮助中心首页：先选要做的事，再看问题，[帮助中心](../help-center-design.md)） | help 帮助 说明 bangzhu bz | 游客 | 所有人 |
 | `/login`（不跳转） | 登录 | login signin 登录 denglu dl | 游客 | 仅游客 |
 
 各身份能看到的命令数：游客 6、普通账号 8、管理员 9；能用🐟额的账号再多 1 个。
@@ -107,6 +107,7 @@
 | `/🧧/<表情码>/🖼️.svg`、`/🧧/<表情码>/🖼️` | 内嵌图，由接口提供（原型只有开发服务器有，见 [05](05-hongbao.md) 第 6 节） |
 | `/🧧/<表情码>/📝`、`/📊`、`/🧾` | 编辑红包、尝试统计、这个红包的付款（只有红包作者能打开，见 [07](07-pages.md)） |
 | `/🧧/<表情码>/🎲` | 开奖数据：限时开奖、拼手气和自定义金额（随机顺序）的全部随机数据和算法，谁都能打开（[开奖证明](../draw-proof-design.md) 第 5 节，2026-10-22） |
+| `/help/claim`、`/help/send`、`/help/tips`、`/help/fish` | 帮助中心的问题页：领红包、发红包、收打赏、🐟额和 PLUS（[帮助中心](../help-center-design.md) 第 4 节） |
 | `/help/code` | 代码判定红包的开发文档和给 AI 的说明（[07](07-pages.md) 第 12 节） |
 | `/merchant/<编号>` | 一个商户（历史商户从 `/merchant` 的列表进入） |
 | `/payments/<编号>` | 一笔付款的详情 |

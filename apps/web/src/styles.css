@@ -823,6 +823,20 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
+  /* 帮助中心 (docs/help-center-design.md §2.4): the question asked for
+     lights up in faint gold, then lets go. */
+  .help-question[data-flash] {
+    animation: help-flash 1.6s var(--ease-snappy) both;
+  }
+  @keyframes help-flash {
+    0%,
+    30% {
+      background-color: var(--help-flash, rgb(237 203 134 / 0.34));
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
   /* 代码判定 turning clickable once its switch is known: no snap. */
   .choice-settle {
     transition:
@@ -2779,6 +2793,7 @@ html[data-embed] .build-stamp {
    with a faint warm cast, so it sits on the red rather than looking grey. */
 :root[data-site-dark] {
   --mini-page: #1e191a;
+  --help-flash: rgb(237 203 134 / 0.16);
   --color-title-low: #aeb8cb;
   --color-title-fast: #5fd39c;
   --color-title-self: #dcb59e;

@@ -10,6 +10,10 @@ import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { topicAddress } from "../../lib/results";
 import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
 import type { AdminSearch } from "../../router";
+import { ClaimHelpView } from "../help/claim-help";
+import { FishHelpView } from "../help/fish-help";
+import { SendHelpView } from "../help/send-help";
+import { TipsHelpView } from "../help/tips-help";
 import { AdminActivities } from "../views/admin/admin-activities";
 import { AdminAudit } from "../views/admin/admin-audit";
 import { AdminBalance } from "../views/admin/admin-balance";
@@ -286,6 +290,14 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return <HelpPointsView />;
     case "/help/token":
       return <HelpTokenView />;
+    case "/help/claim":
+      return <ClaimHelpView />;
+    case "/help/send":
+      return <SendHelpView />;
+    case "/help/tips":
+      return <TipsHelpView />;
+    case "/help/fish":
+      return <FishHelpView />;
     default: {
       const command = leaf.staticData.command;
       const adminPage = adminPages[leaf.routeId];

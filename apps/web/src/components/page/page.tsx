@@ -246,7 +246,8 @@ export function PageSection({
     <section className="grid gap-3" aria-labelledby={id}>
       <div className="flex items-end justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
-          <h2 id={id} className="text-base font-semibold text-ink">
+          {/* A link to it (#id) leaves a little air under the 顶栏. */}
+          <h2 id={id} className="scroll-mt-4 text-base font-semibold text-ink">
             {title}
           </h2>
           <Reveal show={Boolean(description)}>
