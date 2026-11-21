@@ -58,19 +58,25 @@ async function loadTask(env: ApiBindings, id: string) {
     .get();
 }
 
-/** Shared by the alarm snapshot and Cron so delivered Outbox entries never lose responsibility. */
+/**
+ * Shared by the alarm snapshot and Cron so delivered Outbox entries never lose responsibility.
+ * The unary + keeps p.mode out of the index choice: on mode=? SQLite walked
+ * every payment of the mode (nearly all confirmed) through
+ * payment_tasks_admin_mode_status_time_idx, every five minutes, instead of
+ * the due ones (sweep 2026-11-21, B4).
+ */
 async function runnableTaskSql(env: ApiBindings) {
   const policy = runtimeRealPolicy(env);
   const conditions: string[] = [];
   const values: string[] = [];
-  if (simulatesPayments(env)) conditions.push("p.mode='simulation'");
+  if (simulatesPayments(env)) conditions.push("+p.mode='simulation'");
   if (
     env.APP_ENV === "production" &&
     (policy.networkMode === "live" || policy.networkMode === "verify")
   ) {
     const sendEnabled = allowsRealSending(env, await readPlatformControls(env));
     conditions.push(
-      `(p.mode='real' AND ${ordinaryPaymentSql("p")} AND (p.first_send_at IS NOT NULL${sendEnabled ? " OR p.first_send_at IS NULL" : ""}))`,
+      `(+p.mode='real' AND ${ordinaryPaymentSql("p")} AND (p.first_send_at IS NOT NULL${sendEnabled ? " OR p.first_send_at IS NULL" : ""}))`,
     );
   }
   if (
@@ -83,7 +89,7 @@ async function runnableTaskSql(env: ApiBindings) {
       ? " OR a.id=?"
       : "";
   conditions.push(
-    `(p.mode='real' AND p.source='acceptance' AND a.id IS NOT NULL AND (a.send_consumed_at IS NOT NULL${pendingAcceptance}))`,
+    `(+p.mode='real' AND p.source='acceptance' AND a.id IS NOT NULL AND (a.send_consumed_at IS NOT NULL${pendingAcceptance}))`,
   );
   if (pendingAcceptance && policy.acceptanceId)
     values.push(policy.acceptanceId);
@@ -532,12 +538,17 @@ export async function sweepPayments(env: ApiBindings) {
   // A merchant held by the daily limit (quota.ts) sends nothing until its
   // payment's resume time, whatever has queued behind it; from then on that
   // payment is due itself.
+  // Each branch reads only what is due (sweep 2026-11-21, B4): open payments
+  // through payment_tasks_due_idx; a confirmed one's duplicate probe through
+  // payment_duplicate_probes_due_idx, then its payment by id. The + keeps
+  // status='confirmed' from walking every confirmed payment instead.
   const page = await env.DB.prepare(
     `SELECT DISTINCT m.id,m.client_id,m.recovery_scanned_at
       FROM payment_tasks p JOIN merchants m ON m.id=p.merchant_id
       LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
       WHERE ((p.status IN ('pending','waiting','reconciling','sending') AND p.next_run_at<=?)
-        OR (p.status='confirmed' AND EXISTS(SELECT 1 FROM payment_duplicate_probes d WHERE d.task_id=p.id AND (d.status IN ('pending','sending','reconciling') OR (d.status='awaiting_evidence' AND d.protocol_verified_at IS NULL)) AND d.next_run_at<=?)))
+        OR (+p.status='confirmed' AND p.id IN (SELECT d.task_id FROM payment_duplicate_probes d
+          WHERE (d.status IN ('pending','sending','reconciling') OR (d.status='awaiting_evidence' AND d.protocol_verified_at IS NULL)) AND d.next_run_at<=?)))
         AND NOT EXISTS(SELECT 1 FROM payment_tasks h WHERE h.id=m.active_task_id AND m.paused_reason='quota' AND h.status='waiting' AND h.reason='quota' AND h.next_run_at>?)
         AND (${runnable.condition})
       ORDER BY m.recovery_scanned_at,m.id LIMIT 20`,

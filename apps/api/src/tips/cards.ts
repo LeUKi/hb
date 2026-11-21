@@ -322,34 +322,45 @@ export async function stopCard(
   return ownerCardView(env, await ownedCard(env, ownerId, code));
 }
 
+function stoppedByAdmin(): never {
+  tipError(
+    403,
+    "TIP_CARD_STOPPED_BY_ADMIN",
+    "这张打赏卡被站长停用了，不能再启用。",
+  );
+}
+
 export async function startCard(
   env: ApiBindings,
   ownerId: string,
   code: string,
 ) {
   const card = await ownedCard(env, ownerId, code);
-  if (card.stopped_by_admin_id)
-    tipError(
-      403,
-      "TIP_CARD_STOPPED_BY_ADMIN",
-      "这张打赏卡被站长停用了，不能再启用。",
-    );
+  if (card.stopped_by_admin_id) stoppedByAdmin();
   const { limit } = await cardLimitFor(env, ownerId);
   const now = Date.now();
+  // The 站长's stop is checked in the write too: one landing after the read
+  // above stays (sweep 2026-11-21).
   const started = await env.DB.prepare(
     `UPDATE tip_cards SET stopped_at=NULL,version=version+1,updated_at=?
-    WHERE id=? AND stopped_at IS NOT NULL
+    WHERE id=? AND stopped_at IS NOT NULL AND stopped_by_admin_id IS NULL
       AND (SELECT COUNT(*) FROM tip_cards WHERE owner_id=? AND stopped_at IS NULL) < ?`,
   )
     .bind(now, card.id, ownerId, limit)
     .run();
-  if (started.meta.changes === 0 && card.stopped_at !== null)
-    tipError(
-      409,
-      "TIP_CARDS_FULL",
-      `最多 ${limit} 张打赏卡，先停用一张再启用。`,
-    );
-  return ownerCardView(env, await ownedCard(env, ownerId, code));
+  const after = await ownedCard(env, ownerId, code);
+  if (started.meta.changes === 0) {
+    // Stopped by the 站长 meanwhile, or no room; already on (a second
+    // press) is fine.
+    if (after.stopped_by_admin_id) stoppedByAdmin();
+    if (after.stopped_at !== null)
+      tipError(
+        409,
+        "TIP_CARDS_FULL",
+        `最多 ${limit} 张打赏卡，先停用一张再启用。`,
+      );
+  }
+  return ownerCardView(env, after);
 }
 
 /** The 站长 stops someone's card (abuse); its owner sees why and cannot start it. */
@@ -445,7 +456,7 @@ function personOf(row: {
   };
 }
 
-/** What the card counts, all from its tips that went through (not reversed). */
+/** What the card counts, all from its tips that went through, less flagged ones (订单信息不符). */
 async function cardNumbers(env: ApiBindings, row: CardRow) {
   return env.DB.prepare(
     `SELECT COUNT(DISTINCT tipper_id) AS tippers,

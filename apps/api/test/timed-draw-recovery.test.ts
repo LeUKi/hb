@@ -11,7 +11,7 @@ import {
   type ParticipationList,
   type TimedDrawMoney,
 } from "@hb/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import {
   type DrawPlan,
@@ -249,10 +249,12 @@ describe("persisted timed-draw recovery and participation pagination", () => {
           alarm: await state.storage.getAlarm(),
         }),
       );
-      // Its own retry, kept apart from 社区小程序 sockets' times.
+      // Its own retry, kept apart from 社区小程序 sockets' times, and the
+      // failures in a row its next wait is counted from (B10).
       expect(recovery.data).toEqual({
         drawActivityId: draft.id,
         activityAlarm: recovery.alarm,
+        drawFailures: 1,
       });
       expect(recovery.alarm).toBeGreaterThanOrEqual(failedAt + 5_000);
       expect(recovery.alarm).toBeLessThanOrEqual(Date.now() + 5_000);
@@ -268,6 +270,12 @@ describe("persisted timed-draw recovery and participation pagination", () => {
 
     await evictDurableObject(stub);
     expect(await runDurableObjectAlarm(stub)).toBe(true);
+    // A success starts the backoff over.
+    expect(
+      await runInDurableObject(stub, (_instance, state) =>
+        state.storage.get("drawFailures"),
+      ),
+    ).toBeUndefined();
     expect(await counts(draft.id)).toMatchObject({
       draw_state: "completed",
       draw_published_at: expect.any(Number),
@@ -333,6 +341,76 @@ describe("persisted timed-draw recovery and participation pagination", () => {
         .bind(draft.id)
         .first(),
     ).toEqual({ sends: 2 });
+  }, 30_000);
+
+  it("backs off a recovery that keeps failing, to five minutes at most, and starts over once it works", async () => {
+    // B10 (sweep 2026-11-21): a recovery that kept throwing re-armed its
+    // alarm 5 s on for ever.
+    const f = await fixture();
+    const third = await actor();
+    const draft = await createActivity(bindings, f.owner.id, {
+      requestId: crypto.randomUUID(),
+      activity: timedInput(f.merchant.id),
+    });
+    const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(draft.id));
+    const opened = await stub.fetch(
+      `https://activity.internal/internal/activities/${draft.id}/open`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authorId: f.owner.id, version: draft.version }),
+      },
+    );
+    expect(opened.status).toBe(200);
+    await opened.arrayBuffer();
+    for (const person of [f.reader, f.other, third])
+      expect(
+        await registerForDraw(bindings, draft.id, person.id, {
+          submissionId: crypto.randomUUID(),
+          password,
+        }),
+      ).toMatchObject({ result: "registered" });
+    const trigger = `fixture_backoff_failure_${draft.id.replaceAll("-", "")}`;
+    await env.DB.prepare(`CREATE TRIGGER ${trigger} BEFORE INSERT ON payment_outbox
+      WHEN EXISTS(SELECT 1 FROM payment_tasks p JOIN claims c ON c.id=p.claim_id
+        WHERE p.id=NEW.task_id AND c.activity_id='${draft.id}')
+      BEGIN SELECT RAISE(ABORT,'fixture publication failure'); END`).run();
+    const kept = () =>
+      runInDurableObject(stub, async (_instance, state) => ({
+        failures: await state.storage.get<number>("drawFailures"),
+        alarm: await state.storage.getAlarm(),
+      }));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // 5, 10, 20, 40, 80 and 160 s, then five minutes each time.
+      const waits = [5, 10, 20, 40, 80, 160, 300, 300].map((s) => s * 1000);
+      for (const [index, wait] of waits.entries()) {
+        const before = Date.now();
+        expect(await runDurableObjectAlarm(stub)).toBe(true);
+        const now = await kept();
+        expect(now.failures).toBe(index + 1);
+        expect(now.alarm).toBeGreaterThanOrEqual(before + wait);
+        expect(now.alarm).toBeLessThanOrEqual(Date.now() + wait);
+        expect(logged).toHaveBeenLastCalledWith(
+          "activity_draw_recovery_failed",
+          { activityId: draft.id, failures: index + 1, retryInMs: wait },
+        );
+      }
+      // Kept across an eviction, as the alarm is.
+      await evictDurableObject(stub);
+      expect((await kept()).failures).toBe(waits.length);
+    } finally {
+      await env.DB.prepare(`DROP TRIGGER ${trigger}`).run();
+      logged.mockRestore();
+    }
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    expect((await kept()).failures).toBeUndefined();
+    expect(await counts(draft.id)).toMatchObject({
+      draw_state: "completed",
+      claims: 2,
+      tasks: 2,
+      outbox: 2,
+    });
   }, 30_000);
 
   it("pages 26 mixed participations at one millisecond exactly once and keeps ordinary claims limited to summary fields", async () => {

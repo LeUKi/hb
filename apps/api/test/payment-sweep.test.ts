@@ -5,6 +5,7 @@ import { claimActivity } from "../src/activities/claim-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
+import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
 import { flushPaymentOutbox, sweepPayments } from "../src/payments/scheduler";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
@@ -210,6 +211,46 @@ describe("bounded payment recovery sweeps", () => {
     vi.spyOn(Date, "now").mockReturnValue(resume);
     await sweepPayments(env);
     expect(wakes.attempts).toContain(held.merchant.id);
+  });
+
+  it("reads only due payments and due duplicate probes, never every confirmed payment", async () => {
+    // B4 (sweep 2026-11-21): with p.mode and status='confirmed' open to the
+    // planner, SQLite walked every payment of the mode, nearly all
+    // confirmed, through payment_tasks_admin_mode_status_time_idx.
+    fakeQueue();
+    fakeWakes();
+    const production = {
+      ...env,
+      APP_ENV: "production",
+      LDC_NETWORK_MODE: "live",
+    } as ApiBindings;
+    const runtimes: ApiBindings[] = [env, production];
+    for (const bindings of runtimes) {
+      const prepare = vi.spyOn(env.DB, "prepare");
+      await sweepPayments(bindings);
+      const sql = prepare.mock.calls
+        .map(([text]) => text)
+        .find((text) =>
+          text.includes("JOIN merchants m ON m.id=p.merchant_id"),
+        );
+      prepare.mockRestore();
+      if (!sql) throw new Error("Missing the sweep's query");
+      const now = Date.now();
+      const plan = (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+          .bind(now, now, now)
+          .all<{ detail: string }>()
+      ).results.map((row) => row.detail);
+      expect(plan.join("\n")).toContain("payment_tasks_due_idx");
+      expect(plan.join("\n")).toContain("payment_duplicate_probes_due_idx");
+      expect(
+        plan.filter((detail) =>
+          /payment_tasks_admin_|^SCAN p\b|^SEARCH p USING INDEX payment_tasks_\w+ \((mode|status)=\?\)$/.test(
+            detail,
+          ),
+        ),
+      ).toEqual([]);
+    }
   });
 
   it("recovers a delivered but unexecuted task through the real MerchantDO", async () => {

@@ -1,6 +1,6 @@
 // 私信通知 (docs/notification-design.md): how a notice reads, the SMTP
-// talk with the 社区's mail server, the outbox and its queue, someone's
-// switches, and 红包广场's 下一个红包开放时提醒我.
+// talk with the 社区's mail server, the outbox with its queue and cron,
+// someone's switches, and 红包广场's 下一个红包开放时提醒我.
 import {
   createExecutionContext,
   env,
@@ -11,9 +11,15 @@ import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
 import { emailAssociatedData } from "../src/auth/oauth";
 import type { ApiBindings } from "../src/env";
-import { handleNoticeBatch, notify, paced } from "../src/notices/outbox";
+import {
+  handleNoticeBatch,
+  notify,
+  paced,
+  sweepNotices,
+} from "../src/notices/outbox";
 import {
   type Mail,
+  type MailOutcome,
   messageOf,
   type SmtpAccount,
   type SmtpConnection,
@@ -278,6 +284,93 @@ describe("SMTP to the 社区's mail server", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(149);
   });
 
+  it("keeps the gap from the last mail before the session too", async () => {
+    const lastAny = Date.now();
+    const [outcome] = await sendMails(
+      account,
+      [mail("a", "a@privaterelay.linux.do")],
+      async () => fakeServer(),
+      { anyGapMs: 80, samePersonGapMs: 0, lastAny },
+    );
+    const at = outcome?.ok ? outcome.at : Number.NaN;
+    expect(at - lastAny).toBeGreaterThanOrEqual(79);
+  });
+
+  it("starts no mail past its stop time, says when the rest are due, and logs in only for one that goes", async () => {
+    const server = fakeServer();
+    let opened = 0;
+    const open = async () => {
+      opened += 1;
+      return server;
+    };
+    const outcomes = await sendMails(
+      account,
+      [
+        mail("a", "a@privaterelay.linux.do"),
+        mail("b", "b@privaterelay.linux.do"),
+      ],
+      open,
+      { anyGapMs: 60_000, samePersonGapMs: 0 },
+      { stopAt: Date.now() + 1_000 },
+    );
+    const sentAt = outcomes[0]?.ok ? outcomes[0].at : Number.NaN;
+    expect(outcomes).toEqual([
+      { id: "a", ok: true, at: sentAt },
+      { id: "b", ok: false, due: sentAt + 60_000 },
+    ]);
+    expect(server.data).toHaveLength(1);
+    expect(server.commands.at(-1)).toBe("QUIT");
+    expect(opened).toBe(1);
+
+    // Nothing due before the stop: no session at all.
+    const before = Date.now();
+    expect(
+      await sendMails(
+        account,
+        [mail("c", "a@privaterelay.linux.do")],
+        open,
+        {
+          anyGapMs: 0,
+          samePersonGapMs: 60_000,
+          lastSent: new Map([["a@privaterelay.linux.do", before]]),
+        },
+        { stopAt: Date.now() + 1_000 },
+      ),
+    ).toEqual([{ id: "c", ok: false, due: before + 60_000 }]);
+    expect(opened).toBe(1);
+  });
+
+  it("tells of each mail before the next one starts, and stops when told", async () => {
+    const server = fakeServer();
+    const told: [string, number][] = [];
+    const outcomes = await sendMails(
+      account,
+      [
+        mail("a", "a@privaterelay.linux.do"),
+        mail("b", "b@privaterelay.linux.do"),
+        mail("c", "c@privaterelay.linux.do"),
+      ],
+      async () => server,
+      { anyGapMs: 0, samePersonGapMs: 0 },
+      {
+        onSent: async ({ id }) => {
+          told.push([id, server.data.length]);
+          return id !== "b";
+        },
+      },
+    );
+    expect(told).toEqual([
+      ["a", 1],
+      ["b", 2],
+    ]);
+    expect(outcomes).toEqual([
+      { id: "a", ok: true, at: expect.any(Number) },
+      { id: "b", ok: true, at: expect.any(Number) },
+      { id: "c", ok: false, due: expect.any(Number) },
+    ]);
+    expect(server.data).toHaveLength(2);
+  });
+
   it("leaves everything for later when the session breaks off", async () => {
     const server = fakeServer((command) =>
       command.startsWith("AUTH") ? "454 try later" : undefined,
@@ -335,9 +428,11 @@ describe("SMTP to the 社区's mail server", () => {
 function batchOf(ids: string[]) {
   const acked: string[] = [];
   const retried: string[] = [];
+  const delays = new Map<string, number | undefined>();
   return {
     acked,
     retried,
+    delays,
     batch: {
       queue: "hb-local-notices",
       messages: ids.map((id) => ({
@@ -346,7 +441,10 @@ function batchOf(ids: string[]) {
         timestamp: new Date(),
         attempts: 1,
         ack: () => acked.push(id),
-        retry: () => retried.push(id),
+        retry: (options?: { delaySeconds?: number }) => {
+          retried.push(id);
+          delays.set(id, options?.delaySeconds);
+        },
       })),
       ackAll() {},
       retryAll() {},
@@ -488,6 +586,210 @@ describe("the outbox", () => {
     });
     expect(retried).toEqual([ids[4]]);
     expect(acked.sort()).toEqual(ids.slice(0, 4).sort());
+  });
+
+  const sending = (more: Partial<ApiBindings> = {}) =>
+    bindings({
+      NOTICE_QUEUE: undefined,
+      NOTICE_SMTP_USER: "site@linux.do",
+      NOTICE_SMTP_TOKEN: "token",
+      ...more,
+    });
+
+  /** One queued notice each for these people. */
+  async function queuedFor(people: Person[]) {
+    await notify(
+      sending(),
+      people.map((who, index) => ({
+        userId: who.id,
+        kind: "tip_received" as const,
+        key: `tip_received:queued-${counter}-${index}`,
+        ...said,
+      })),
+    );
+    return (await Promise.all(people.map((who) => noticesOf(who.id)))).map(
+      (rows) => rows[0]?.id ?? "",
+    );
+  }
+
+  const noticeById = (id: string) =>
+    env.DB.prepare(
+      "SELECT status,reason,attempts,sent_at FROM notifications WHERE id=?",
+    )
+      .bind(id)
+      .first();
+
+  it("writes each mail down the moment it has gone, so a run stopped after it never sends it again", async () => {
+    const ids = await queuedFor([await person(), await person()]);
+    let sentId = "";
+    let sentAt = 0;
+    await expect(
+      handleNoticeBatch(
+        batchOf(ids).batch,
+        sending(),
+        async (_account, mails, _open, _pace, limits) => {
+          sentId = mails[0]?.id ?? "";
+          sentAt = Date.now();
+          expect(await limits?.onSent?.({ id: sentId, at: sentAt })).toBe(true);
+          // The queue stops the consumer here (its 15 minutes are up).
+          throw new Error("stopped");
+        },
+      ),
+    ).rejects.toThrow("stopped");
+    const otherId = ids.find((id) => id !== sentId) ?? "";
+    expect(await noticeById(sentId)).toMatchObject({
+      status: "sent",
+      attempts: 1,
+      sent_at: sentAt,
+    });
+    expect(await noticeById(otherId)).toMatchObject({
+      status: "queued",
+      attempts: 0,
+    });
+
+    // The batch comes again: only the other one goes, a gap after the first.
+    const again = batchOf(ids);
+    const sent: string[] = [];
+    let lastAny: number | undefined;
+    await handleNoticeBatch(
+      again.batch,
+      sending(),
+      async (_account, mails, _open, pace) => {
+        sent.push(...mails.map((each) => each.id));
+        lastAny = pace?.lastAny;
+        return mails.map((each) => ({
+          id: each.id,
+          ok: true as const,
+          at: Date.now(),
+        }));
+      },
+    );
+    expect(sent).toEqual([otherId]);
+    expect(lastAny).toBe(sentAt);
+    expect(again.acked.sort()).toEqual([...ids].sort());
+    expect(await noticeById(otherId)).toMatchObject({ status: "sent" });
+  });
+
+  it("never sends again what went out when the write at the end fails", async () => {
+    // The one without a 隐私邮箱 leaves a skip for the write at the end.
+    const ids = await queuedFor([
+      await person(),
+      await person(),
+      await person({ email: null }),
+    ]);
+    const first = batchOf(ids);
+    await handleNoticeBatch(
+      first.batch,
+      sending({
+        DB: {
+          prepare: (query: string) => env.DB.prepare(query),
+          batch: async () => {
+            throw new Error("D1 is down");
+          },
+        } as unknown as D1Database,
+      }),
+      async (_account, mails, _open, _pace, limits) => {
+        const outcomes: MailOutcome[] = [];
+        for (const each of mails) {
+          const at = Date.now();
+          await limits?.onSent?.({ id: each.id, at });
+          outcomes.push({ id: each.id, ok: true, at });
+        }
+        return outcomes;
+      },
+    );
+    expect(first.retried.sort()).toEqual([...ids].sort());
+    for (const id of ids.slice(0, 2))
+      expect(await noticeById(id)).toMatchObject({
+        status: "sent",
+        attempts: 1,
+      });
+
+    const again = batchOf(ids);
+    let sends = 0;
+    await handleNoticeBatch(again.batch, sending(), async (_account, mails) => {
+      sends += 1;
+      return mails.map((each) => ({
+        id: each.id,
+        ok: true as const,
+        at: Date.now(),
+      }));
+    });
+    expect(sends).toBe(0);
+    expect(again.acked.sort()).toEqual([...ids].sort());
+    expect(await noticeById(ids[2] ?? "")).toMatchObject({
+      status: "skipped",
+      reason: "no_email",
+    });
+  });
+
+  it("leaves what is not due within the run for a later one, back on the queue when due, with no try counted", async () => {
+    const ids = await queuedFor([await person()]);
+    const id = ids[0] ?? "";
+    const { batch, acked, retried, delays } = batchOf(ids);
+    let stopAt = 0;
+    await handleNoticeBatch(
+      batch,
+      sending(),
+      async (_account, mails, _open, _pace, limits) => {
+        stopAt = limits?.stopAt ?? 0;
+        return mails.map((each) => ({
+          id: each.id,
+          ok: false as const,
+          due: Date.now() + 30_000,
+        }));
+      },
+    );
+    // About 10 minutes a run: the queue stops a consumer at 15.
+    expect(stopAt - Date.now()).toBeGreaterThan(9 * 60_000);
+    expect(stopAt - Date.now()).toBeLessThanOrEqual(10 * 60_000);
+    expect(await noticeById(id)).toMatchObject({
+      status: "queued",
+      attempts: 0,
+      reason: null,
+    });
+    expect(acked).toEqual([]);
+    expect(retried).toEqual([id]);
+    expect(delays.get(id)).toBeGreaterThanOrEqual(29);
+    expect(delays.get(id)).toBeLessThanOrEqual(30);
+  });
+});
+
+describe("the outbox's cron", () => {
+  it("clears bodies once past 30 days, looking back no further than two days past that", async () => {
+    const someone = await person();
+    const now = Date.now();
+    const day = 86_400_000;
+    const ages = { kept: 29 * day, due: 31 * day, older: 33 * day };
+    for (const [name, age] of Object.entries(ages))
+      await env.DB.prepare(
+        `INSERT INTO notifications (id,user_id,kind,dedupe_key,subject,body,status,attempts,created_at,updated_at,sent_at)
+         VALUES (?,?,'tip_received',?,?,?,'sent',1,?,?,?)`,
+      )
+        .bind(
+          `nt_${crypto.randomUUID()}`,
+          someone.id,
+          `sweep:${counter}:${name}`,
+          said.subject,
+          said.body,
+          now - age,
+          now - age,
+          now - age,
+        )
+        .run();
+    await sweepNotices(bindings({ NOTICE_QUEUE: undefined }), now);
+    const bodies = Object.fromEntries(
+      (
+        await env.DB.prepare(
+          "SELECT dedupe_key, body FROM notifications WHERE user_id=?",
+        )
+          .bind(someone.id)
+          .all<{ dedupe_key: string; body: string }>()
+      ).results.map((row) => [row.dedupe_key.split(":").at(-1), row.body]),
+    );
+    // Rows further back were cleared by the runs of their day; reading them
+    // all again each time is what the bound saves.
+    expect(bodies).toEqual({ kept: said.body, due: "", older: said.body });
   });
 });
 

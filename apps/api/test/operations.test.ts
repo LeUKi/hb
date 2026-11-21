@@ -6,9 +6,14 @@ import {
   getQueueResult,
 } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ApiBindings } from "../src/env";
 import worker from "../src/index";
 import { handleQueueMessage } from "../src/queue";
-import { cleanupExpiredIdentityRows, runScheduledJobs } from "../src/scheduled";
+import {
+  cleanupExpiredIdentityRows,
+  runMaintenance,
+  runScheduledJobs,
+} from "../src/scheduled";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,13 +29,18 @@ describe("persistent operational observations", () => {
       createExecutionContext(),
     );
     const rows = await env.DB.prepare(
-      "SELECT job,status,scheduled_at,finished_at FROM maintenance_runs WHERE job IN ('identity','activities','payments','credentials') ORDER BY job",
+      `SELECT job,status,scheduled_at,finished_at FROM maintenance_runs WHERE job IN
+        ('identity','activities','payments','payment_withdrawals','payment_resends','payment_funds','points_payments','credentials') ORDER BY job`,
     ).all();
     expect(rows.results.map((row) => row.job)).toEqual([
       "activities",
       "credentials",
       "identity",
+      "payment_funds",
+      "payment_resends",
+      "payment_withdrawals",
       "payments",
+      "points_payments",
     ]);
     for (const row of rows.results) {
       expect(row).toMatchObject({
@@ -161,6 +171,59 @@ describe("persistent operational observations", () => {
       log.mockRestore();
     },
   );
+
+  it("runs each payment check as its own job: one that throws skips none of the others and is the one marked", async () => {
+    // B7 (sweep 2026-11-21): the five ran in turn inside "payments", so a
+    // throw skipped the rest and the row only said payments had failed.
+    const scheduledAt = Date.now();
+    const database = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === "prepare")
+          return (sql: string) => {
+            // settleEndedWithdrawals' read, the second of the five.
+            if (sql.includes("FROM balance_withdrawals w JOIN payment_tasks p"))
+              throw new Error("private-withdrawal-diagnostic");
+            return target.prepare(sql);
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const results = await runMaintenance(
+      { ...env, DB: database } as ApiBindings,
+      scheduledAt,
+    );
+    const jobs = [
+      "payments",
+      "payment_withdrawals",
+      "payment_resends",
+      "payment_funds",
+      "points_payments",
+    ];
+    expect(results.filter((result) => jobs.includes(result.job))).toEqual(
+      jobs.map((job) => ({
+        job,
+        status: job === "payment_withdrawals" ? "failed" : "succeeded",
+      })),
+    );
+    const saved = await env.DB.prepare(
+      "SELECT job,status,reason FROM maintenance_runs WHERE scheduled_at=? AND job IN (SELECT value FROM json_each(?)) ORDER BY job",
+    )
+      .bind(scheduledAt, JSON.stringify(jobs))
+      .all();
+    expect(saved.results).toEqual([
+      { job: "payment_funds", status: "succeeded", reason: null },
+      { job: "payment_resends", status: "succeeded", reason: null },
+      { job: "payment_withdrawals", status: "failed", reason: "job_failed" },
+      { job: "payments", status: "succeeded", reason: null },
+      { job: "points_payments", status: "succeeded", reason: null },
+    ]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(
+      "private-withdrawal-diagnostic",
+    );
+    log.mockRestore();
+  });
 
   it.each([2000, 1000])(
     "does not let an older completion overwrite a newer scan scheduled at %s",

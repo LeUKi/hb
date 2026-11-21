@@ -29,7 +29,12 @@ export type Mail = {
 
 export type MailOutcome =
   | { id: string; ok: true; at: number }
-  | { id: string; ok: false; permanent: boolean; reason: string };
+  | { id: string; ok: false; permanent: boolean; reason: string }
+  /**
+   * Not tried: left for a later session (its turn came after `stopAt`, or
+   * `onSent` stopped this one), with when its turn comes by the pace.
+   */
+  | { id: string; ok: false; due: number };
 
 export type SmtpConnection = {
   readable: ReadableStream<Uint8Array>;
@@ -206,25 +211,48 @@ async function openTls(account: SmtpAccount): Promise<SmtpConnection> {
 
 /**
  * How far apart mails go (the 社区 drops mail that comes too close
- * together, Stage 2026-11-15): any two, two to one address, and when each
- * address last got one before this session.
+ * together, Stage 2026-11-15): any two, two to one address, when each
+ * address last got one before this session, and when anyone last did.
  */
 export type MailPace = {
   anyGapMs: number;
   samePersonGapMs: number;
   lastSent?: ReadonlyMap<string, number>;
+  /**
+   * The last mail to anyone before this session: one session follows
+   * another within a second when the queue has more (sweep 2026-11-21).
+   */
+  lastAny?: number;
 };
 
 /**
- * Sends each mail in one session. A mail the server turns down for good
- * (5xx) is permanent; anything else that stops a mail, including a session
- * that cannot start or breaks off, leaves it to be tried again.
+ * How long a session may go on, and who hears of each mail as it goes
+ * (sweep 2026-11-21): a queue consumer is stopped at 15 minutes and its
+ * whole batch delivered again.
+ */
+export type SessionLimits = {
+  /** No mail starts after this (ms since 1970); the rest come back `due`. */
+  stopAt?: number;
+  /**
+   * Hears of each mail that went out before the next one starts; false (or
+   * a throw) stops the session there, the rest coming back `due`.
+   */
+  onSent?: (sent: { id: string; at: number }) => Promise<boolean>;
+};
+
+/**
+ * Sends each mail in one session, logged in once the first is due. A mail
+ * the server turns down for good (5xx) is permanent; anything else that
+ * stops a mail, including a session that cannot start or breaks off, leaves
+ * it to be tried again. One whose turn comes after `stopAt`, or after
+ * `onSent` said stop, is not tried and comes back with when it is due.
  */
 export async function sendMails(
   account: SmtpAccount,
   mails: Mail[],
   open: (account: SmtpAccount) => Promise<SmtpConnection> = openTls,
   pace: MailPace = { anyGapMs: 0, samePersonGapMs: 0 },
+  limits: SessionLimits = {},
 ): Promise<MailOutcome[]> {
   const outcomes = new Map<string, MailOutcome>();
   const failRest = (reason: string, permanent = false) => {
@@ -234,24 +262,34 @@ export async function sendMails(
   };
   let connection: SmtpConnection | undefined;
   try {
-    connection = await open(account);
-    const session = new Session(connection);
-    await session.expect([220]);
-    await session.send(`EHLO ${account.domain}`, [250]);
-    const credentials = base64(
-      encoder.encode(`\0${account.user}\0${account.password}`),
-    );
-    await session.send(`AUTH PLAIN ${credentials}`, [235]);
+    let session: Session | undefined;
     const lastTo = new Map(pace.lastSent ?? []);
-    let last = Number.NEGATIVE_INFINITY;
+    let last = pace.lastAny ?? Number.NEGATIVE_INFINITY;
+    let stopped = false;
     for (const mail of mails) {
       const due = Math.max(
         last + pace.anyGapMs,
         (lastTo.get(mail.to) ?? Number.NEGATIVE_INFINITY) +
           pace.samePersonGapMs,
+        Date.now(),
       );
+      if (stopped || due > (limits.stopAt ?? Number.POSITIVE_INFINITY)) {
+        outcomes.set(mail.id, { id: mail.id, ok: false, due });
+        continue;
+      }
       const wait = due - Date.now();
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (!session) {
+        // Only now: a run that leaves every mail for later logs in for none.
+        connection = await open(account);
+        session = new Session(connection);
+        await session.expect([220]);
+        await session.send(`EHLO ${account.domain}`, [250]);
+        const credentials = base64(
+          encoder.encode(`\0${account.user}\0${account.password}`),
+        );
+        await session.send(`AUTH PLAIN ${credentials}`, [235]);
+      }
       try {
         await session.send(`MAIL FROM:<${address(account.user)}>`, [250]);
         await session.send(`RCPT TO:<${address(mail.to)}>`, [250, 251]);
@@ -270,9 +308,19 @@ export async function sendMails(
           reason: `smtp ${error.code}: ${error.message}`.slice(0, 200),
         });
         await session.send("RSET", [250]);
+        continue;
+      }
+      // Heard of before the next one starts: what went out is written down
+      // before more can go.
+      if (limits.onSent) {
+        let goOn = false;
+        try {
+          goOn = await limits.onSent({ id: mail.id, at: last });
+        } catch {}
+        if (!goOn) stopped = true;
       }
     }
-    await session.send("QUIT", [221]).catch(() => undefined);
+    await session?.send("QUIT", [221]).catch(() => undefined);
   } catch (error) {
     failRest(
       error instanceof SmtpError

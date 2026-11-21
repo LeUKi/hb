@@ -36,8 +36,26 @@ export const NOTICE_MAX_ATTEMPTS = 5;
 const RETRY_DELAYS_SECONDS = [60, 300, 900, 3600];
 /** Queued this long without a try: put on the queue again (cron). */
 const STALE_MS = 10 * 60_000;
+/**
+ * A run starts no mail after this long (sweep 2026-11-21): a queue consumer
+ * is stopped at 15 minutes and its whole batch delivered again, and the
+ * pace set in 网站管理 can keep 20 mails going for hours. The rest go back
+ * on the queue for when their turn comes.
+ */
+const SENDING_MS = 10 * 60_000;
+/** The longest a queue message can be put off. */
+const MAX_DELAY_SECONDS = 43_200;
 /** Bodies are cleared after this; rows stay for their keys. */
 const BODY_KEPT_MS = 30 * 86_400_000;
+/**
+ * How far past BODY_KEPT_MS the clearing looks back (sweep 2026-11-21):
+ * reading from the oldest row cost more every day. The cron clears up to
+ * 500 every 5 minutes, so rows longer past it were cleared long since (the
+ * table dates from 2026-11-15: none had reached 30 days when this came
+ * in). Should the cron ever stop for longer, one UPDATE without this bound
+ * clears what it missed.
+ */
+const BODY_LOOKBACK_MS = 2 * 86_400_000;
 const RELAY_DOMAIN = "@privaterelay.linux.do";
 /**
  * The HTML part sent beside the text. The 社区 shows a mail's HTML as its
@@ -247,15 +265,24 @@ function retryDelay(attempts: number) {
   );
 }
 
+function delayUntil(due: number) {
+  return Math.min(
+    MAX_DELAY_SECONDS,
+    Math.max(1, Math.ceil((due - Date.now()) / 1000)),
+  );
+}
+
 /**
- * The notices queue's consumer: one SMTP session for the batch. Acks what
- * is done (sent, skipped, failed for good); retries the rest later.
+ * The notices queue's consumer: one SMTP session for the batch. Each mail
+ * is written down as sent the moment it has gone; the rest at the end. Acks
+ * what is done (sent, skipped, failed for good); retries the rest later.
  */
 export async function handleNoticeBatch(
   batch: MessageBatch<unknown>,
   env: ApiBindings,
   send: typeof sendMails = sendMails,
 ) {
+  const stopAt = Date.now() + SENDING_MS;
   // 维护模式: nothing writes, so every message waits.
   if (inMaintenanceMode(env)) {
     for (const message of batch.messages) message.retry({ delaySeconds: 300 });
@@ -303,24 +330,24 @@ export async function handleNoticeBatch(
     ),
   );
   const statements: D1PreparedStatement[] = [];
-  const finish = (
+  const ended = (
     id: string,
     status: "sent" | "skipped" | "failed",
     reason: string | null,
     at = now,
   ) =>
-    statements.push(
-      env.DB.prepare(
-        `UPDATE notifications SET status=?,reason=?,attempts=attempts+?,updated_at=?,sent_at=? WHERE id=? AND status='queued'`,
-      ).bind(
-        status,
-        reason,
-        status === "skipped" ? 0 : 1,
-        at,
-        status === "sent" ? at : null,
-        id,
-      ),
+    env.DB.prepare(
+      `UPDATE notifications SET status=?,reason=?,attempts=attempts+?,updated_at=?,sent_at=? WHERE id=? AND status='queued'`,
+    ).bind(
+      status,
+      reason,
+      status === "skipped" ? 0 : 1,
+      at,
+      status === "sent" ? at : null,
+      id,
     );
+  const finish = (...end: Parameters<typeof ended>) =>
+    statements.push(ended(...end));
   for (const decision of decisions)
     if ("skip" in decision) finish(decision.id, "skipped", decision.skip);
 
@@ -336,28 +363,72 @@ export async function handleNoticeBatch(
   } else if (mails.length && account) {
     const attempts = new Map(rows.map((row) => [row.id, row.attempts]));
     const pace = await readNoticePace(env).catch(() => ({ ...DEFAULT_PACE }));
-    // When each of them last got one (an earlier batch).
-    const last = await env.DB.prepare(
-      `SELECT user_id, MAX(sent_at) AS at FROM notifications
-       WHERE user_id IN (SELECT value FROM json_each(?)) AND status='sent' GROUP BY user_id`,
-    )
-      .bind(JSON.stringify([...new Set(mails.map((mail) => mail.userId))]))
-      .all<{ user_id: string; at: number }>()
-      .then((result) => result.results)
-      .catch(() => []);
+    // When each of them last got one (an earlier batch), and when anyone
+    // did: the gap holds from one batch to the next as well.
+    const [last, lastAny] = await Promise.all([
+      env.DB.prepare(
+        `SELECT user_id, MAX(sent_at) AS at FROM notifications
+         WHERE user_id IN (SELECT value FROM json_each(?)) AND status='sent' GROUP BY user_id`,
+      )
+        .bind(JSON.stringify([...new Set(mails.map((mail) => mail.userId))]))
+        .all<{ user_id: string; at: number }>()
+        .then((result) => result.results)
+        .catch(() => []),
+      env.DB.prepare(
+        `SELECT updated_at AS at FROM notifications WHERE status='sent' ORDER BY updated_at DESC LIMIT 1`,
+      )
+        .first<{ at: number }>()
+        .then((row) => row?.at)
+        .catch(() => undefined),
+    ]);
     const lastAt = new Map(last.map((row) => [row.user_id, row.at]));
     const lastSent = new Map<string, number>();
     for (const mail of mails) {
       const at = lastAt.get(mail.userId);
       if (at !== undefined) lastSent.set(mail.to, at);
     }
-    for (const outcome of await send(account, mails, undefined, {
-      anyGapMs: pace.anyGapSeconds * 1000,
-      samePersonGapMs: pace.samePersonGapSeconds * 1000,
-      lastSent,
-    })) {
+    const written = new Set<string>();
+    const outcomes = await send(
+      account,
+      mails,
+      undefined,
+      {
+        anyGapMs: pace.anyGapSeconds * 1000,
+        samePersonGapMs: pace.samePersonGapSeconds * 1000,
+        lastSent,
+        lastAny,
+      },
+      {
+        stopAt,
+        // Written down the moment it has gone (sweep 2026-11-21), so a run
+        // stopped later, or a failed write at its end, never sends it again.
+        // Two tries; then the run stops, as more would only go out twice.
+        onSent: async ({ id, at }) => {
+          for (let tries = 0; tries < 2; tries += 1) {
+            try {
+              await ended(id, "sent", null, at).run();
+              written.add(id);
+              return true;
+            } catch {}
+          }
+          return false;
+        },
+      },
+    );
+    // Rows let go of now, not when the run began: the cron re-queues a row
+    // left queued for 10 minutes.
+    const done = Date.now();
+    const later: string[] = [];
+    for (const outcome of outcomes) {
       if (outcome.ok) {
-        finish(outcome.id, "sent", null, outcome.at);
+        if (!written.has(outcome.id))
+          finish(outcome.id, "sent", null, outcome.at);
+        continue;
+      }
+      if ("due" in outcome) {
+        // Not tried, so no try counted: back on the queue when it is due.
+        later.push(outcome.id);
+        retries.push({ id: outcome.id, delay: delayUntil(outcome.due) });
         continue;
       }
       const tried = (attempts.get(outcome.id) ?? 0) + 1;
@@ -368,10 +439,18 @@ export async function handleNoticeBatch(
       statements.push(
         env.DB.prepare(
           `UPDATE notifications SET attempts=attempts+1,reason=?,updated_at=? WHERE id=? AND status='queued'`,
-        ).bind(outcome.reason, now, outcome.id),
+        ).bind(outcome.reason, done, outcome.id),
       );
       retries.push({ id: outcome.id, delay: retryDelay(tried) });
       console.log("notice.retry", { id: outcome.id, reason: outcome.reason });
+    }
+    if (later.length) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE notifications SET updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND status='queued'`,
+        ).bind(done, JSON.stringify(later)),
+      );
+      console.log("notice.later", { count: later.length });
     }
   }
   try {
@@ -392,7 +471,8 @@ export async function handleNoticeBatch(
 
 /**
  * Cron: notices left queued (no queue binding then, or a message lost) go
- * on the queue again, and bodies past 30 days are cleared.
+ * on the queue again, and bodies past 30 days are cleared (those that got
+ * there in the last two days: earlier runs cleared the rest).
  */
 export async function sweepNotices(env: ApiBindings, now = Date.now()) {
   const stale = await env.DB.prepare(
@@ -409,10 +489,11 @@ export async function sweepNotices(env: ApiBindings, now = Date.now()) {
       .run();
     await enqueue(env, ids);
   }
+  const cutoff = now - BODY_KEPT_MS;
   await env.DB.prepare(
-    `UPDATE notifications SET body='' WHERE id IN (SELECT id FROM notifications WHERE created_at<? AND body<>'' LIMIT 500)`,
+    `UPDATE notifications SET body='' WHERE id IN (SELECT id FROM notifications WHERE created_at>=? AND created_at<? AND body<>'' LIMIT 500)`,
   )
-    .bind(now - BODY_KEPT_MS)
+    .bind(cutoff - BODY_LOOKBACK_MS, cutoff)
     .run();
   return ids.length;
 }

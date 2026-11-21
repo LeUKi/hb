@@ -18,6 +18,7 @@ import {
 import type { ApiBindings } from "../src/env";
 import { epaySignature } from "../src/payments/real-protocol";
 import { encryptString, sha256Hex } from "../src/security/crypto";
+import { adminStopCard } from "../src/tips/cards";
 import { TIP_PALETTES } from "../src/tips/palettes";
 import { recentTipsByCard, sweepTips } from "../src/tips/service";
 
@@ -138,6 +139,10 @@ function fakeCredit() {
   };
   const orders = new Map<string, Order>();
   const secrets = new Map<string, string>([[CLIENT_ID, SECRET]]);
+  /** 业务号 asked about, in the order they were asked. */
+  const queried: string[] = [];
+  /** Set: new orders are turned down with this status. */
+  let refusal: number | null = null;
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
@@ -161,6 +166,8 @@ function fakeCredit() {
       const secret = secrets.get(params.pid ?? "");
       if (!secret || sign !== (await epaySignature(params, secret)))
         return json({ error_msg: "签名验证失败", data: null }, 401);
+      if (refusal !== null)
+        return json({ error_msg: "订单不能创建", data: null }, refusal);
       const existing = orders.get(params.out_trade_no ?? "");
       const order = existing ?? {
         pid: params.pid ?? "",
@@ -180,6 +187,7 @@ function fakeCredit() {
       });
     }
     if (url.pathname === "/epay/api.php") {
+      queried.push(url.searchParams.get("out_trade_no") ?? "");
       const pid = url.searchParams.get("pid") ?? "";
       if (!secrets.has(pid) || url.searchParams.get("key") !== secrets.get(pid))
         return json({ code: -1, msg: "商户信息不存在" }, 400);
@@ -200,6 +208,10 @@ function fakeCredit() {
   return {
     orders,
     secrets,
+    queried,
+    refuse(status: number | null) {
+      refusal = status;
+    },
     pay(businessNo: string) {
       const order = orders.get(businessNo);
       if (!order) throw new Error("No such order");
@@ -207,6 +219,20 @@ function fakeCredit() {
     },
   };
 }
+
+const businessNoOf = async (tipId: string) =>
+  (
+    await env.DB.prepare("SELECT business_no FROM tips WHERE id=?")
+      .bind(tipId)
+      .first<{ business_no: string }>()
+  )?.business_no ?? "";
+
+const tipRow = (tipId: string) =>
+  env.DB.prepare(
+    "SELECT status,flag,last_check_result AS lastCheck FROM tips WHERE id=?",
+  )
+    .bind(tipId)
+    .first<{ status: string; flag: string | null; lastCheck: string | null }>();
 
 /** `who`'s current LDC 商户, its credential checked (or not). */
 async function merchantFor(
@@ -596,6 +622,57 @@ describe("打赏卡", () => {
     });
   });
 
+  it("stay stopped when the 站长 stops one while its owner starts it again", async () => {
+    const { admin, owner } = await open();
+    const card = await newCard(owner);
+    const stop = () => call("POST", `/me/tips/cards/${card.code}/stop`, owner);
+    const start = () =>
+      call("POST", `/me/tips/cards/${card.code}/start`, owner);
+    // Something lands between the start's read and its write.
+    const prepare = env.DB.prepare.bind(env.DB);
+    const meanwhile = (run: () => Promise<unknown>) =>
+      vi.spyOn(env.DB, "prepare").mockImplementation((sql: string) => {
+        const statement = prepare(sql);
+        if (!sql.startsWith("UPDATE tip_cards SET stopped_at=NULL"))
+          return statement;
+        return {
+          bind: (...values: unknown[]) => ({
+            run: async () => {
+              await run();
+              return statement.bind(...values).run();
+            },
+          }),
+        } as unknown as D1PreparedStatement;
+      });
+    // A second press got there first: it is on, nothing refused.
+    await stop();
+    const pressed = meanwhile(() =>
+      prepare("UPDATE tip_cards SET stopped_at=NULL WHERE code=?")
+        .bind(card.code)
+        .run(),
+    );
+    const twice = await start();
+    pressed.mockRestore();
+    expect(twice.status).toBe(200);
+    expect((twice.json as CardJson).card.active).toBe(true);
+    // The 站长's stop: it stays.
+    await stop();
+    const stopping = meanwhile(() =>
+      adminStopCard(bindings(), admin.id, card.code, "冒充别人收款"),
+    );
+    const started = await start();
+    stopping.mockRestore();
+    expect(started.status).toBe(403);
+    expect(code(started).code).toBe("TIP_CARD_STOPPED_BY_ADMIN");
+    const mine = (await call("GET", "/me/tips", owner)).json as {
+      cards: { active: boolean; stoppedByAdmin: boolean }[];
+    };
+    expect(mine.cards[0]).toMatchObject({
+      active: false,
+      stoppedByAdmin: true,
+    });
+  });
+
   it("have palettes that read: words 4.5:1 on the tint, white on buttons 4.5:1, the tint 3:1", () => {
     const rgb = (hex: string) =>
       [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
@@ -781,6 +858,104 @@ describe("打赏 at Credit 站", () => {
     expect(await status()).toBe("done");
   });
 
+  it("takes turns at 兜底检查 when Credit 站 has no answer, leaves flagged ones out, and closes both after a day", async () => {
+    const { owner, fan, credit } = await open();
+    const gone = await merchantFor(owner, credit);
+    const card = await newCard(owner);
+    const other = await actor("owner");
+    await merchantFor(other, credit);
+    const otherCard = await newCard(other);
+    const now = Date.now();
+    const at = (minutes: number) =>
+      vi.spyOn(Date, "now").mockReturnValue(now + minutes * 60_000);
+    const made = async (on: typeof card) =>
+      ((await tip(on, fan, {})).json as TipJson).tip.id;
+    // Asked about at Credit 站, in the order the 兜底检查 asked.
+    const sweep = async () => {
+      const from = credit.queried.length;
+      await sweepTips(bindings());
+      return credit.queried.slice(from);
+    };
+    at(0);
+    // The owner's key is gone at Credit 站: no answer for this one.
+    const stuck = await made(card);
+    const stuckNo = await businessNoOf(stuck);
+    // Credit 站 holds another amount under this one's 业务号: flagged.
+    const flagged = await made(otherCard);
+    const flaggedNo = await businessNoOf(flagged);
+    const order = credit.orders.get(flaggedNo);
+    if (order) order.money = "6.00";
+    await call("POST", `/tip/${otherCard.code}/tips/${flagged}/check`);
+    expect(await tipRow(flagged)).toMatchObject({
+      status: "pending",
+      flag: "mismatch",
+    });
+    at(2);
+    const later = await made(otherCard);
+    const laterNo = await businessNoOf(later);
+    credit.secrets.set(gone.clientId, "changed-at-credit");
+
+    at(16);
+    const first = await sweep();
+    expect(first).toContain(stuckNo);
+    expect(first).not.toContain(flaggedNo);
+    expect(first).not.toContain(laterNo);
+    expect(await tipRow(stuck)).toMatchObject({
+      status: "pending",
+      lastCheck: "credentials",
+    });
+    // The one asked about longest ago goes first, not the oldest: a link
+    // with no answer cannot hold every round.
+    at(21);
+    const second = await sweep();
+    expect(second).toContain(laterNo);
+    expect(second.indexOf(laterNo)).toBeLessThan(second.indexOf(stuckNo));
+    expect(second).not.toContain(flaggedNo);
+    expect((await tipRow(later))?.status).toBe("unpaid");
+    expect((await tipRow(stuck))?.status).toBe("pending");
+
+    // A day on: 没付, the flagged one after its last look, its flag kept.
+    at(24 * 60 + 1);
+    const last = await sweep();
+    expect(last).toContain(flaggedNo);
+    expect(await tipRow(stuck)).toMatchObject({
+      status: "unpaid",
+      lastCheck: "credentials",
+    });
+    expect(await tipRow(flagged)).toMatchObject({
+      status: "unpaid",
+      flag: "mismatch",
+    });
+    // Paid after all: “查一下” still counts it.
+    credit.secrets.set(gone.clientId, MERCHANT_SECRET);
+    credit.pay(stuckNo);
+    at(24 * 60 + 2);
+    await call("POST", `/tip/${card.code}/tips/${stuck}/check`);
+    expect((await tipRow(stuck))?.status).toBe("done");
+  });
+
+  it("is 没付 when Credit 站 turns its order down, and flagged when another order holds its 业务号", async () => {
+    const { owner, fan, credit } = await open();
+    await merchantFor(owner, credit);
+    const card = await newCard(owner);
+    // Closed or expired (400): 没付, nothing more.
+    credit.refuse(400);
+    const closed = (await tip(card, fan, {})).json as TipJson;
+    expect(closed).toMatchObject({ tip: { status: "unpaid" }, payUrl: null });
+    expect(await tipRow(closed.tip.id)).toMatchObject({
+      status: "unpaid",
+      flag: null,
+    });
+    // The same 业务号 with other content (409): 订单信息不符, as a 转入's.
+    credit.refuse(409);
+    const conflict = (await tip(card, fan, {})).json as TipJson;
+    expect(conflict.tip.status).toBe("unpaid");
+    expect(await tipRow(conflict.tip.id)).toMatchObject({
+      status: "unpaid",
+      flag: "mismatch",
+    });
+  });
+
   it("refuses a changed card, an amount not on it, one's own card, a stopped card and a closed switch", async () => {
     const { owner, fan, credit, admin } = await open();
     await merchantFor(owner, credit);
@@ -900,6 +1075,39 @@ describe("打赏 from 🐟额", () => {
       message: null,
       messageHidden: true,
       amountMinor: 500,
+    });
+    // “查一下” needs no sign-in: anyone else with the tip's id is told only
+    // that its 留言 is hidden, and not the card's name; its tipper and the
+    // card's owner still read it.
+    const checkAs = async (who?: Actor) =>
+      (
+        (await call("POST", `/tip/${card.code}/tips/${made.tip.id}/check`, who))
+          .json as {
+          tip: {
+            message: string | null;
+            messageHidden: boolean;
+            card: { name: string | null };
+          };
+        }
+      ).tip;
+    const hiddenFromOthers = {
+      message: null,
+      messageHidden: true,
+      card: { name: null },
+    };
+    expect(await checkAs()).toMatchObject(hiddenFromOthers);
+    expect(await checkAs(await actor("stranger"))).toMatchObject(
+      hiddenFromOthers,
+    );
+    expect(await checkAs(fan)).toMatchObject({
+      message: "广告",
+      messageHidden: true,
+      card: { name: null },
+    });
+    expect(await checkAs(owner)).toMatchObject({
+      message: "广告",
+      messageHidden: true,
+      card: { name: "个人页" },
     });
     expect(
       code(

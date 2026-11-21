@@ -20,6 +20,8 @@ import { adminOverview, failingDay } from "../src/points/admin";
 import { listPointsEvents } from "../src/points/events";
 import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
 import {
+  type PointsPaymentRow,
+  pointsPaymentView,
   resendPointsPayment,
   runPointsPayment,
   sweepPointsPayments,
@@ -521,6 +523,76 @@ describe("三方积分红包", () => {
     // Nothing there: 未发出, never paid twice.
     expect(await run(id)).toBe("failed");
     expect((await payout(claimed.claim.id))?.reason).toBe("network");
+  });
+
+  it("ends a payout whose runs keep dying as 结果不明 after the retries, never sent", async () => {
+    // B10 (sweep 2026-11-21): a run that throws (here a key that cannot be
+    // read) never reached finish, so its misses never grew and the sweep
+    // sent it again every five minutes for ever.
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "30",
+      count: 3,
+    });
+    const a = await actor();
+    issuer.open(a.externalId, a.username, 0);
+    const claimed = await claim(hongbao.id, a);
+    const id = claimed.claim.payment?.id ?? "";
+    await env.DB.prepare(
+      "UPDATE points_keys SET ciphertext='unreadable' WHERE system_id=? AND author_id=?",
+    )
+      .bind(systemId, sender.id)
+      .run();
+    const calls = issuer.calls.length;
+    // Its lease outlives the run that died.
+    const lapse = () =>
+      env.DB.prepare(
+        "UPDATE points_payments SET lease_until=? WHERE id=? AND status='sending'",
+      )
+        .bind(Date.now() - 1, id)
+        .run();
+    for (let misses = 1; misses <= 3; misses++) {
+      await expect(run(id)).rejects.toThrow();
+      expect((await payout(claimed.claim.id))?.status).toBe("sending");
+      // Not taken again while its lease holds.
+      await sweepPointsPayments(bindings);
+      expect((await payout(claimed.claim.id))?.status).toBe("sending");
+      await lapse();
+      await sweepPointsPayments(bindings);
+      // Each counts as a miss, and the next run asks first.
+      expect(await payout(claimed.claim.id)).toMatchObject({
+        status: "pending",
+        misses,
+      });
+    }
+    await expect(run(id)).rejects.toThrow();
+    await lapse();
+    await sweepPointsPayments(bindings);
+    expect(await payout(claimed.claim.id)).toMatchObject({
+      status: "unknown",
+      reason: "interrupted",
+      misses: 3,
+      next_run_at: null,
+    });
+    // Read as 结果不明, as after an unanswered last query.
+    const row = await env.DB.prepare("SELECT * FROM points_payments WHERE id=?")
+      .bind(id)
+      .first<PointsPaymentRow>();
+    expect(row && pointsPaymentView(row)).toMatchObject({
+      status: "attention",
+      reason: "unknown",
+    });
+    // Not sent again: no run takes it, the sweep wakes it no more.
+    const send = vi.mocked(env.PAYMENT_QUEUE.send);
+    send.mockClear();
+    await sweepPointsPayments(bindings);
+    expect(
+      send.mock.calls.filter(([body]) => (body as { id?: string }).id === id),
+    ).toEqual([]);
+    expect(await runPointsPayment(bindings, id)).toBe("skipped");
+    expect(issuer.calls.length).toBe(calls);
+    expect(issuer.accounts.get(a.externalId)?.available).toBe(0);
   });
 
   it("stops claims before a share is taken while its system is paused", async () => {

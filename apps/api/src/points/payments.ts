@@ -492,12 +492,24 @@ async function finish(
  */
 export async function sweepPointsPayments(env: ApiBindings) {
   const now = Date.now();
-  await env.DB.batch([
+  const retries = POINTS_LIMITS.retryDelaysMs.length;
+  const [lapsed] = await env.DB.batch([
+    // A lease that outlived its run counts as a miss: the run died with no
+    // answer kept. Past the retries it ends 结果不明 for the 站长, as an
+    // unanswered payout does (§5): one whose runs kept dying (a key that
+    // cannot be read, say) never reached finish, so its misses never grew
+    // and it was sent again every five minutes for ever (sweep 2026-11-21,
+    // B10). One statement, so the table is read once (the SET reads the
+    // old misses).
     env.DB.prepare(
-      `UPDATE points_payments SET status='pending',query_first=1,lease_token=NULL,
-        lease_until=NULL,next_run_at=?1,updated_at=?1
-       WHERE status='sending' AND lease_until<?1`,
-    ).bind(now),
+      `UPDATE points_payments SET
+        status=CASE WHEN misses>=?2 THEN 'unknown' ELSE 'pending' END,
+        reason=CASE WHEN misses>=?2 THEN 'interrupted' ELSE reason END,
+        next_run_at=CASE WHEN misses>=?2 THEN NULL ELSE ?1 END,
+        misses=MIN(misses+1,?2),query_first=1,lease_token=NULL,lease_until=NULL,updated_at=?1
+       WHERE status='sending' AND lease_until<?1
+       RETURNING id,status,system_id,activity_id,recipient_user_id,author_id`,
+    ).bind(now, retries),
     env.DB.prepare(
       `UPDATE points_payments SET status='failed',next_run_at=NULL,done_at=?1,updated_at=?1
        WHERE status='held' AND (resend_until IS NULL OR resend_until<=?1)`,
@@ -506,6 +518,32 @@ export async function sweepPointsPayments(env: ApiBindings) {
       now - 30 * 86_400_000,
     ),
   ]);
+  for (const row of (lapsed?.results ?? []) as Pick<
+    PointsPaymentRow,
+    | "id"
+    | "status"
+    | "system_id"
+    | "activity_id"
+    | "recipient_user_id"
+    | "author_id"
+  >[]) {
+    if (row.status !== "unknown") continue;
+    console.info(
+      JSON.stringify({
+        event: "points_payment_done",
+        paymentId: row.id,
+        systemId: row.system_id,
+        status: "unknown",
+        reason: "interrupted",
+      }),
+    );
+    await tellPage(
+      env,
+      row.activity_id,
+      [row.recipient_user_id, row.author_id],
+      false,
+    );
+  }
   const due = await env.DB.prepare(
     `SELECT id FROM points_payments WHERE status='pending' AND next_run_at<=?
       ORDER BY next_run_at LIMIT 50`,

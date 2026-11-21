@@ -38,6 +38,13 @@ const BUSINESS_PREFIX = "hb.lafi.sh_tp_";
 const ORDER_NAME_MAX = 64;
 const RETURN_URL_MAX = 100;
 const HOUR_MS = 3_600_000;
+/**
+ * A link still waiting a day on is 没付 whatever Credit 站 answers short of
+ * paid (sweep 2026-11-21): its key gone, no answer, or an order that does
+ * not match would otherwise wait forever. A later payment still counts
+ * through “查一下” or the receipt page.
+ */
+const FINAL_AFTER_MS = 24 * HOUR_MS;
 /** 我的商户 is not built yet (docs/tip-design.md §5): never offered. */
 const MERCHANT_TIPS = false;
 
@@ -63,7 +70,8 @@ export type TipRow = {
   order_name: string | null;
   return_url: string | null;
   external_order_id: string | null;
-  flag: "mismatch" | "reversed" | null;
+  /** 订单信息不符: Credit 站's order under its 业务号 is not this one. */
+  flag: "mismatch" | null;
   submitted_at: number | null;
   last_checked_at: number | null;
   last_check_result: string | null;
@@ -158,6 +166,10 @@ export async function viewerOf(
 
 function tipView(row: TipWithPeople, viewerId: string | null): Tip {
   const out = viewerId !== null && row.tipper_id === viewerId;
+  // Anyone else with a tip's id (“查一下” and the receipt page need no
+  // sign-in) is told only that its 留言 is hidden (docs/tip-design.md §6),
+  // and never the card's name (sweep 2026-11-21).
+  const own = viewerId !== null && row.owner_id === viewerId;
   const counterpart = out
     ? {
         username: row.owner_username,
@@ -174,12 +186,12 @@ function tipView(row: TipWithPeople, viewerId: string | null): Tip {
   return {
     id: row.id,
     // The card's name is its owner's.
-    card: { code: row.card_code, name: out ? null : row.card_name },
+    card: { code: row.card_code, name: own ? row.card_name : null },
     direction: out ? "out" : "in",
     counterpart,
     amountMinor: row.amount_minor,
     method: row.method,
-    message: row.message,
+    message: row.message_hidden === 1 && !out && !own ? null : row.message,
     messageHidden: row.message_hidden === 1,
     status: row.status,
     notSentReason: row.not_sent_reason,
@@ -409,11 +421,17 @@ async function submitCheckout(
     }),
   );
   const checked = await checkTip(env, row, { force: true });
+  // As a 转入's and a 收银台's (balance/topups.ts, checkouts.ts): another
+  // order under this 业务号 (409) marks it 订单信息不符, and a key Credit 站
+  // turned down stays as the last answer (sweep 2026-11-21).
   if (checked.status === "pending")
     await env.DB.prepare(
-      "UPDATE tips SET status='unpaid',updated_at=? WHERE id=? AND status='pending'",
+      `UPDATE tips SET status='unpaid',
+        flag=CASE WHEN ?1='conflict' THEN 'mismatch' ELSE flag END,
+        last_check_result=CASE WHEN ?1='credentials' THEN 'credentials' ELSE last_check_result END,
+        updated_at=?2 WHERE id=?3 AND status='pending'`,
     )
-      .bind(now, row.id)
+      .bind(result.reason, now, row.id)
       .run();
   return resultOf(env, row.id, viewerId, null);
 }
@@ -502,7 +520,8 @@ function matches(
 /**
  * One check at Credit 站, at most every 5 s for each tip, whoever asks (the
  * card, “查一下”, the receipt page, the 兜底检查); otherwise what is known.
- * Past 15 minutes unpaid, it is 没付 (a later payment still counts).
+ * Past 15 minutes unpaid, it is 没付; past a day, whatever the answer short
+ * of paid (FINAL_AFTER_MS). A later payment still counts.
  */
 export async function checkTip(
   env: ApiBindings,
@@ -567,10 +586,13 @@ export async function checkTip(
         claimed.id,
       ),
     );
-  else if (
-    (kind === "unpaid" || kind === "not_found") &&
+  const age = now - claimed.created_at;
+  if (
+    kind !== "paid" &&
     claimed.status === "pending" &&
-    now - claimed.created_at >= TIP_LIMITS.sweepAfterMs
+    (age >= FINAL_AFTER_MS ||
+      ((kind === "unpaid" || kind === "not_found") &&
+        age >= TIP_LIMITS.sweepAfterMs))
   )
     statements.push(
       env.DB.prepare(
@@ -622,15 +644,25 @@ export async function checkTipOnCard(
 
 /**
  * 兜底检查 (§5), with the 5-minute cron: links still waiting after 15
- * minutes are asked about once more, oldest first, 50 a round.
+ * minutes are asked about once more, 50 a round, the one asked about
+ * longest ago first (sweep 2026-11-21): one Credit 站 has no answer for
+ * goes to the back of the line instead of holding every round, until a day
+ * on closes it (FINAL_AFTER_MS). One whose order does not match (flagged)
+ * is not asked about again until then, for that last look.
  */
 export async function sweepTips(env: ApiBindings) {
   if (!reachesCredit(env)) return { checked: 0 };
+  const now = Date.now();
   const { results } = await env.DB.prepare(
-    `SELECT * FROM tips WHERE status='pending' AND method='checkout' AND created_at<=?
-    ORDER BY created_at LIMIT ?`,
+    `SELECT * FROM tips WHERE status='pending' AND method='checkout' AND created_at<=?1
+      AND (flag IS NULL OR created_at<=?2)
+    ORDER BY check_claimed_at,created_at LIMIT ?3`,
   )
-    .bind(Date.now() - TIP_LIMITS.sweepAfterMs, TIP_LIMITS.sweepBatch)
+    .bind(
+      now - TIP_LIMITS.sweepAfterMs,
+      now - FINAL_AFTER_MS,
+      TIP_LIMITS.sweepBatch,
+    )
     .all<TipRow>();
   for (const row of results) await checkTip(env, row, { force: true });
   return { checked: results.length };

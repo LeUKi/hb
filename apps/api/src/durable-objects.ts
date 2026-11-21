@@ -189,6 +189,24 @@ type LiveAttachment = {
  */
 const ACTIVITY_ALARM = "activityAlarm";
 
+/**
+ * A draw's recovery that throws is tried again 5 s on, then twice as long
+ * each time up to five minutes; a success starts over. Its failures in a
+ * row are kept here (sweep 2026-11-21, B10): an error that stays used to
+ * wake the object every 5 s for ever.
+ */
+const DRAW_FAILURES = "drawFailures";
+const DRAW_RETRY_MS = 5_000;
+const DRAW_RETRY_MAX_MS = 5 * 60_000;
+
+/** How long after this many failures in a row the recovery runs again. */
+function drawRetryDelay(failures: number) {
+  return Math.min(
+    DRAW_RETRY_MAX_MS,
+    DRAW_RETRY_MS * 2 ** Math.min(Math.max(failures - 1, 0), 16),
+  );
+}
+
 /** When a live socket joined, to find a person's oldest one. */
 function liveSince(socket: WebSocket) {
   return (socket.deserializeAttachment() as LiveAttachment | null)?.since ?? 0;
@@ -1689,7 +1707,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       const activity = await findActivity(this.env, id);
       if (!activity) {
         // Gone: nothing to wake for again (this alarm is spent).
-        await this.ctx.storage.delete("drawActivityId");
+        await this.ctx.storage.delete(["drawActivityId", DRAW_FAILURES]);
         return;
       }
       try {
@@ -1711,10 +1729,21 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         );
         await flushPaymentOutbox(this.env);
       } catch {
-        console.error("activity_draw_recovery_failed", { activityId: id });
-        await this.syncAlarm(Date.now() + 5_000);
+        const failures =
+          ((await this.ctx.storage.get<number>(DRAW_FAILURES)) ?? 0) + 1;
+        const retryInMs = drawRetryDelay(failures);
+        console.error("activity_draw_recovery_failed", {
+          activityId: id,
+          failures,
+          retryInMs,
+        });
+        await this.ctx.storage.put(DRAW_FAILURES, failures);
+        await this.syncAlarm(Date.now() + retryInMs);
         return;
       }
+      // Read first: most wakes have no failures to clear (no write then).
+      if ((await this.ctx.storage.get<number>(DRAW_FAILURES)) !== undefined)
+        await this.ctx.storage.delete(DRAW_FAILURES);
       await this.scheduleDraw(id);
       // The draw may have run: its result goes out at once.
       this.announce(id);

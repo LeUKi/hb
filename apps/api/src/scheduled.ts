@@ -50,21 +50,19 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
       run: () => cleanupExpiredIdentityRows(env.DB, new Date(scheduledAt)),
     },
     { name: "activities", run: () => sweepActivityLifecycle(env) },
-    {
-      name: "payments",
-      run: async () => {
-        const woken = await sweepPayments(env);
-        // A 转出 left 发放中 after its payment ended (it should never be).
-        await settleEndedWithdrawals(env);
-        // A payment refused for want of a Credit account, past its resend.
-        await endLapsedResends(env);
-        // A merchant short of funds: its wait, and three days on its stop.
-        await sweepFundsWaits(env);
-        // 三方积分's payouts: due, stale leases, lapsed resends.
-        await sweepPointsPayments(env);
-        return woken;
-      },
-    },
+    // 付款补偿 and the four checks that ran after it in the same job: each
+    // its own job now, so one that throws no longer skips the rest and its
+    // own row says which failed (sweep 2026-11-21, B7). Every step guards
+    // its own writes, as it must beside the queue and the merchants' alarms.
+    { name: "payments", run: () => sweepPayments(env) },
+    // A 转出 left 发放中 after its payment ended (it should never be).
+    { name: "payment_withdrawals", run: () => settleEndedWithdrawals(env) },
+    // A payment refused for want of a Credit account, past its resend.
+    { name: "payment_resends", run: () => endLapsedResends(env) },
+    // A merchant short of funds: its wait, and three days on its stop.
+    { name: "payment_funds", run: () => sweepFundsWaits(env) },
+    // 三方积分's payouts: due, stale leases, lapsed resends.
+    { name: "points_payments", run: () => sweepPointsPayments(env) },
     { name: "credentials", run: () => recoverCredentialChecks(env) },
     // 代码判定红包's 用量记录 are kept 90 days (programmable-hongbao §7).
     { name: "judge_usage", run: () => pruneJudgeUsage(env, scheduledAt) },
