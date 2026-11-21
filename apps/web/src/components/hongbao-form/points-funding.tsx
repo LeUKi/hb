@@ -252,12 +252,20 @@ export function PointsLine({
   const unit = { unit: system.unit, step: system.step };
   const data = balance.data;
   const kind = data?.kind ?? (balance.isError ? "error" : "loading");
-  const short = data?.kind === "ok" && total !== null && total > data.available;
+  // Opening needs 可用 to cover this 红包 and what one's other open ones
+  // still need (pointsOpeningProblem): the same sum here, so the line never
+  // says 够 where 保存并开放 then says 余额不够 (sweep 2026-11-21 R3-SEND-5).
+  const short =
+    data?.kind === "ok" &&
+    total !== null &&
+    total + data.committed > data.available;
   const state = short ? "short" : kind;
   const text =
     data?.kind === "ok"
       ? short
-        ? `可用只有 ${amountText(data.available, unit)}，不够发这个红包`
+        ? data.committed > 0
+          ? `可用 ${amountText(data.available, unit)}，你其他开放中的红包还要 ${amountText(data.committed, unit)}，不够发这个红包`
+          : `可用只有 ${amountText(data.available, unit)}，不够发这个红包`
         : `可用 ${amountText(data.available, unit)}，将从 @${data.accountUsername} 的账户扣`
       : {
           no_key: `还没填你在 ${system.host} 的密钥`,

@@ -30,6 +30,7 @@ import {
 import { listPointsEvents } from "./events";
 import {
   availableNow,
+  committedElsewhere,
   keyView,
   listMyKeys,
   readKey,
@@ -358,9 +359,18 @@ export const pointsRoutes = new Hono<ApiContext>()
     // which payouts keep to: so many a minute a person (outbound-checks.ts,
     // sweep 2026-11-21).
     await limitOutboundCheck(c.env, "balance", session.user.id);
-    const result = await availableNow(c.env, session.user.id, row);
+    // What the sender's other open 红包 of this system may still pay, as
+    // opening counts it (pointsOpeningProblem), so the form's line says
+    // 不够 before 保存并开放 does. The form asks only for a new 红包 or an
+    // unopened draft, which committedElsewhere never counts: nothing to
+    // leave out (sweep 2026-11-21 R3-SEND-5).
+    const [result, committed] = await Promise.all([
+      availableNow(c.env, session.user.id, row),
+      committedElsewhere(c.env, session.user.id, row.id, ""),
+    ]);
     return c.json({
       ...result,
+      ...(result.kind === "ok" ? { committed } : {}),
       key: keyView(await readKey(c.env, row.id, session.user.id)),
     });
   })

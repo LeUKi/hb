@@ -778,6 +778,59 @@ describe("三方积分红包", () => {
     expect(keys).toEqual([`balance:${sender.id}`, `balance:${sender.id}`]);
   });
 
+  it("tells the form what one's other open 红包 still need, as opening counts it (sweep 2026-11-21 R3-SEND-5)", async () => {
+    await online();
+    const token = crypto.randomUUID();
+    await createDb(env.DB)
+      .insert(sessions)
+      .values({
+        tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
+        userId: sender.id,
+        csrfToken: crypto.randomUUID(),
+        createdAt: new Date(),
+        lastSeenAt: new Date(),
+        expiresAt: new Date(Date.now() + 3600000),
+      });
+    const balance = async () => {
+      const reply = await app.request(
+        `${origin}/api/me/points/${systemId}/balance`,
+        { headers: { Cookie: `hb_session=${token}` } },
+        bindings,
+      );
+      expect(reply.status).toBe(200);
+      return reply.json();
+    };
+    expect(await balance()).toMatchObject({
+      kind: "ok",
+      available: 10000,
+      committed: 0,
+    });
+    // An open one counts; an unopened draft (what the form edits) does not.
+    await opened({ mode: "fixed", totalAmount: "30", count: 3 });
+    await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: points({ mode: "fixed", totalAmount: "50", count: 5 }),
+    });
+    expect(await balance()).toMatchObject({
+      kind: "ok",
+      available: 10000,
+      committed: 3000,
+    });
+    // The same sum opening refuses on: 71 星星 more is over 100 by 1.
+    const saved = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: points({ mode: "fixed", totalAmount: "71", count: 1 }),
+    });
+    await expect(
+      openActivity(bindings, saved.id, sender.id, saved.version),
+    ).rejects.toThrow("你其他开放中的红包还要 30 星星");
+    // Without a key there is no 额度, and nothing to weigh it against.
+    await removeKey(bindings, sender.id, systemId);
+    const keyless = await balance();
+    expect(keyless).toMatchObject({ kind: "no_key" });
+    expect(keyless).not.toHaveProperty("committed");
+  });
+
   it("splits 拼手气 in whole 最小单位", async () => {
     await online();
     const hongbao = await opened({
@@ -1380,6 +1433,13 @@ export function judge(s, tools) {
       (await getManagedActivity(bindings, saved.id, sender.id))
         .openingBlockedReason,
     ).toBe("JUDGE_NOT_FOR_POINTS");
+    // 保存并定时 refuses it on the spot, not at its time (sweep 2026-11-21).
+    await expect(
+      scheduleActivity(bindings, saved.id, sender.id, {
+        version: saved.version,
+        at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: "JUDGE_NOT_FOR_POINTS" });
     await expect(
       openActivity(bindings, saved.id, sender.id, saved.version),
     ).rejects.toMatchObject({ code: "JUDGE_NOT_FOR_POINTS" });

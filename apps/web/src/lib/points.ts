@@ -99,6 +99,9 @@ export type PointsBalance =
   | {
       kind: "ok";
       available: number;
+      /** What one's other open 红包 of the system may still pay: opening
+       * needs 可用 to cover it and the new one's pool (sweep 2026-11-21). */
+      committed: number;
       accountId: string;
       accountUsername: string;
       key: PointsKeyView | null;
@@ -498,9 +501,12 @@ export function useAdminPointsActions() {
     void queryClient.invalidateQueries({ queryKey: sessionQueryKey });
   };
   return {
+    // PATCH answers the saved settings with their new version (ADM-3).
     settings: useMutation({
       mutationFn: (input: { enabled: boolean; version: number }) =>
-        send("PATCH", "admin/points/settings", input),
+        send<{
+          settings: { enabled: boolean; version: number; updatedAt: number };
+        }>("PATCH", "admin/points/settings", input),
       onSuccess: settle,
     }),
     review: useMutation({
