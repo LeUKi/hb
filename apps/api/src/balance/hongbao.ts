@@ -32,25 +32,18 @@ export async function availableMinor(env: ApiBindings, userId: string) {
 }
 
 /**
- * Making or switching a draft to 🐟额 needs the switch on and some 🐟
- * 可用; the whole amount is checked at opening (balanceOpeningBlocked).
+ * Making or switching a draft to 🐟额 needs the switch on. What is 可用 is
+ * checked at opening, against the whole amount (balanceOpeningBlocked):
+ * 存草稿从来不因为从哪发拦下, 可用不够 included (docs/redesign/07-pages.md
+ * 发多少, which replaced the older rule that 🐟额 needs some 🐟 to be
+ * chosen at all; sweep 2026-11-21).
  */
-export async function requireBalanceFunding(env: ApiBindings, userId: string) {
-  const [settings, available] = await Promise.all([
-    readBalanceSettings(env),
-    availableMinor(env, userId),
-  ]);
-  if (!settings.hongbaoEnabled)
+export async function requireBalanceFunding(env: ApiBindings) {
+  if (!(await readBalanceSettings(env)).hongbaoEnabled)
     throw new ActivityError(
       409,
       "BALANCE_HONGBAO_PAUSED",
       "🐟额红包暂时关闭。",
-    );
-  if (available < 1)
-    throw new ActivityError(
-      409,
-      "BALANCE_INSUFFICIENT",
-      "🐟额里没有可用，不能用🐟额发红包。",
     );
 }
 

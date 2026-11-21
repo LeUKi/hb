@@ -23,9 +23,9 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { api } from "../api";
-import { readResponse } from "./activities";
+import { ActivityRequestError, readResponse, refused } from "./activities";
 import { sessionQueryKey } from "./auth";
 import { useMerchantIdentity } from "./merchants";
 import { useIdentity } from "./session";
@@ -98,6 +98,91 @@ export function useBalancePages(userId: string, filter: BalanceFilter) {
 function useCsrf() {
   const { csrfToken } = useIdentity();
   return { headers: { "X-CSRF-Token": csrfToken ?? "" } };
+}
+
+/**
+ * A money write asked for in a dialog (转账, 对方的收银台, 转入, 转出,
+ * 补加/扣回) goes under a requestId, and the server answers an id it has
+ * seen with that first request's result (docs/balance-design.md §9.2 幂等).
+ * So after an unknown outcome (no answer, or 500 and up: it may have been
+ * written all the same) the same ask goes again as the very same request,
+ * and cannot happen twice. A new id only after a definite answer, or once
+ * the ask changes (sweep 2026-11-21 E1).
+ */
+export function useOnceRequest<I extends { requestId: string }>() {
+  const pending = useRef<{ ask: string; input: I } | null>(null);
+  return useMemo(
+    () => ({
+      /**
+       * What to send for `ask` (what the person chose): the request whose
+       * outcome is unknown again while the ask is the same, else `ask` and
+       * `rest` under a new id. `rest` is what rides along (a rate's
+       * version): a retry keeps the one it first went with.
+       */
+      input<A extends Partial<Omit<I, "requestId">>>(
+        ask: A,
+        rest: Omit<I, "requestId" | keyof A>,
+      ): I {
+        const key = JSON.stringify(ask);
+        if (pending.current?.ask === key) return pending.current.input;
+        const input = {
+          ...rest,
+          ...ask,
+          requestId: crypto.randomUUID(),
+        } as unknown as I;
+        pending.current = { ask: key, input };
+        return input;
+      },
+      /** Whether `ask` went and how it ended is not known yet. */
+      unsure: (ask: object) => pending.current?.ask === JSON.stringify(ask),
+      /** Done, or turned down: the next ask is a new request. */
+      settle(failure?: unknown) {
+        if (failure === undefined || refused(failure)) pending.current = null;
+      },
+      /** The dialog was cleared: whatever comes next is new. */
+      forget() {
+        pending.current = null;
+      },
+    }),
+    [],
+  );
+}
+
+/**
+ * What a failed money write says: the server's reason, or `unsure` when
+ * there is none, so whether it was done is not known (no answer at all,
+ * or its own unexpected failure), in place of “Load failed” or
+ * “Unexpected API error” (sweep 2026-11-21 E1).
+ */
+export function writeFailureText(failure: unknown, unsure: string) {
+  if (!(failure instanceof ActivityRequestError)) return unsure;
+  const { code } = failure;
+  return refused(failure) ||
+    (code !== undefined &&
+      code !== "INTERNAL_SERVER_ERROR" &&
+      !code.startsWith("HTTP_"))
+    ? failure.message
+    : unsure;
+}
+
+/**
+ * After a money write fails, 明细 and the page's figures (可用, the rates
+ * and their version) read again instead of staying as they were: it may
+ * have been done all the same, and one turned down over a rate changed
+ * meanwhile needs the new one, or every try fails the same way (sweep
+ * 2026-11-21 E1).
+ */
+function useRereadAfterFailure(
+  session: ReturnType<typeof useMerchantIdentity>,
+) {
+  const queryClient = useQueryClient();
+  return () => {
+    const identity = session.captureIdentity();
+    if (identity && session.isCurrentIdentity(identity))
+      void queryClient.invalidateQueries({
+        queryKey: [...balanceKeys.all(identity), "list"],
+      });
+  };
 }
 
 /**
@@ -177,6 +262,7 @@ export function useTopupActions(userId: string) {
       queryKey: [...balanceKeys.all(identity), "list"],
     });
   };
+  const reread = useRereadAfterFailure(session);
   const create = useMutation({
     mutationFn: async (input: CreateTopupInput) => {
       const identity = session.captureIdentity() ?? "";
@@ -187,6 +273,7 @@ export function useTopupActions(userId: string) {
       await settle(identity, result.topup);
       return result;
     },
+    onError: reread,
   });
   const pay = useMutation({
     mutationFn: async (id: string) => {
@@ -239,6 +326,7 @@ export function useWithdrawalActions(userId: string) {
   const session = useMerchantIdentity(userId);
   const queryClient = useQueryClient();
   const options = useCsrf();
+  const reread = useRereadAfterFailure(session);
   const create = useMutation({
     mutationFn: async (input: CreateWithdrawalInput) => {
       const identity = session.captureIdentity() ?? "";
@@ -256,6 +344,7 @@ export function useWithdrawalActions(userId: string) {
       }
       return result;
     },
+    onError: reread,
   });
   return { create };
 }
@@ -268,6 +357,7 @@ export function useOwnerAdjustment(userId: string) {
   const session = useMerchantIdentity(userId);
   const queryClient = useQueryClient();
   const options = useCsrf();
+  const reread = useRereadAfterFailure(session);
   return useMutation({
     mutationFn: async (input: OwnerAdjustmentInput) => {
       const identity = session.captureIdentity() ?? "";
@@ -283,6 +373,7 @@ export function useOwnerAdjustment(userId: string) {
         });
       return result;
     },
+    onError: reread,
   });
 }
 
@@ -468,6 +559,7 @@ export function useTransferActions(userId: string) {
   const session = useMerchantIdentity(userId);
   const queryClient = useQueryClient();
   const options = useCsrf();
+  const reread = useRereadAfterFailure(session);
   const create = useMutation({
     mutationFn: async (input: CreateTransferInput) => {
       const identity = session.captureIdentity() ?? "";
@@ -485,6 +577,7 @@ export function useTransferActions(userId: string) {
       }
       return result;
     },
+    onError: reread,
   });
   return { create };
 }
@@ -552,6 +645,7 @@ export function useCheckoutActions(userId: string) {
     });
   };
   type Made = { checkout: BalanceCheckout; cashierUrl: string | null };
+  const reread = useRereadAfterFailure(session);
   const create = useMutation({
     mutationFn: async (input: CreateCheckoutInput) => {
       const identity = session.captureIdentity() ?? "";
@@ -561,6 +655,7 @@ export function useCheckoutActions(userId: string) {
       await settle(identity, result.checkout);
       return result;
     },
+    onError: reread,
   });
   const pay = useMutation({
     mutationFn: async (id: string) => {

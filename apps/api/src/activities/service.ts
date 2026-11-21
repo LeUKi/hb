@@ -784,9 +784,9 @@ export async function createActivity(
   if (input.activity.money.mode === "code")
     await requireCodeHongbao(env, authorId);
   if (input.activity.pageUrl) await requirePageSwitch(env);
-  if (balance) await requireBalanceFunding(env, authorId);
+  if (balance) await requireBalanceFunding(env);
   const pointsSystem = points
-    ? await requirePointsFunding(env, authorId, input.activity)
+    ? await requirePointsFunding(env, input.activity, true)
     : null;
   const merchant =
     balance || points || !input.activity.merchantId
@@ -931,11 +931,18 @@ export async function updateActivity(
   )
     invalidActivity("开放后不能修改从哪发");
   if (balance && row.openedAt === null && row.funding !== "balance")
-    await requireBalanceFunding(env, authorId);
-  // 三方积分 (docs/third-party-points-design.md §8): checked while a draft.
+    await requireBalanceFunding(env);
+  // 三方积分 (docs/third-party-points-design.md §8): checked while a draft,
+  // on offer only when chosen now; a key, or a system paused since, is
+  // opening's to check (07 发多少; sweep 2026-11-21).
   const pointsSystem =
     points && !fixed
-      ? await requirePointsFunding(env, authorId, input.activity)
+      ? await requirePointsFunding(
+          env,
+          input.activity,
+          row.funding !== "points" ||
+            row.pointsSystemId !== input.activity.pointsSystemId,
+        )
       : null;
   const coded = input.activity.money.mode === "code";
   if (coded && row.participationMode !== "code")

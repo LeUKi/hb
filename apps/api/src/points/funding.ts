@@ -1,7 +1,7 @@
-// A 三方积分红包's money (docs/third-party-points-design.md §5 §8): the
-// site switch on, its system online, the sender's key saved, every amount
-// a whole number of the system's 最小单位; at opening, 额度 enough for this
-// 红包 and what the sender's others may still pay.
+// A 三方积分红包's money (docs/third-party-points-design.md §5 §8): chosen
+// while the site switch is on and its system online, every amount a whole
+// number of the system's 最小单位; at opening, the sender's key saved and
+// 额度 enough for this 红包 and what the sender's others may still pay.
 import {
   type AmountUnit,
   formatAmountWithUnit,
@@ -26,21 +26,26 @@ function refuse(code: string, message: string): never {
   throw new ActivityError(409, code, message);
 }
 
-/** Creating or saving one: the switch, the system, one's key, the step. */
+/**
+ * Saving one as a draft: the step, always. Chosen now (a new 红包, or a
+ * draft switched to it or to another system) it must also be on offer: the
+ * switch on, the system online. One's key, and a system paused or a switch
+ * turned off since it was chosen, block opening (pointsBlockedReason), not
+ * the draft: 存草稿从来不因为从哪发拦下 (docs/redesign/07-pages.md 发多少;
+ * sweep 2026-11-21).
+ */
 export async function requirePointsFunding(
   env: ApiBindings,
-  authorId: string,
   input: LdcActivityInput,
+  chosen: boolean,
 ) {
-  const settings = await readPointsSettings(env);
-  if (!settings.enabled) refuse("POINTS_DISABLED", "三方积分红包还没开放");
+  if (chosen && !(await readPointsSettings(env)).enabled)
+    refuse("POINTS_DISABLED", "三方积分红包还没开放");
   const system = input.pointsSystemId
     ? await readSystem(env, input.pointsSystemId)
     : null;
-  if (system?.status !== "online")
+  if (!system || (chosen && system.status !== "online"))
     refuse("POINTS_NOT_ONLINE", "这个积分现在没有上线");
-  if (!(await readKey(env, system.id, authorId)))
-    refuse("POINTS_KEY_NEEDED", `先填好你在 ${system.host} 的密钥`);
   const issue = moneyStepIssue(input.money, unitOfSystem(system));
   if (issue) throw new ActivityError(400, "INVALID_ACTIVITY", issue);
   return system;

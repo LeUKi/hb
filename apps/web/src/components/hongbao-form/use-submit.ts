@@ -1,15 +1,17 @@
 import type {
+  ActivityInput,
   CreateActivityInput,
   ManagedActivity,
   UpdateActivityInput,
 } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { useIsPresent } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import {
-  ActivityRequestError,
+  failureText,
   readResponse,
   refused,
   useActivityWrites,
@@ -18,7 +20,7 @@ import { useActivityOpening } from "../../lib/activity-opening";
 import { activityCode } from "../../lib/activity-route";
 import { hapticForTone } from "../../lib/haptics";
 import { useCurrentMerchant } from "../../lib/merchants";
-import type { SessionUser } from "../../lib/session";
+import { type SessionUser, sessionUserOf } from "../../lib/session";
 import { savedDraftAtom } from "../../lib/store";
 import {
   type FormState,
@@ -27,6 +29,7 @@ import {
   sameInput,
   withDefaultTitle,
 } from "./form-state";
+import { type KeptForm, keepForm } from "./kept-form";
 
 export type Notice = { tone: "success" | "warning" | "danger"; text: string };
 
@@ -42,19 +45,45 @@ export const phaseLabels: Record<Exclude<Phase, "idle">, string> = {
 /** A notice carried from /new to the 📝 page it lands on (开放没有完成). */
 let carried: Notice | null = null;
 
-/** A save as sent: kept to send again, unchanged, when its answer was lost. */
+/**
+ * A save as sent: kept to send again, unchanged, when its answer was lost.
+ * An update keeps the 红包 as it read when the save was built (`base`).
+ */
 type Pending =
   | { kind: "create"; request: CreateActivityInput; form: FormState }
-  | { kind: "update"; request: UpdateActivityInput; form: FormState };
+  | {
+      kind: "update";
+      request: UpdateActivityInput;
+      form: FormState;
+      base: ActivityInput;
+    };
 
 const lost = "尚未确认保存结果，请重试原提交，避免重复提交。";
+
+/**
+ * 报名 moves a 限时开奖's version without changing what it says
+ * (registration-service): a save refused for that alone is sent again on
+ * the version read back, this many times at most (sweep 2026-11-21).
+ */
+const resends = 2;
+
+/**
+ * sameInput, 允许用令牌领 included, which it leaves out: a refused save
+ * that changed only that must not read as saved (sweep 2026-11-21).
+ */
+function sameSave(saved: ActivityInput, sent: ActivityInput) {
+  return (
+    sameInput(saved, sent) &&
+    (saved.allowTokens !== false) === (sent.allowTokens !== false)
+  );
+}
 
 /**
  * Saving a 红包, as production does it: 保存草稿 or 保存并开放 (the 商户
  * 密钥 is checked on the way), and on 📝 保存修改. A lost answer is sent
  * again as it was (重试原提交: a create keeps its requestId, so it cannot
- * make a second 红包); a 409 on 📝 reads the 红包 again and keeps what was
- * typed. Checking the form is the caller's job.
+ * make a second 红包); a version conflict on 📝 reads the 红包 again and
+ * keeps what was typed. Checking the form is the caller's job.
  */
 export function useSubmit({
   activity,
@@ -65,6 +94,7 @@ export function useSubmit({
   scheduleAt = null,
   onSaved,
   onSettled,
+  kept,
 }: {
   activity?: ManagedActivity;
   user: SessionUser;
@@ -77,6 +107,13 @@ export function useSubmit({
   onSaved?: () => void;
   /** The saved form becomes the page's new baseline (📝). */
   onSettled: (saved: FormState) => void;
+  /**
+   * What was typed here before the sign-in ended, as the form brought it
+   * back (kept-form.ts; null: nothing). Passed by a form that brings it
+   * back, which is then kept should the sign-in end again; left out,
+   * nothing is kept (sweep 2026-11-21).
+   */
+  kept?: KeptForm | null;
 }) {
   const navigate = useNavigate();
   const setSavedDraft = useSetAtom(savedDraftAtom);
@@ -95,7 +132,16 @@ export function useSubmit({
     open: boolean;
     pending: Pending;
   } | null>(null);
-  const [notice, setNotice] = useState<Notice | null>(() => carried);
+  const [notice, setNotice] = useState<Notice | null>(
+    () =>
+      carried ??
+      (kept
+        ? {
+            tone: "warning",
+            text: `登录失效前填的内容已恢复，确认后再保存。${kept.keysDropped ? "填过的密钥没有留下，要重新填写。" : ""}`,
+          }
+        : null),
+  );
   /** A notice from a press, felt as it shows (震动反馈). */
   const notify = (note: Notice) => {
     hapticForTone(note.tone);
@@ -117,6 +163,22 @@ export function useSubmit({
     };
   }, []);
   const inFlight = useRef(false);
+  // The sign-in ended under the form (a 401, a failed check, another
+  // account): it unmounts behind the gate, so what was typed is written
+  // down once for when this account comes back (kept-form.ts), before the
+  // gate is painted. Leaving the page signed in keeps nothing.
+  const queryClient = useQueryClient();
+  const keeps = kept !== undefined;
+  const typed = useRef({ form, dirty, activity });
+  typed.current = { form, dirty, activity };
+  useLayoutEffect(() => {
+    if (!keeps) return;
+    return () => {
+      const { form, dirty, activity } = typed.current;
+      if (dirty && sessionUserOf(queryClient)?.id !== user.id)
+        keepForm(user.id, activity, form);
+    };
+  }, [keeps, queryClient, user.id]);
 
   const phase: Phase = opener.isPending
     ? opener.phase === "checking"
@@ -182,8 +244,7 @@ export function useSubmit({
         setSavedDraft({ id: saved.id, scheduled: true });
         goTo(result.activity, "activity");
       } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : "网络或服务出了问题。";
+        const reason = failureText(error, "网络或服务出了问题。");
         const note: Notice = {
           tone: "danger",
           text: `定时没有完成：${reason}${reason.includes("草稿已保存") ? "" : "草稿已保存，可以再试一次。"}`,
@@ -202,8 +263,7 @@ export function useSubmit({
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError")
           return;
-        const reason =
-          error instanceof Error ? error.message : "网络或服务出了问题。";
+        const reason = failureText(error, "网络或服务出了问题。");
         // The draft is saved either way: said once (07 §1, 没有完成).
         const note: Notice = {
           tone: "danger",
@@ -226,6 +286,15 @@ export function useSubmit({
     }
   };
 
+  /** The 红包 as it is now (after a version conflict). */
+  const reread = async (id: string) =>
+    readResponse<{ activity: ManagedActivity }>(
+      await api.api.me.activities[":id"].$get(
+        { param: { id } },
+        { init: { cache: "no-store" } },
+      ),
+    );
+
   /** Save (open: 保存并开放). The form has been checked unless retrying. */
   const run = async (open: boolean) => {
     if (idle(open) || inFlight.current) return;
@@ -241,7 +310,7 @@ export function useSubmit({
       activity && opened
         ? openedInputOf(activity, payload)
         : inputOf(payload, merchant?.id ?? paying ?? "");
-    const pending: Pending =
+    let pending: Pending =
       retrying && uncertain
         ? uncertain.pending
         : activity
@@ -249,6 +318,7 @@ export function useSubmit({
               kind: "update",
               request: { version: activity.version, activity: input },
               form: payload,
+              base: activity.config,
             }
           : {
               kind: "create",
@@ -259,60 +329,80 @@ export function useSubmit({
     setOpening(open);
     setSaving(true);
     try {
-      let saved: ManagedActivity;
-      try {
-        saved = (
-          pending.kind === "create"
-            ? await writes.create.mutateAsync(pending.request)
-            : await writes.update.mutateAsync(pending.request)
-        ).activity;
-      } catch (error) {
-        if (!writes.isCurrentSession()) return;
-        if (
-          pending.kind === "update" &&
-          activity &&
-          error instanceof ActivityRequestError &&
-          error.status === 409
-        ) {
-          // Saved by the lost answer, or changed elsewhere: read it again.
-          const current = await readResponse<{ activity: ManagedActivity }>(
-            await api.api.me.activities[":id"].$get(
-              { param: { id: activity.id } },
-              { init: { cache: "no-store" } },
-            ),
-          ).catch(() => null);
+      let saved: ManagedActivity | null = null;
+      for (let resent = 0; saved === null; resent++) {
+        try {
+          saved = (
+            pending.kind === "create"
+              ? await writes.create.mutateAsync(pending.request)
+              : await writes.update.mutateAsync(pending.request)
+          ).activity;
+        } catch (error) {
+          if (!writes.isCurrentSession()) return;
+          // Only a version conflict reads it again; any other refusal (a
+          // 409 included: its 三方积分 paused, a switch off) says its own
+          // words below (sweep 2026-11-21).
           if (
-            current &&
-            sameInput(current.activity.config, pending.request.activity)
+            pending.kind === "update" &&
+            activity &&
+            refused(error) &&
+            error.code === "ACTIVITY_VERSION_CONFLICT"
           ) {
+            // Saved by the lost answer, or moved since: read it again.
+            const current = await reread(activity.id).catch(() => null);
+            if (!writes.isCurrentSession()) return;
+            if (current) await writes.adopt(current.activity);
+            if (
+              current &&
+              sameSave(current.activity.config, pending.request.activity)
+            ) {
+              setUncertain(null);
+              setSaving(false);
+              await after(current.activity, pending, open);
+              return;
+            }
+            // Only its version moved (报名, its counts): what was typed
+            // goes again as it was, on the version read back.
+            const unchanged =
+              current !== null &&
+              sameSave(current.activity.config, pending.base);
+            if (current && unchanged && resent < resends) {
+              pending = {
+                ...pending,
+                request: {
+                  version: current.activity.version,
+                  activity: pending.request.activity,
+                },
+              };
+              continue;
+            }
             setUncertain(null);
-            setSaving(false);
-            await after(current.activity, pending, open);
+            if (here.current)
+              notify({
+                tone: "danger",
+                text:
+                  current && !unchanged
+                    ? "保存没有完成：这个红包刚在别处改过，你的输入还在。确认后再保存一次。"
+                    : "保存没有完成：红包刚有更新，你的输入还在。可以再保存一次。",
+              });
+            return;
+          }
+          if (!refused(error)) {
+            setUncertain({ open, pending });
+            if (here.current) notify({ tone: "warning", text: lost });
             return;
           }
           setUncertain(null);
           if (here.current)
             notify({
               tone: "danger",
-              text: "保存没有完成：这个红包刚在别处改过，你的输入还在。确认后再保存一次。",
+              text:
+                error.status === 429
+                  ? "尝试过于频繁，请稍后再试。"
+                  : (error.issues[0]?.message ?? error.message),
             });
           return;
         }
-        if (!refused(error)) {
-          setUncertain({ open, pending });
-          if (here.current) notify({ tone: "warning", text: lost });
-          return;
-        }
-        setUncertain(null);
-        if (here.current)
-          notify({
-            tone: "danger",
-            text:
-              error.status === 429
-                ? "尝试过于频繁，请稍后再试。"
-                : (error.issues[0]?.message ?? error.message),
-          });
-        return;
       }
       setUncertain(null);
       setSaving(false);

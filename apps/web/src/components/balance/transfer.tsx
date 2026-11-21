@@ -4,6 +4,8 @@ import {
   type BalanceCheckout,
   type BalanceTransfer,
   type CheckoutBlock,
+  type CreateCheckoutInput,
+  type CreateTransferInput,
   checkoutReceipts,
   type TransferDestination,
 } from "@hb/contracts";
@@ -15,12 +17,15 @@ import {
   type BalancePage,
   goToCashier,
   useCheckoutActions,
+  useOnceRequest,
   useRecipient,
   useTransfer,
   useTransferActions,
+  writeFailureText,
 } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
+import { ListSkeleton, ResultError } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -262,7 +267,8 @@ export function TransferDialog({
   const [done, setDone] = useState<BalanceTransfer | null>(null);
   // The 已转给 line, focused once the confirmation has gone (below).
   const result = useRef<HTMLParagraphElement>(null);
-  const requestId = useRef(crypto.randomUUID());
+  const transferOnce = useOnceRequest<CreateTransferInput>();
+  const checkoutOnce = useOnceRequest<CreateCheckoutInput>();
   // Looked up once typing pauses (0.3 s), not on every key.
   const settledName = useSettled(username);
   const preview = useRecipient(user.id, settledName);
@@ -294,8 +300,30 @@ export function TransferDialog({
   const checkout = source === "checkout";
   const credit = !checkout && destination === "credit";
   const minor = typedMinor(typed);
+  // What is asked for, as it is sent (each way has its own request).
+  const amount = typed.trim().replace(/\.$/, "");
+  const note = remark.trim() || undefined;
+  const transferAsk = recipient && {
+    toUserId: recipient.userId,
+    toUsername: recipient.username,
+    destination,
+    amount,
+    remark: note,
+  };
+  const checkoutAsk = recipient && {
+    toUserId: recipient.userId,
+    toUsername: recipient.username,
+    amount,
+    remark: note,
+  };
+  // The ask whose outcome is unknown goes again as it was: the server looks
+  // its id up before it checks 可用, so 可用 read since (lower, if it went
+  // through) must not hold it back (sweep 2026-11-21 E1).
+  const retrying = checkout
+    ? checkoutAsk !== null && checkoutOnce.unsure(checkoutAsk)
+    : transferAsk !== null && transferOnce.unsure(transferAsk);
   const bound =
-    minor === null || minor <= 0
+    minor === null || minor <= 0 || retrying
       ? null
       : checkout
         ? minor < BALANCE_LIMITS.topupMinMinor
@@ -329,52 +357,51 @@ export function TransferDialog({
     setConfirming(false);
     setError(null);
     setDone(null);
-    requestId.current = crypto.randomUUID();
+    transferOnce.forget();
+    checkoutOnce.forget();
   };
   const send = async () => {
-    if (!ready || busy || !recipient) return;
+    if (!ready || busy || !transferAsk) return;
     setError(null);
     try {
-      const { transfer } = await create.mutateAsync({
-        requestId: requestId.current,
-        toUserId: recipient.userId,
-        toUsername: recipient.username,
-        destination,
-        amount: typed.trim().replace(/\.$/, ""),
-        remark: remark.trim() || undefined,
-      });
+      const { transfer } = await create.mutateAsync(
+        transferOnce.input(transferAsk, {}),
+      );
+      transferOnce.settle();
       setConfirming(false);
       setDone(transfer);
-      requestId.current = crypto.randomUUID();
     } catch (failure) {
-      // Refused: a fresh request next time. Lost on the way: the same one,
-      // so trying again cannot send it twice.
-      if (failure instanceof ActivityRequestError)
-        requestId.current = crypto.randomUUID();
+      // Turned down: a new request next time. No answer, or 500 and up:
+      // the same one, so pressing again cannot send it twice (sweep
+      // 2026-11-21 E1).
+      transferOnce.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          "没有收到结果，这笔可能已经转给对方了。再按一次确认转账会告诉你结果，不会重复转。",
+        ),
       );
     }
   };
-  // 对方的收银台: the order is made here, then Credit 站 takes over.
+  // 对方的收银台: the order is made here, then Credit 站 takes over. The
+  // same order again after no answer: Credit 站 opens it once more.
   const payAtCheckout = async () => {
-    if (!ready || busy || !recipient) return;
+    if (!ready || busy || !checkoutAsk) return;
     setError(null);
     try {
-      const { cashierUrl } = await checkoutActions.create.mutateAsync({
-        requestId: requestId.current,
-        toUserId: recipient.userId,
-        toUsername: recipient.username,
-        amount: typed.trim().replace(/\.$/, ""),
-        remark: remark.trim() || undefined,
-      });
+      const { cashierUrl } = await checkoutActions.create.mutateAsync(
+        checkoutOnce.input(checkoutAsk, {}),
+      );
+      // Made, but no cashier yet: pressing again asks for this order's.
       if (cashierUrl) goToCashier(cashierUrl);
       else setError("Credit 站暂时没有回应，请稍后再试。");
     } catch (failure) {
-      if (failure instanceof ActivityRequestError)
-        requestId.current = crypto.randomUUID();
+      checkoutOnce.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          "没有收到结果，这笔付款可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。",
+        ),
       );
     }
   };
@@ -642,6 +669,12 @@ export function TransferDetailDialog({
   if (id) kept.current = id;
   const query = useTransfer(user.id, kept.current);
   const transfer = query.data?.transfer;
+  // Only a 404 says it is not there. Any other failure is a read that
+  // failed: with nothing shown, 重试; a failed poll (every 3 s while
+  // 发放中) keeps what is shown (sweep 2026-11-21 E8).
+  const missing =
+    query.error instanceof ActivityRequestError && query.error.status === 404;
+  const failed = !transfer && !missing && query.isError && !query.isFetching;
   const out = transfer?.direction === "out";
   const lines: { label: string; value: ReactNode }[] = transfer
     ? [
@@ -748,23 +781,33 @@ export function TransferDetailDialog({
       }}
       title={transfer ? transferTitle(transfer) : "转账"}
       text={
-        query.isError
-          ? "没有找到这笔转账。"
-          : transfer
-            ? clockSeconds(transfer.createdAt)
-            : "正在读取…"
+        transfer
+          ? clockSeconds(transfer.createdAt)
+          : missing
+            ? "没有找到这笔转账。"
+            : failed
+              ? ""
+              : "正在读取…"
       }
       actions={<Button onClick={onClose}>关闭</Button>}
     >
-      {lines.length > 0 && (
-        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-          {lines.map((line) => (
-            <div key={line.label} className="contents">
-              <dt className="text-ink-3">{line.label}</dt>
-              <dd className="min-w-0 text-ink">{line.value}</dd>
-            </div>
-          ))}
-        </dl>
+      {!missing && (
+        <Swap id={transfer ? "transfer" : failed ? "failed" : "wait"}>
+          {transfer ? (
+            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              {lines.map((line) => (
+                <div key={line.label} className="contents">
+                  <dt className="text-ink-3">{line.label}</dt>
+                  <dd className="min-w-0 text-ink">{line.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : failed ? (
+            <ResultError onRetry={() => void query.refetch()} />
+          ) : (
+            <ListSkeleton rows={2} />
+          )}
+        </Swap>
       )}
     </ConfirmDialog>
   );

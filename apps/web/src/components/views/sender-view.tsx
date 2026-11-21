@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ActivityRequestError, usePublicActivity } from "../../lib/activities";
 import { type SenderPage, senderPages } from "../../lib/activity-route";
 import { useIdentity } from "../../lib/session";
+import { useKeptFor } from "../hongbao-form/kept-form";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LoadError, PageSkeleton } from "../page/page-state";
 import { Button } from "../ui/button";
@@ -29,9 +30,26 @@ export function SenderView({ id, page }: { id: string; page: SenderPage }) {
   const { openAccount, leaveTo } = useOmniboxController();
   const user = identity.user;
   const publicQuery = usePublicActivity(id, user?.id ?? null, identity.ready);
+  // 📝's form, gone as the sign-in ended, kept what was typed (kept-form.ts):
+  // said before the public read's answer, which is 未找到 for a draft
+  // (sweep 2026-11-21).
+  const kept = useKeptFor(id) && page === "edit";
   if (!identity.ready) return <PageSkeleton />;
   if (identity.failed)
     return <IdentityFailedView title={senderPages[page].title} />;
+  if (!user && kept)
+    return (
+      <MessageView
+        icon={Lock}
+        title={senderPages[page].title}
+        text="登录已失效。重新登录后回到这一页，填好的内容还在。"
+        action={
+          <Button variant="primary" onClick={openAccount}>
+            登录
+          </Button>
+        }
+      />
+    );
   const error = publicQuery.error;
   if (
     error instanceof ActivityRequestError &&

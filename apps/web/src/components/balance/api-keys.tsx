@@ -6,11 +6,13 @@ import {
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
+import { ActivityRequestError } from "../../lib/activities";
 import { useApiKey, useApiKeyActions, useApiKeys } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { EmptyNote, PageSection, Panel } from "../page/page";
+import { ListSkeleton, ResultError } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -516,6 +518,12 @@ function KeyDialog({
   const first = query.data?.pages[0];
   const key = first?.key;
   const totals = first?.totals;
+  // A first read that failed used to leave 正在读取… for good, with only
+  // 关闭: now 重试, and only a 404 says it is not there (sweep 2026-11-21
+  // E8). A refetch after 停用 that fails keeps what is shown.
+  const missing =
+    query.error instanceof ActivityRequestError && query.error.status === 404;
+  const failed = !first && !missing && query.isError && !query.isFetching;
   const stop = async () => {
     if (!key) return;
     setError(null);
@@ -551,7 +559,11 @@ function KeyDialog({
               : key.status === "revoked"
                 ? "已停用，用它的网站和程序转不了了。"
                 : limitLine(key)
-            : "正在读取…"}
+            : missing
+              ? "没有找到这个密钥。"
+              : failed
+                ? ""
+                : "正在读取…"}
         </MorphLabel>
       }
       actions={
@@ -565,67 +577,75 @@ function KeyDialog({
         </>
       }
     >
-      {key && totals && (
-        <div className="grid gap-4">
-          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-ink-3">每日上限</dt>
-            <dd className="flex min-w-0 items-center gap-1.5 text-ink tabular-nums">
-              <MorphLabel fit={false}>
-                {key.dailyLimitMinor === null
-                  ? "不限"
-                  : `${fishText(key.dailyLimitMinor)} 🐟`}
-              </MorphLabel>
-              {key.status === "active" && (
+      {!missing && (
+        <Swap id={key && totals ? "key" : failed ? "failed" : "wait"}>
+          {key && totals ? (
+            <div className="grid gap-4">
+              <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+                <dt className="text-ink-3">每日上限</dt>
+                <dd className="flex min-w-0 items-center gap-1.5 text-ink tabular-nums">
+                  <MorphLabel fit={false}>
+                    {key.dailyLimitMinor === null
+                      ? "不限"
+                      : `${fishText(key.dailyLimitMinor)} 🐟`}
+                  </MorphLabel>
+                  {key.status === "active" && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      aria-haspopup="dialog"
+                      aria-label="修改每日上限"
+                      className="-my-1.5"
+                      onClick={() => setChangingLimit(true)}
+                    >
+                      修改
+                    </Button>
+                  )}
+                </dd>
+                {[
+                  ["今天", sum(totals.today)],
+                  ["近 7 天", sum(totals.week)],
+                  ["全部", sum(totals.all)],
+                  [
+                    "最近一次转账",
+                    key.lastTransferAt
+                      ? `${clockSeconds(key.lastTransferAt)}${key.lastTransferIp ? `，来自 ${key.lastTransferIp}` : ""}`
+                      : "还没用它转过",
+                  ],
+                  ["末 4 位", `…${key.lastFour}`],
+                  ["新建时间", clockSeconds(key.createdAt)],
+                ].map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-ink-3">{label}</dt>
+                    <dd className="min-w-0 text-ink tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {key.lastTransferIp && key.status === "active" && (
+                <p className="text-xs text-ink-3">
+                  这个 IP 不是你的网站或程序的，就该停用它。
+                </p>
+              )}
+              {/* What it sent opens over this, so 停用 stays in reach. */}
+              {totals.all.count > 0 && (
                 <Button
                   variant="ghost"
                   size="xs"
                   aria-haspopup="dialog"
-                  aria-label="修改每日上限"
-                  className="-my-1.5"
-                  onClick={() => setChangingLimit(true)}
+                  className="-ml-2 gap-0.5 justify-self-start pr-1.5"
+                  onClick={() => setListing(true)}
                 >
-                  修改
+                  用它转的 {totals.all.count} 笔
+                  <ChevronRight aria-hidden="true" />
                 </Button>
               )}
-            </dd>
-            {[
-              ["今天", sum(totals.today)],
-              ["近 7 天", sum(totals.week)],
-              ["全部", sum(totals.all)],
-              [
-                "最近一次转账",
-                key.lastTransferAt
-                  ? `${clockSeconds(key.lastTransferAt)}${key.lastTransferIp ? `，来自 ${key.lastTransferIp}` : ""}`
-                  : "还没用它转过",
-              ],
-              ["末 4 位", `…${key.lastFour}`],
-              ["新建时间", clockSeconds(key.createdAt)],
-            ].map(([label, value]) => (
-              <div key={label} className="contents">
-                <dt className="text-ink-3">{label}</dt>
-                <dd className="min-w-0 text-ink tabular-nums">{value}</dd>
-              </div>
-            ))}
-          </dl>
-          {key.lastTransferIp && key.status === "active" && (
-            <p className="text-xs text-ink-3">
-              这个 IP 不是你的网站或程序的，就该停用它。
-            </p>
+            </div>
+          ) : failed ? (
+            <ResultError onRetry={() => void query.refetch()} />
+          ) : (
+            <ListSkeleton rows={2} />
           )}
-          {/* What it sent opens over this, so 停用 stays in reach. */}
-          {totals.all.count > 0 && (
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-haspopup="dialog"
-              className="-ml-2 gap-0.5 justify-self-start pr-1.5"
-              onClick={() => setListing(true)}
-            >
-              用它转的 {totals.all.count} 笔
-              <ChevronRight aria-hidden="true" />
-            </Button>
-          )}
-        </div>
+        </Swap>
       )}
       <KeyTransfersDialog
         user={user}

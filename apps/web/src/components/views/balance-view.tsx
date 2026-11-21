@@ -3,6 +3,9 @@ import {
   BALANCE_LIMITS,
   type BalanceTopup,
   type BalanceWithdrawal,
+  type CreateTopupInput,
+  type CreateWithdrawalInput,
+  type OwnerAdjustmentInput,
   quoteTopup,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -26,9 +29,11 @@ import {
   useInviteActions,
   useInviteePreview,
   useMyInvites,
+  useOnceRequest,
   useOwnerAdjustment,
   useTopupActions,
   useWithdrawalActions,
+  writeFailureText,
 } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
@@ -609,7 +614,7 @@ function TopupDialog({
     { by: "credit", value: "" },
   );
   const [error, setError] = useState<string | null>(null);
-  const requestId = useRef(crypto.randomUUID());
+  const once = useOnceRequest<CreateTopupInput>();
   const { create } = useTopupActions(user.id);
   const navigate = useNavigate();
   const minor = typedMinor(typed.value);
@@ -635,12 +640,13 @@ function TopupDialog({
     if (!quote || !inRange || busy) return;
     setError(null);
     try {
-      const { topup, cashierUrl } = await create.mutateAsync({
-        requestId: requestId.current,
-        settingsVersion: settings.version,
-        by: typed.by,
-        amount: typed.value.trim().replace(/\.$/, ""),
-      });
+      const { topup, cashierUrl } = await create.mutateAsync(
+        once.input(
+          { by: typed.by, amount: typed.value.trim().replace(/\.$/, "") },
+          { settingsVersion: settings.version },
+        ),
+      );
+      once.settle();
       if (cashierUrl) goToCashier(cashierUrl);
       else {
         onClose();
@@ -650,10 +656,15 @@ function TopupDialog({
         });
       }
     } catch (failure) {
-      // A rate that changed meanwhile: the page reads it again; the boxes stay.
-      requestId.current = crypto.randomUUID();
+      // Turned down (a rate that changed meanwhile: the page reads it
+      // again; the boxes stay): a new request next time. No answer: the
+      // same order again (sweep 2026-11-21 E1).
+      once.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          "没有收到结果，这笔转入可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。",
+        ),
       );
     }
   };
@@ -664,7 +675,7 @@ function TopupDialog({
       onClosed={() => {
         setTyped({ by: "credit", value: "" });
         setError(null);
-        requestId.current = crypto.randomUUID();
+        once.forget();
       }}
       busy={busy}
       title={
@@ -763,15 +774,19 @@ function WithdrawDialog({
   const inputId = useId();
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const requestId = useRef(crypto.randomUUID());
+  const once = useOnceRequest<CreateWithdrawalInput>();
   const { create } = useWithdrawalActions(user.id);
   const navigate = useNavigate();
   const minor = typedMinor(typed);
+  const ask = { by: "debit" as const, amount: typed.trim().replace(/\.$/, "") };
   // At least 1 🐟; under 1 only all of 可用 at once (balance-design §5).
   const allOnly =
     availableMinor > 0 && availableMinor < settings.withdrawMinMinor;
+  // The ask whose outcome is unknown goes again as it was: the server looks
+  // its id up before it checks 可用, so 可用 read since (lower, if it went
+  // through) must not hold it back (sweep 2026-11-21 E1).
   const bound =
-    minor === null || minor <= 0
+    minor === null || minor <= 0 || once.unsure(ask)
       ? null
       : allOnly && minor !== availableMinor
         ? `不到 ${fishText(settings.withdrawMinMinor)} 🐟 时只能全部转出，可用 ${fishText(availableMinor)} 🐟。`
@@ -788,22 +803,25 @@ function WithdrawDialog({
     if (!ready || busy) return;
     setError(null);
     try {
-      const { withdrawal } = await create.mutateAsync({
-        requestId: requestId.current,
-        settingsVersion: settings.version,
-        by: "debit",
-        amount: typed.trim().replace(/\.$/, ""),
-      });
+      const { withdrawal } = await create.mutateAsync(
+        once.input(ask, { settingsVersion: settings.version }),
+      );
+      once.settle();
       onClose();
       void navigate({
         to: "/balance/out/$withdrawalId",
         params: { withdrawalId: withdrawal.id },
       });
     } catch (failure) {
-      // A rate that changed meanwhile: the page reads it again; the box stays.
-      requestId.current = crypto.randomUUID();
+      // Turned down (a rate that changed meanwhile: the page reads it
+      // again; the box stays): a new request next time. No answer, or 500
+      // and up: the same one, so it cannot go twice (sweep 2026-11-21 E1).
+      once.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          "没有收到结果，这笔转出可能已经申请好了。再按一次转出会告诉你结果，不会重复转出。",
+        ),
       );
     }
   };
@@ -814,7 +832,7 @@ function WithdrawDialog({
       onClosed={() => {
         setTyped("");
         setError(null);
-        requestId.current = crypto.randomUUID();
+        once.forget();
       }}
       busy={busy}
       title="转出🐟额"
@@ -881,13 +899,17 @@ function OwnerAdjustDialog({
   const inputId = useId();
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const requestId = useRef(crypto.randomUUID());
+  const once = useOnceRequest<OwnerAdjustmentInput>();
   const adjust = useOwnerAdjustment(user.id);
   const add = direction === "add";
+  const verb = add ? "补加" : "扣回";
   const minor = typedMinor(typed);
-  // A 扣回 is held by 可用 before the cap: that is the bound it meets.
+  const ask = { direction, amount: typed.trim().replace(/\.$/, "") };
+  // A 扣回 is held by 可用 before the cap: that is the bound it meets. Not
+  // the one whose outcome is unknown, which goes again as it was (as in
+  // WithdrawDialog; sweep 2026-11-21 E1).
   const bound =
-    minor === null || minor <= 0
+    minor === null || minor <= 0 || once.unsure(ask)
       ? null
       : !add && minor > availableMinor
         ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟，最多扣回这么多。`
@@ -900,16 +922,16 @@ function OwnerAdjustDialog({
     if (!ready || busy) return;
     setError(null);
     try {
-      await adjust.mutateAsync({
-        requestId: requestId.current,
-        direction,
-        amount: typed.trim().replace(/\.$/, ""),
-      });
+      await adjust.mutateAsync(once.input(ask, {}));
+      once.settle();
       onClose();
     } catch (failure) {
-      requestId.current = crypto.randomUUID();
+      once.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          `没有收到结果，这次${verb}可能已经完成了。再按一次${verb}会告诉你结果，不会重复${verb}。`,
+        ),
       );
     }
   };
@@ -920,7 +942,7 @@ function OwnerAdjustDialog({
       onClosed={() => {
         setTyped("");
         setError(null);
-        requestId.current = crypto.randomUUID();
+        once.forget();
       }}
       busy={busy}
       title={add ? "补加🐟额" : "扣回🐟额"}

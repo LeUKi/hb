@@ -641,6 +641,75 @@ test.describe("🐟额", () => {
       }),
     ]);
   });
+
+  // A requestId is the server's only guard against doing it twice
+  // (balance-design §9.2): a new one only after a definite answer
+  // (sweep 2026-11-21 E1).
+  test("转出：被拒绝后换一个新请求；没收到结果时说清楚，再按一次还是同一个，页面重新读取", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page, { withdraw: true });
+    // The page's reads (its figures and 明细), counted, then as mocked.
+    let reads = 0;
+    await page.route("**/api/me/balance?**", (route) => {
+      reads += 1;
+      return route.fallback();
+    });
+    const asked: { requestId: string }[] = [];
+    await page.route("**/api/me/balance/withdrawals", (route) => {
+      asked.push(route.request().postDataJSON());
+      // Turned down: a rate changed meanwhile.
+      if (asked.length === 1)
+        return route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: "BALANCE_SETTINGS_CHANGED",
+              message: "分发费率或上限刚刚改了，请看一下新的数量再确认。",
+            },
+          },
+        });
+      // The answer lost on the way, then a gateway's error: it may be done.
+      if (asked.length === 2) return route.abort("failed");
+      if (asked.length === 3)
+        return route.fulfill({ status: 502, body: "Bad Gateway" });
+      return route.fulfill({ json: { withdrawal: withdrawal() } });
+    });
+    await page.route(`**/api/me/balance/withdrawals/${withdrawalId}`, (route) =>
+      route.fulfill({ json: { withdrawal: withdrawal() } }),
+    );
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "转出", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "转出🐟额" });
+    // Named 转出 only while it is not on its way (正在申请…).
+    const send = dialog.getByRole("button", { name: "转出", exact: true });
+    await dialog.getByLabel("转出数量").fill("10");
+    const before = reads;
+    await send.click();
+    await expect(
+      dialog.getByText("分发费率或上限刚刚改了，请看一下新的数量再确认。"),
+    ).toBeVisible();
+    // Read again, so the next try goes with the new rate.
+    await expect.poll(() => reads).toBeGreaterThan(before);
+    await send.click();
+    const unsure =
+      "没有收到结果，这笔转出可能已经申请好了。再按一次转出会告诉你结果，不会重复转出。";
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await send.click();
+    await expect.poll(() => asked.length).toBe(3);
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await send.click();
+    await expectPath(page, `/balance/out/${withdrawalId}`);
+    const ids = asked.map(({ requestId }) => requestId);
+    expect(ids).toHaveLength(4);
+    expect(ids[1]).not.toBe(ids[0]);
+    expect(ids.slice(2)).toEqual([ids[1], ids[1]]);
+  });
+
   test("转账：找到人才能转，选到哪，确认后说转给了谁；发到 Credit 有它的限制", async ({
     page,
   }) => {
@@ -751,6 +820,94 @@ test.describe("🐟额", () => {
         remark: "午饭钱",
       }),
     ]);
+  });
+
+  test("转账：没收到结果时说清楚，再按一次还是同一个请求，读到的可用变少也不拦着，不会转两次", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page, { withdraw: true });
+    await page.route("**/api/me/balance/recipients?**", (route) =>
+      route.fulfill({
+        json: {
+          user: {
+            userId: "12345",
+            username: "Friend",
+            displayName: "新朋友",
+            avatarUrl: null,
+          },
+          self: false,
+          owner: false,
+        },
+      }),
+    );
+    const sent: { requestId: string }[] = [];
+    await page.route("**/api/me/balance/transfers", (route) => {
+      sent.push(route.request().postDataJSON());
+      // The answer lost on the way, then the server's unexpected error.
+      if (sent.length === 1) return route.abort("failed");
+      if (sent.length === 2)
+        return route.fulfill({
+          status: 500,
+          json: {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Unexpected API error",
+            },
+          },
+        });
+      return route.fulfill({
+        json: {
+          transfer: {
+            id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+            direction: "out",
+            destination: "balance",
+            amountMinor: 1200,
+            remark: null,
+            counterpart: {
+              userId: "12345",
+              username: "Friend",
+              displayName: "新朋友",
+              avatarUrl: null,
+            },
+            apiKeyName: null,
+            outTransferNo: null,
+            status: "sent",
+            withdrawal: null,
+            createdAt: Date.now(),
+          },
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "转账", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "转账" });
+    await dialog.getByLabel("收款人").fill("friend");
+    await expect(dialog.getByText("新朋友 @Friend")).toBeVisible();
+    await dialog.getByLabel("数量").fill("12");
+    await dialog.getByRole("button", { name: "转账", exact: true }).click();
+    const confirm = page.getByRole("dialog", {
+      name: "转给 @Friend 12.00 🐟？",
+    });
+    // It went through, only its answer was lost: read again, 可用 is less.
+    await mockBalance(page, { withdraw: true, availableMinor: 34 });
+    // Named 确认转账 only while it is not on its way (正在转账…).
+    const again = confirm.getByRole("button", { name: "确认转账" });
+    await again.click();
+    const unsure =
+      "没有收到结果，这笔可能已经转给对方了。再按一次确认转账会告诉你结果，不会重复转。";
+    await expect(confirm.getByText(unsure)).toBeVisible();
+    await expect(dialog.getByText("可用 0.34 🐟").first()).toBeAttached();
+    await again.click();
+    await expect.poll(() => sent.length).toBe(2);
+    await expect(confirm.getByText(unsure)).toBeVisible();
+    await again.click();
+    await expect(dialog.getByText("已转给 @Friend 12.00 🐟。")).toBeVisible();
+    expect(sent).toHaveLength(3);
+    expect(new Set(sent.map(({ requestId }) => requestId)).size).toBe(1);
   });
 
   test("转账走对方的收银台：对方有可用的商户才能选，只填付多少，列出各等级实收，直接去 Credit 站确认", async ({
@@ -1023,6 +1180,62 @@ test.describe("🐟额", () => {
     await expect(form).toHaveCount(0);
     await expect(detail.getByText("50.00 🐟", { exact: true })).toBeVisible();
     expect(changes).toEqual([{ dailyLimit: "50" }]);
+  });
+
+  test("开放接口密钥：详情没读到时说读取失败，能重试，不一直停在正在读取", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page);
+    const current: BalanceApiKey = {
+      id: "key-1",
+      name: "我的小站",
+      lastFour: "2345",
+      status: "active",
+      dailyLimitMinor: null,
+      usedTodayMinor: 0,
+      createdAt: Date.now() - 86_400_000,
+      lastTransferAt: null,
+      lastTransferIp: null,
+      transferCount: 0,
+      transferTotalMinor: 0,
+      revokedAt: null,
+      revokeReason: null,
+    };
+    await page.route("**/api/me/balance/api-keys", (route) =>
+      route.fulfill({ json: { items: [current], max: 10 } }),
+    );
+    let reads = 0;
+    await page.route("**/api/me/balance/api-keys/key-1*", (route) => {
+      reads += 1;
+      if (reads === 1)
+        return route.fulfill({
+          status: 500,
+          json: {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Unexpected API error",
+            },
+          },
+        });
+      const none = { count: 0, totalMinor: 0 };
+      return route.fulfill({
+        json: {
+          key: current,
+          totals: { today: none, week: none, all: none },
+          transfers: [],
+          nextCursor: null,
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    await page.getByRole("button", { name: /我的小站/ }).click();
+    const waiting = page.getByRole("dialog", { name: "密钥", exact: true });
+    await expect(waiting.getByText("读取失败")).toBeVisible();
+    await expect(waiting.getByText("正在读取…")).toHaveCount(0);
+    await waiting.getByRole("button", { name: "重试" }).click();
+    const detail = page.getByRole("dialog", { name: "密钥「我的小站」" });
+    await expect(detail.getByText("每日上限", { exact: true })).toBeVisible();
   });
 
   test("开放接口密钥：停用的收进二级弹窗，详情里的停用不用翻流水", async ({

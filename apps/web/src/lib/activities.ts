@@ -22,6 +22,7 @@ import {
 } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 import { api } from "../api";
+import { answered } from "./answered";
 import { sessionQueryKey, useAccountSession } from "./auth";
 import { MAINTENANCE, noteMaintenance } from "./maintenance";
 
@@ -52,6 +53,44 @@ export function refused(error: unknown): error is ActivityRequestError {
   );
 }
 
+/**
+ * A failure in words for a notice: the server's refusal or the app's own
+ * error as thrown; `unknown` — the flow's own words — when there was no
+ * answer (fetch's TypeError), an answer that was not JSON (SyntaxError), an
+ * abort, or a 5xx whose outcome is not known (07 §1; sweep 2026-11-21).
+ */
+export function failureText(failure: unknown, unknown: string) {
+  if (failure instanceof ActivityRequestError)
+    return refused(failure) ? failure.message : unknown;
+  return failure instanceof Error &&
+    !(
+      failure instanceof TypeError ||
+      failure instanceof SyntaxError ||
+      failure instanceof DOMException
+    )
+    ? failure.message
+    : unknown;
+}
+
+/**
+ * An error answer in the product's words (07 §1). The server's own
+ * refusals are written in Chinese and kept; what comes in English — the
+ * session's "Authentication required" and "Invalid CSRF token", a 500's
+ * "Unexpected API error" — or not as JSON at all (a gateway's 502) is said
+ * plainly by its status instead of shown as it came (sweep 2026-11-21).
+ */
+function answerText(status: number, body: ActivityError | undefined) {
+  const message = body?.error?.message;
+  if (status === 409 && body?.error?.code === "ACTIVITY_VERSION_CONFLICT")
+    return "红包内容已发生变化，请刷新后再试。";
+  if (message && /\p{Script=Han}/u.test(message)) return message;
+  if (status === 401) return "登录已失效，请重新登录。";
+  if (status === 403) return "登录状态变了，请刷新页面后再试。";
+  if (status === 429) return "尝试过于频繁，请稍后再试。";
+  if (status >= 500) return "网络或服务出了问题，结果还没确认。";
+  return "请求没有完成，请稍后再试。";
+}
+
 export async function readResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let body: ActivityError | undefined;
@@ -64,10 +103,7 @@ export async function readResponse<T>(response: Response): Promise<T> {
       response.status === 503 && body?.error?.code === MAINTENANCE,
     );
     throw new ActivityRequestError(
-      response.status === 409 &&
-        body?.error?.code === "ACTIVITY_VERSION_CONFLICT"
-        ? "红包内容已发生变化，请刷新后再试。"
-        : (body?.error?.message ?? `请求失败：HTTP ${response.status}`),
+      answerText(response.status, body),
       response.status,
       body?.error?.issues,
       retryAfter(response.headers.get("Retry-After")),
@@ -185,7 +221,10 @@ export function useHistorySummary(userId: string) {
     queryKey: ["history-private", userId, "summary"],
     queryFn: async ({ signal }) =>
       readResponse<AccountHistorySummary>(
-        await fetch("/api/me/history-summary", { signal, cache: "no-store" }),
+        await answered("/api/me/history-summary", {
+          signal,
+          cache: "no-store",
+        }),
       ),
     retry: false,
     refetchOnWindowFocus: false,
@@ -310,7 +349,7 @@ export function useActivityWrites(
   id?: string,
 ) {
   const queryClient = useQueryClient();
-  const options = { headers: { "X-CSRF-Token": csrfToken } };
+  const options = { headers: { "X-CSRF-Token": csrfToken }, fetch: answered };
   const account = useAccountSession(userId);
   const onError = (
     error: Error,
@@ -365,6 +404,22 @@ export function useActivityWrites(
   };
   return {
     isCurrentSession: account.isCurrentSession,
+    /**
+     * A read of it taken on the way (use-submit, after a 409): into its
+     * page's cache as a save's answer goes, unless a newer one is there,
+     * so the next save sends the version it has now (sweep 2026-11-21).
+     */
+    adopt: async (activity: ManagedActivity) => {
+      if (!account.isCurrentSession()) return;
+      const detailKey = activityKeys.detail(userId, activity.id);
+      await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
+      const cached = queryClient.getQueryData<{ activity: ManagedActivity }>(
+        detailKey,
+      );
+      if (!account.isCurrentSession()) return;
+      if (cached && cached.activity.version > activity.version) return;
+      queryClient.setQueryData(detailKey, { activity });
+    },
     create: useMutation({
       // 震动反馈: the form feels its own save (use-submit).
       meta: { haptics: false },
@@ -478,7 +533,7 @@ export function useAttachedPageCheck(url: string | null) {
     enabled: url !== null,
     queryFn: async ({ signal }) =>
       readResponse<AttachedPageCheck>(
-        await fetch(
+        await answered(
           `/api/me/attached-page/check?url=${encodeURIComponent(url ?? "")}`,
           { signal, cache: "no-store" },
         ),

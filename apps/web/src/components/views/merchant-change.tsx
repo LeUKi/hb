@@ -25,7 +25,12 @@ export function clientIdError(value: string) {
 export function saveError(error: unknown, what: string) {
   if (error instanceof ActivityRequestError) {
     if (error.status === 429) return "尝试过于频繁，请稍后再试。";
-    if (error.status === 409)
+    // Only a conflict reads as changed elsewhere; another 409 (one merchant
+    // per account) says its own words, or every retry fails the same way
+    // under the wrong reason. A Client ID already taken still comes as
+    // MERCHANT_CONFLICT until the API gives it a code of its own
+    // (sweep 2026-11-21).
+    if (error.status === 409 && error.code === "MERCHANT_CONFLICT")
       return "保存失败：商户配置刚在别处改过。你的输入还在，确认后再保存一次。";
     if (refused(error) && error.message) return error.message;
   }

@@ -318,15 +318,28 @@ describe("🐟额红包", () => {
       create(fish({ mode: "fixed", totalAmount: "1.00", count: 1 })),
     ).rejects.toMatchObject({ code: "BALANCE_HONGBAO_PAUSED" });
 
-    // With nothing in 🐟额, 🐟额 is not a choice at all.
+    // With nothing in 🐟额 the draft still saves; opening says why it
+    // cannot (07 发多少: 可用不够 never stops a draft; sweep 2026-11-21).
     await switchOn();
     const empty = await actor();
+    const unfunded = await createActivity(bindings, empty.id, {
+      requestId: crypto.randomUUID(),
+      activity: fish({ mode: "fixed", totalAmount: "1.00", count: 1 }),
+    });
+    expect(unfunded).toMatchObject({
+      status: "draft",
+      openingBlockedReason: "BALANCE_INSUFFICIENT",
+    });
     await expect(
-      createActivity(bindings, empty.id, {
-        requestId: crypto.randomUUID(),
-        activity: fish({ mode: "fixed", totalAmount: "1.00", count: 1 }),
-      }),
-    ).rejects.toMatchObject({ code: "BALANCE_INSUFFICIENT" });
+      openActivity(bindings, unfunded.id, empty.id, unfunded.version),
+    ).rejects.toMatchObject({
+      code: "BALANCE_INSUFFICIENT",
+      message: "🐟额可用只有 0.00 🐟，不够发这个红包。",
+    });
+    expect(await account(empty)).toMatchObject({
+      availableMinor: 0,
+      lockedMinor: 0,
+    });
     // A 🐟额红包 names no merchant, a 商户直发 one must.
     await expect(
       create(
