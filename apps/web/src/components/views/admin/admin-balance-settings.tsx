@@ -1,8 +1,10 @@
 import type { BalanceSettings, PlatformApp } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { refused } from "../../../lib/activities";
+import { adminKey, useAdminIdentity } from "../../../lib/admin";
 import {
   type BalanceSettingsResponse,
   useBalanceAdmin,
@@ -17,6 +19,35 @@ import { Field, SecretInput, Switch, TextInput } from "../../ui/field";
 import { fishText } from "../../ui/fish";
 import { Reveal, RevealInline } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
+
+/**
+ * Reads 🐟额's settings again, past any cache, after a 409: the page's own
+ * read only comes back when the tab is shown again, so a save made on
+ * another device left the form on the old version and every save after it
+ * refused (sweep 2026-11-21). The fresh answer, or null when it could not be
+ * read. The key is useBalanceSettings' (lib/admin-balance.ts); the answer
+ * becomes the page's data for both sections. Also has 操作记录 read again.
+ */
+function useRereadBalanceSettings() {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  return {
+    reread: async () => {
+      const queryKey = adminKey(identity, "balance", "settings");
+      const started = Date.now();
+      await queryClient.refetchQueries({ queryKey, exact: true });
+      const state =
+        queryClient.getQueryState<BalanceSettingsResponse>(queryKey);
+      return state?.status === "success" && state.dataUpdatedAt >= started
+        ? (state.data ?? null)
+        : null;
+    },
+    rereadAudit: () =>
+      void queryClient.invalidateQueries({
+        queryKey: adminKey(identity, "audit"),
+      }),
+  };
+}
 
 const percentValid = (value: string) =>
   /^\d{1,2}$/.test(value.trim()) && Number(value) <= 50;
@@ -57,6 +88,7 @@ export function BalanceSettingsSection({
   const identity = useIdentity();
   const navigate = useNavigate();
   const actions = useBalanceAdmin(identity.csrfToken ?? "");
+  const { reread, rereadAudit } = useRereadBalanceSettings();
   const [base, setBase] = useState<BalanceSettings | null>(null);
   const shown = base ?? data.settings;
   const [draft, setDraft] = useState<Draft>({});
@@ -97,29 +129,54 @@ export function BalanceSettingsSection({
     if (!changed || !ok || busy) return;
     setBusy(true);
     setError(null);
+    const expected = shown.version;
+    const next = {
+      topupEnabled: values.topupEnabled,
+      withdrawEnabled: values.withdrawEnabled,
+      topupFeePercent: Number(values.topupFee),
+      withdrawFeePercent: Number(values.withdrawFee),
+      withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
+      hongbaoEnabled: values.hongbaoEnabled,
+      transferEnabled: values.transferEnabled,
+      pageEnabled: values.pageEnabled,
+      tipEnabled: values.tipEnabled,
+      tipPasswordFreeEnabled: values.tipPasswordFreeEnabled,
+    };
     try {
-      await actions.saveSettings({
-        expectedVersion: shown.version,
-        topupEnabled: values.topupEnabled,
-        withdrawEnabled: values.withdrawEnabled,
-        topupFeePercent: Number(values.topupFee),
-        withdrawFeePercent: Number(values.withdrawFee),
-        withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
-        hongbaoEnabled: values.hongbaoEnabled,
-        transferEnabled: values.transferEnabled,
-        pageEnabled: values.pageEnabled,
-        tipEnabled: values.tipEnabled,
-        tipPasswordFreeEnabled: values.tipPasswordFreeEnabled,
-      });
+      await actions.saveSettings({ expectedVersion: expected, ...next });
       setBase(null);
       setDraft({});
       setDone(true);
+      rereadAudit();
     } catch (failure) {
       if (refused(failure) && failure.status === 409) {
-        // Someone saved first: their version under what was typed.
-        setBase(null);
+        // Someone saved first: their version, read now, under what was
+        // typed. Still busy until it is read, so the next save carries it.
+        const fresh = await reread();
+        if (!fresh) {
+          setError(
+            "保存没有完成：🐟额设置刚在别处改过，但没能读到新版本。稍后刷新页面再保存。",
+          );
+          return;
+        }
+        const saved = fresh.settings;
+        if (
+          (Object.keys(next) as (keyof typeof next)[]).every(
+            (field) => saved[field] === next[field],
+          )
+        ) {
+          // What is saved now is what was typed (a save whose answer was
+          // lost, retried): nothing left to do.
+          setBase(null);
+          setDraft({});
+          setDone(true);
+          rereadAudit();
+          return;
+        }
+        // Pinned to the version read, as the attempt intervals are.
+        setBase(saved);
         setError(
-          "保存失败：🐟额设置刚被改过，已读到新版本。你的输入还在，确认后再保存一次。",
+          `保存没有完成：🐟额设置刚在别处改成第 ${saved.version} 版。你的输入还在，确认后再保存一次。`,
         );
       } else
         setError(failure instanceof Error ? failure.message : "保存没有完成。");
@@ -315,12 +372,22 @@ export function PlatformAppSection({
 }) {
   const identity = useIdentity();
   const actions = useBalanceAdmin(identity.csrfToken ?? "");
+  const { reread } = useRereadBalanceSettings();
   const ids = { label: useId(), clientId: useId(), secret: useId() };
   const [label, setLabel] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A save says so, as the other forms on this page do; a key-only save
+  // otherwise just emptied the field (sweep 2026-11-21). The check's state
+  // is the chip above.
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => setDone(false), 2400);
+    return () => window.clearTimeout(timer);
+  }, [done]);
   const requestId = useRef(crypto.randomUUID());
   const shownLabel = label ?? app?.label ?? "🐟额";
   const shownClientId = clientId ?? app?.clientId ?? "";
@@ -339,6 +406,7 @@ export function PlatformAppSection({
     if (!changed || !ok || busy) return;
     setBusy("save");
     setError(null);
+    setDone(false);
     try {
       await actions.savePlatformApp({
         requestId: requestId.current,
@@ -351,9 +419,20 @@ export function PlatformAppSection({
       setClientId(null);
       setSecret("");
       requestId.current = crypto.randomUUID();
+      setDone(true);
     } catch (failure) {
       requestId.current = crypto.randomUUID();
-      setError(failure instanceof Error ? failure.message : "保存没有完成。");
+      if (refused(failure) && failure.status === 409) {
+        // Changed elsewhere: read it now, so the next save carries its
+        // version; what was typed stays (sweep 2026-11-21).
+        const fresh = await reread();
+        setError(
+          fresh
+            ? "保存没有完成：平台应用刚在别处改过，已读到新的内容。你的输入还在，确认后再保存一次。"
+            : "保存没有完成：平台应用刚在别处改过，但没能读到新的内容。稍后刷新页面再保存。",
+        );
+      } else
+        setError(failure instanceof Error ? failure.message : "保存没有完成。");
     } finally {
       setBusy(null);
     }
@@ -411,7 +490,10 @@ export function PlatformAppSection({
                 id={ids.label}
                 value={shownLabel}
                 maxLength={100}
-                onChange={(event) => setLabel(event.target.value)}
+                onChange={(event) => {
+                  setLabel(event.target.value);
+                  setDone(false);
+                }}
               />
             </Field>
             <Field label="Client ID" htmlFor={ids.clientId}>
@@ -421,7 +503,10 @@ export function PlatformAppSection({
                 value={shownClientId}
                 autoComplete="off"
                 spellCheck={false}
-                onChange={(event) => setClientId(event.target.value)}
+                onChange={(event) => {
+                  setClientId(event.target.value);
+                  setDone(false);
+                }}
               />
             </Field>
           </div>
@@ -445,7 +530,10 @@ export function PlatformAppSection({
             <SecretInput
               id={ids.secret}
               value={secret}
-              onChange={(event) => setSecret(event.target.value)}
+              onChange={(event) => {
+                setSecret(event.target.value);
+                setDone(false);
+              }}
             />
           </Field>
           <Reveal show={Boolean(error)}>
@@ -453,7 +541,7 @@ export function PlatformAppSection({
               {error}
             </p>
           </Reveal>
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="submit"
               variant="primary"
@@ -466,6 +554,14 @@ export function PlatformAppSection({
                   ? "保存平台应用"
                   : "新建平台应用"}
             </Button>
+            <span role="status" className="text-sm text-success">
+              <RevealInline show={done}>
+                <span className="inline-flex items-center gap-1">
+                  <Check className="size-4" aria-hidden="true" />
+                  已保存
+                </span>
+              </RevealInline>
+            </span>
           </div>
         </form>
       </Panel>

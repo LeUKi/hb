@@ -1222,6 +1222,18 @@
     --btn-inset: inset 0 1px 3px rgb(42 21 25 / 0.1);
     --btn-drop: none;
   }
+  /* 附带网页 floats over the 红包's cover, red or black lacquer: an 8% tint
+     there left it a faint outline, the toggle that closes the page all but
+     gone. A near-opaque face greyer than white, pressed in and without the
+     drop, reads on red, on lacquer and on the light content scrolled under
+     it; the dark rule further down still wins in dark mode (sweep
+     2026-11-21). */
+  [data-hb-part="actions"] .btn-secondary[aria-pressed="true"] {
+    --btn-top: rgb(236 226 228 / 0.9);
+    --btn-bottom: rgb(236 226 228 / 0.9);
+    --btn-inset: inset 0 1px 3px rgb(42 21 25 / 0.2);
+    --btn-drop: none;
+  }
   .btn-ghost {
     color: var(--color-ink-2);
   }
