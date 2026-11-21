@@ -237,7 +237,7 @@
   - `points_systems`（配置、状态、自检、审核、熔断）、`points_copy_changes`（文案改动，站长看过记 `seen_at`）、`points_self_tests`（每一步的记录，密钥打码）、`points_keys`（发红包的人的密钥，加密，每人每种一把）、`points_payments`（每一笔发放）、`points_calls`（每一次调用，后台统计用，保留 30 天）、`points_settings`（总开关，带版本）。
   - `activities` 加 `points_system_id`；`funding` 加 `points`。`funding` 由触发器检查，换掉 `activities_funding_insert_valid` 和 `_update_valid` 两个触发器即可，不重建大表。三方积分红包 `payment_mode` 记 `real`，`merchant_id` 为空。
 - **不走 LDC 的付款流水**：LDC 的 `payment_tasks` 有“同一单号查过才能重发、无限等待”一整套触发器和恢复规则，和“业务失败当场结束、网络问题最多 3 次”正好相反。三方积分用自己的 `points_payments`，规则简单，也不会碰坏 LDC 的付款。
-- **怎么调用对方**：领取的同一批写入里插一行 `points_payments`，写完由队列（`PAYMENT_QUEUE`，消息 `points.run`）去发；重试用队列的延迟投递（1、5、30 分钟），每 5 分钟的维护任务再兜底扫一遍到期的。都不在红包自己的对象里等对方回复。同一笔用租约防止同时发两次。
+- **怎么调用对方**：领取的同一批写入里插一行 `points_payments`，写完由队列（`PAYMENT_QUEUE`，消息 `points.run`）去发；重试用队列的延迟投递（1、5、30 分钟），每 5 分钟的维护任务再兜底扫一遍到期的。都不在红包自己的对象里等对方回复。同一笔用租约防止同时发两次；租约过期、这一次没留下任何回复（比如密钥读不出来，每次都在半路出错），算一次没拿到回复，重发用完以后标“结果不明”停下等站长（2026-11-21：原来这种一直不算次数，每 5 分钟重发一次，没有尽头）。
 - **结果怎么给页面**：领取详情、名单照旧拿 `PaymentView`（状态 pending、sending、confirmed、attention、failed 等），从 `points_payments` 换算出来，网页现有的“发放中、已到账、未发出、重新发送”都能直接用；三方积分专有的文案（找不到收款人、不允许、到账说明）另带在红包的三方积分信息里。
 - **页面**：`/points`（我接入的三方积分）、`/points/:id/edit`（设置页：每一项旁边的预览、接口测试、提交）、`/points/:id`（详情页，登录的人还能在这里管自己的密钥）、`/admin/points`（审核和后台）。
 - **网页显示**：一个金额组件 `UnitAmount`、一个 `unitOf(红包)`；现有约 120 处写死的 “LDC” 逐处换掉（只换显示红包金额的地方，🐟额、Credit、商户、打赏这些本来就是 LDC 的不动）。
