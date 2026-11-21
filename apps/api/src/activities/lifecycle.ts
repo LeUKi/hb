@@ -116,17 +116,38 @@ export async function sweepActivityLifecycle(env: ApiBindings) {
   let cursor = "";
   let processed = 0;
   for (;;) {
-    const page =
-      await env.DB.prepare(`SELECT id FROM activities WHERE id > ? AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND
-      ((ended_at IS NULL AND deadline <= ${databaseNow}) OR (ended_at IS NOT NULL AND archived_at IS NULL AND ended_at + ? <= ${databaseNow})
+    // The candidates come first, each from its own index (migration 0074),
+    // so a run reads the 红包 running now and those waiting to archive, not
+    // every 红包 ever sent (sweep 2026-11-21, B8). They only narrow where to
+    // look: the conditions after them are the ones used before and still
+    // decide, and every row those conditions pass is a candidate (the 红包
+    // running now cover both open cases: past the deadline, and ended by a
+    // judgment). The settling set repeats activities_unfinished_draw_idx's
+    // own terms so that index serves it. D1 takes at most five terms in one
+    // compound SELECT, so the sets from other tables sit in one subquery. A
+    // judgment that ended a 红包 is looked up for that 红包 alone (EXISTS: the
+    // same truth as IN here, as neither id is ever null), not read from
+    // every such judgment ever made.
+    const page = await env.DB.prepare(`SELECT id FROM activities WHERE id IN (
+        SELECT id FROM activities WHERE reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
+        UNION SELECT id FROM activities WHERE reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL
+          AND ended_at IS NOT NULL AND archived_at IS NULL AND ended_at <= ${databaseNow} - ?2
+        UNION SELECT id FROM activities WHERE draw_state = 'settling' AND deleted_at IS NULL AND opened_at IS NOT NULL
+          AND draw_state IN ('waiting','settling')
+        UNION SELECT activity_id FROM (
+          SELECT activity_id FROM redemption_submissions WHERE outcome = 'pending' AND purpose = 'claim'
+          UNION SELECT activity_id FROM balance_locks WHERE purpose = 'activity' AND status = 'active'
+          UNION SELECT activity_id FROM activity_code WHERE protocol >= 5 AND settled_at IS NULL))
+      AND id > ?1 AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND
+      ((ended_at IS NULL AND deadline <= ${databaseNow}) OR (ended_at IS NOT NULL AND archived_at IS NULL AND ended_at + ?2 <= ${databaseNow})
         OR draw_state='settling'
         OR id IN (SELECT activity_id FROM redemption_submissions WHERE outcome = 'pending' AND purpose = 'claim')
-        OR (ended_at IS NULL AND id IN (SELECT activity_id FROM code_judgments WHERE ends = 1))
+        OR (ended_at IS NULL AND EXISTS(SELECT 1 FROM code_judgments WHERE activity_id = activities.id AND ends = 1))
         OR (ended_at IS NOT NULL AND id IN (SELECT activity_id FROM balance_locks WHERE purpose = 'activity' AND status = 'active'))
         OR (ended_at IS NOT NULL AND id IN (SELECT activity_id FROM activity_code WHERE protocol >= 5 AND settled_at IS NULL)))
       ORDER BY id LIMIT 50`)
-        .bind(cursor, ARCHIVE_DELAY_MS)
-        .all<{ id: string }>();
+      .bind(cursor, ARCHIVE_DELAY_MS)
+      .all<{ id: string }>();
     if (!page.results.length) break;
     // Bounded fan-out avoids turning an overdue batch into an unbounded subrequest burst.
     for (let start = 0; start < page.results.length; start += 5) {

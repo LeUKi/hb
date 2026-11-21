@@ -38,6 +38,7 @@ import { activities, sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { withForumAvatars } from "../src/mini/forum-avatars";
 import { createMerchant } from "../src/payments/merchants";
+import { sweepPointsPayments } from "../src/points/payments";
 import { sha256Hex } from "../src/security/crypto";
 import { findUserByUsername } from "../src/users/find";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
@@ -1550,5 +1551,49 @@ describe("D1 reads that would grow with the data (06 §12)", () => {
     // The four 红包 themselves; not their 32 claims' submissions (it read 39).
     const rows = await rowsReadDuring(() => sweepActivityLifecycle(bindings));
     expect(rows).toBeLessThanOrEqual(8);
+  }, 60_000);
+
+  it("sweeps from the 红包 and payouts still open, not every one ever made (sweep 2026-11-21)", async () => {
+    // Two 红包 running beside more and more archived long ago: the
+    // lifecycle sweep walked every one by id, every five minutes (B8). What
+    // it reads now stays the same however many are archived.
+    await create();
+    await create();
+    const longAgo = Date.now() - 30 * 86_400_000;
+    const archiveMore = async (count: number) => {
+      for (let index = 0; index < count; index++) {
+        const activity = await create();
+        await env.DB.prepare(
+          "UPDATE activities SET ended_at=?1,end_reason='expired',archived_at=?1+?2,version=version+1 WHERE id=?3",
+        )
+          .bind(longAgo, ARCHIVE_DELAY_MS, activity.id)
+          .run();
+      }
+      return rowsReadDuring(() => sweepActivityLifecycle(bindings));
+    };
+    const few = await archiveMore(4);
+    const many = await archiveMore(16);
+    expect(many).toBe(few);
+    const untouched = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM activities WHERE ended_at IS NULL",
+    ).first<{ n: number }>("n");
+    expect(untouched).toBe(2);
+    // 三方积分's sweep finds stale leases and lapsed resends by status, not
+    // by reading every payout (B5).
+    const statements = await statementsDuring(() =>
+      sweepPointsPayments(bindings),
+    );
+    const scans: string[] = [];
+    for (const { sql, params } of statements) {
+      if (!/\bpoints_payments\b/.test(sql)) continue;
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...params)
+        .all<{ detail: string }>();
+      for (const { detail } of plan.results)
+        if (/^SCAN points_payments\b/.test(detail))
+          scans.push(`${detail} in ${sql.replace(/\s+/g, " ").slice(0, 90)}`);
+    }
+    expect(statements.some(({ sql }) => /status='held'/.test(sql))).toBe(true);
+    expect(scans).toEqual([]);
   }, 60_000);
 });
