@@ -9,6 +9,7 @@ import {
   advanceLedger,
   nextSubmission,
   startScenario,
+  unitFieldsOf,
 } from "./scenario.mjs";
 import { LEDGER_PROTOCOL, readVerdict } from "./verdict.mjs";
 
@@ -32,17 +33,34 @@ export function answersOf(judgment) {
   );
 }
 
+/**
+ * hongbao.unit, step and points as the site gave the code (protocol 5):
+ * from the records, where the site writes them (🐟 and 三方积分 too, whose
+ * amounts the records give in 最小单位); LDC's for a file from before it
+ * did, or before protocol 5 (sweep 2026-11-21).
+ */
+export function unitsOfRecords(records) {
+  const { hongbao } = records;
+  if (records.protocol < LEDGER_PROTOCOL || typeof hongbao.unit !== "string")
+    return unitFieldsOf(null);
+  return {
+    unit: hongbao.unit,
+    step: hongbao.step,
+    points: hongbao.points ?? null,
+  };
+}
+
 /** Each judgment's submission, in order. */
 export function submissionsOf(records) {
   const { hongbao } = records;
+  const ledgered = records.protocol >= LEDGER_PROTOCOL;
   const scenario = startScenario({
     hongbao: {
       total: hongbao.total,
-      ...(records.protocol < LEDGER_PROTOCOL
-        ? { count: hongbao.count, minEach: hongbao.minEach }
-        : {}),
+      ...(!ledgered ? { count: hongbao.count, minEach: hongbao.minEach } : {}),
       openedAt: hongbao.openedAt,
       endsAt: hongbao.endsAt,
+      ...(ledgered ? { units: unitsOfRecords(records) } : {}),
     },
     hongbaoId: hongbao.id,
     secret: hongbao.seed,

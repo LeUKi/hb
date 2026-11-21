@@ -17,6 +17,7 @@ import { attemptAssociatedData } from "../activities/claim-service";
 import { ActivityError } from "../activities/errors";
 import { type ActivityRow, ownedActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
+import { judgeUnitOf, stepText } from "../points/judge";
 import { decryptString } from "../security/crypto";
 import { declarationsFor, judgedParams } from "./params";
 import { publicJudge } from "./public";
@@ -137,6 +138,14 @@ async function recordsOf(
   if (!judge?.seedCommitment || activity.openedAt === null)
     throw new ActivityError(404, "NOT_OPENED", "红包开放之后才有领取记录。");
   const config = JSON.parse(activity.config) as LdcActivityInput;
+  // Protocol 5's amounts as the code saw and wrote them: a 三方积分红包's in
+  // its 最小单位 (points/judge.ts; docs/third-party-points-design.md §10).
+  // The ledger keeps them in 分, multiplied by the step on the way in, so
+  // dividing back is exact; LDC and 🐟 are step 1. Without it, npm run
+  // replay read every such 红包 as 不一致 (sweep 2026-11-21).
+  const ledgered = judge.protocol >= LEDGER_PROTOCOL;
+  const unit = judgeUnitOf(activity);
+  const inSteps = (minor: number) => (ledgered ? minor / unit.step : minor);
   const judgments = await Promise.all(
     rows.results.map(async (row) => {
       const state =
@@ -173,6 +182,14 @@ async function recordsOf(
               player: NonNullable<Verdict["player"]>;
               others: NonNullable<Verdict["others"]>;
             });
+      if (ledger) {
+        ledger.add = inSteps(ledger.add);
+        ledger.others = ledger.others.map((other) =>
+          other.add === undefined
+            ? other
+            : { ...other, add: inSteps(other.add) },
+        );
+      }
       const written: Verdict = ledger
         ? {
             ...(ledger.shorthand
@@ -261,10 +278,19 @@ async function recordsOf(
       : {}),
     hongbao: {
       id: activity.id,
-      total: ldcTotalMinor(config),
+      total: inSteps(ldcTotalMinor(config)),
       // Shares before protocol 5 only.
-      ...(judge.protocol < LEDGER_PROTOCOL
+      ...(!ledgered
         ? { count: activity.totalCount, minEach: judge.minEachMinor }
+        : {}),
+      // From protocol 5 the code is told its unit (hongbaoForJudge): a
+      // replay gives it the same, 🐟 and 三方积分 too.
+      ...(ledgered
+        ? {
+            unit: unit.unit,
+            step: stepText(unit.step),
+            points: unit.points,
+          }
         : {}),
       openedAt: activity.openedAt,
       endsAt: activity.deadline ?? 0,

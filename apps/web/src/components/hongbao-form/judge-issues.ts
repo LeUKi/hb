@@ -1,7 +1,10 @@
-import type {
-  JudgeDeclarations,
-  JudgeHongbaoRules,
-  JudgeParamProblem,
+import {
+  type AmountUnit,
+  formatFullAmount,
+  type JudgeDeclarations,
+  type JudgeHongbaoRules,
+  type JudgeParamProblem,
+  LDC_UNIT,
 } from "@hb/contracts";
 import {
   hongbaoRuleProblems,
@@ -66,12 +69,14 @@ export function paramsLineOf(
 /**
  * The 判定器's problems with the form: each param's (its declared rules,
  * then what check() said of these very params), and 发多少 outside its
- * ranges (§4: “这个判定器要求 1–10 份”).
+ * ranges (§4: “这个判定器要求 1–10 份”), in the form's unit.
  */
 export function judgeIssuesOf(
   form: FormState,
   declarations: JudgeDeclarations | null,
   checked: JudgeParamProblem[],
+  /** The form's unit (useFormUnit): a 三方积分红包's 最小单位. */
+  unit: AmountUnit = LDC_UNIT,
 ): Issue[] {
   if (form.mode !== "code" || !declarations) return [];
   const issues: Issue[] = [];
@@ -101,12 +106,29 @@ export function judgeIssuesOf(
       issues.push({ field: `hb-param-${item.key}`, message: read.problem });
   }
   // Protocol 5 has no shares: only the pool's range still counts (multi-
-  // prize §3.6).
-  for (const problem of hongbaoRuleProblems(declarations.hongbao, {
-    count: null,
-    total: cents(form.judge.total),
-    minEach: null,
-  }))
+  // prize §3.6). Its min and max count 最小单位, as its default does (§6,
+  // the user 2026-11-14; third-party-points §10): in 分 here, and said in
+  // the form's unit. LDC and 🐟 are step 1 (sweep 2026-11-21).
+  const total = declarations.hongbao?.total;
+  const rules =
+    total && declarations.hongbao
+      ? {
+          ...declarations.hongbao,
+          total: {
+            ...total,
+            ...(total.min !== undefined ? { min: total.min * unit.step } : {}),
+            ...(total.max !== undefined ? { max: total.max * unit.step } : {}),
+          },
+        }
+      : declarations.hongbao;
+  for (const problem of hongbaoRuleProblems(
+    rules,
+    { count: null, total: cents(form.judge.total), minEach: null },
+    {
+      format: (minor) => formatFullAmount(minor, unit.step),
+      unit: unit.unit,
+    },
+  ))
     issues.push({ field: "hb-code-total", message: problem.message });
   return issues;
 }

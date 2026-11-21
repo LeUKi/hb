@@ -151,13 +151,13 @@
               "description": "积分的名称，1–8 个字",
               "type": "string",
               "minLength": 1,
-              "maxLength": 6
+              "maxLength": 8
             },
             "unit": {
               "description": "积分的单位，最多 4 个汉字或 8 个字母（汉字算 2，字母和数字算 1）",
               "type": "string",
               "minLength": 1,
-              "maxLength": 4
+              "maxLength": 16
             },
             "step": {
               "description": "最小单位，写成字符串：\"0.01\"、\"1\"、\"100\"（0.01 的整数倍，到 1 亿）",

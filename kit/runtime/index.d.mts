@@ -437,6 +437,8 @@ export function hongbaoRuleProblems(
     total?: number | null;
     minEach?: number | null;
   },
+  /** How the messages word an amount in 分: LDC's unless given. */
+  amounts?: { format: (minor: number) => string; unit: string },
 ): { field: "count" | "total" | "minEach"; message: string }[];
 export function readMeta(
   value: unknown,
@@ -650,6 +652,10 @@ export type Scenario = {
   hongbao: Pick<Submission["hongbao"], "total" | "openedAt" | "endsAt"> &
     Partial<Pick<Submission["hongbao"], "count" | "minEach">> & {
       title?: string;
+      /** A test's or simulate.json's 三方积分. */
+      points?: TestPoints | null;
+      /** A replay's: hongbao.unit, step and points as the site gave them. */
+      units?: Pick<Submission["hongbao"], "unit" | "step" | "points">;
     };
   claims: Submission["claims"];
   paid: number;
@@ -771,6 +777,10 @@ export function judgeNext(
 >;
 
 // records.mjs
+/** hongbao.unit, step and points as the site gave the code (LDC's for older files). */
+export function unitsOfRecords(
+  records: JudgeRecords,
+): Pick<Submission["hongbao"], "unit" | "step" | "points">;
 export function submissionsOf(records: JudgeRecords): Submission[];
 export function answersOf(
   judgment: JudgeRecords["judgments"][number],

@@ -36,6 +36,14 @@ export function unitFieldsOf(points) {
   };
 }
 
+/**
+ * The unit fields a scenario's submissions carry: a replay's own, as the
+ * site gave them (records' hongbao.unit, step and points, 🐟 too, which no
+ * hongbao.points can say), else from a test's or simulate.json's
+ * hongbao.points (sweep 2026-11-21).
+ */
+const unitsOf = (hongbao) => hongbao.units ?? unitFieldsOf(hongbao.points);
+
 const STEP = /^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
 
 // A 单位's width, as the site counts it: a 汉字, full-width character or
@@ -89,7 +97,8 @@ export function pointsProblem(points) {
 /**
  * A 红包 before its first submission here: `hongbao` its fixed numbers
  * (title, total, count, minEach, openedAt, endsAt; from protocol 5 no
- * count or minEach), the claims already in, the code's state and its view
+ * count or minEach; a test's 三方积分 as points, or a replay's unit, step
+ * and points as units), the claims already in, the code's state and its view
  * (protocol 4, null for none). `hongbaoId` and `secret` make each
  * submission's seeds; a replay before the seed is out has no secret.
  * `params`, from the third protocol, is submission.params (none before
@@ -202,7 +211,7 @@ export function nextSubmission(scenario, { input, now, user, title }) {
     remainingCount: hongbao.count - scenario.claims.length,
     openedAt: hongbao.openedAt,
     endsAt: hongbao.endsAt,
-    ...unitFieldsOf(hongbao.points),
+    ...unitsOf(hongbao),
   };
   return {
     input,
@@ -253,7 +262,7 @@ function nextLedgered(scenario, { input, now, user, title }) {
       unclaimed,
       openedAt: hongbao.openedAt,
       endsAt: hongbao.endsAt,
-      ...unitFieldsOf(hongbao.points),
+      ...unitsOf(hongbao),
     },
     share: { min: 1, max: unclaimed, last: false },
     claims: scenario.claims.map(copyClaim),

@@ -15,7 +15,7 @@ npm test
 
 不用 degit 也行：下载仓库的压缩包，取出里面的 `kit` 目录，进去运行 `npm install`。
 
-`npm install` 只装 `wrangler`（版本和网站一致）。五个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样。代码导出 `network` 才能联网；测试里的请求拿 `tests.json` 写的返回，从不真的联网，`npm run simulate -- --live` 才真的发出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
+`npm install` 装 `wrangler`（版本和网站一致）和 `playwright-core`（`npm run page -- --shot` 截图用的驱动，不带浏览器）。五个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样。代码导出 `network` 才能联网；测试里的请求拿 `tests.json` 写的返回，从不真的联网，`npm run simulate -- --live` 才真的发出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
 
 ## 五个命令
 

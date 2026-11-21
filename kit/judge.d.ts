@@ -382,7 +382,8 @@ export type ParamDeclaration = ParamBase &
 
 /**
  * judge.js 导出 `hongbao`：用它发的红包在“发多少”这一步的默认值和范围，
- * 只能收窄平台的规则。金额是整数分。
+ * 只能收窄平台的规则。金额是整数分；meta.points 的判定器用在三方积分红包上时，
+ * total 的 min、max、default 都是多少个最小单位。
  */
 export interface HongbaoRules {
   /** 不起作用了：第五版没有份数 */
@@ -765,10 +766,15 @@ export interface JudgeRecords {
   paramsSealed?: { keys: string[]; commitment: string; salt: string | null };
   hongbao: {
     id: string;
+    /** 总奖池；第五版起是代码看到的数（三方积分红包是多少个最小单位，记录里别的金额也是） */
     total: number;
     /** 第四版以前才有：份数、每份至少 */
     count?: number;
     minEach?: number;
+    /** 第五版起：代码看到的 hongbao.unit、step、points（旧记录没有，当作 LDC） */
+    unit?: string;
+    step?: string;
+    points?: { name: string; unit: string; host: string } | null;
     openedAt: number;
     endsAt: number;
     /** judge.js 的 SHA-256 */

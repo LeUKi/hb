@@ -211,12 +211,19 @@ export function judge({ user, state }) {
 export const network = [{ url: "https://api.example.com/hongbao/", token: true }];
 
 export async function judge(submission) {
-  const response = await fetch("https://api.example.com/hongbao/check", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: submission.user.id, input: submission.input }),
-  });
-  const answer = await response.json();
+  let answer;
+  try {
+    const response = await fetch("https://api.example.com/hongbao/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: submission.user.id, input: submission.input }),
+    });
+    if (!response.ok) return { message: "服务器忙，稍后再试" };
+    answer = await response.json();
+  } catch {
+    // 超时、连不上、返回的不是 JSON：接住，不加钱；没接住就算代码出错
+    return { message: "服务器忙，稍后再试" };
+  }
   return answer.right
     ? { add: answer.amount, settle: true, message: answer.say }
     : { message: answer.say };
@@ -265,7 +272,7 @@ export async function judge(submission) {
 - 看情况显示：参数可以写 `when: { param: "mode", is: ["fixed"] }`，前面一项“选一个”选的是 `is` 里的值时才显示这一项（跟着开关写 `is: true` 或 `false`）。藏起来的项不用填，代码收到 `null`，红包页也不列。用在两种做法二选一时：一个“选一个”当切换器，下面各放各的项，比如“奖励怎么定：按奖池分 / 自己定价”，按奖池分时显示“预计人数”，自己定价时显示“每份多少”。`param` 要写在这一项前面；密钥和地址不能写 `when`。
 - `export function explain(params, hongbao)`（可选）：发红包的人边填边看的说明，把要他自己算的写成算好的数。改了参数网站就问一次（打字停一下再问），返回 `{ hints, warnings, summary }`，都可以不写：`hints` 是参数的 key 对一句话，代替那一项写死的 `hint`（“每份约 0.35 LDC，大约够 17 人”）；`warnings` 是那一项下面的黄字提醒，不拦，能照样发（“价定得高，一局会很快结束”）；`summary` 是参数下面最多 3 行总结。每句最多 60 个字。`hongbao` 同 `check`，金额按 `hongbao.step` 写（三方积分红包按积分的单位）。不能联网，`Math.random()` 每次都一样；要拦住的写在 `check` 里。`npm run check` 用默认参数跑一次，把它算的写在参数表单预览下面。
 - `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach, unit, step, points }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值，后三项见“三方积分红包”）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑（边填边查，问题填的时候就标出来），不能联网，`Math.random()` 每次都一样。
-- `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
+- `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分；`meta.points` 的判定器用在三方积分红包上时，三个数都是多少个最小单位）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
 - `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。网页放在发红包的人自己的服务上时写 `page: { param: "server", path: "play/" }`：跟着他填的地址填好，`path` 选填，接在地址后面（不以 `/` 开头）。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
 
@@ -958,6 +965,17 @@ export async function judge(submission, tools) {
 }
 ```
 
+失败也写一条，看代码接住了（`fetch` 抛错、对方返回 5xx 时回复一句，不加钱）：
+
+```json
+{
+  "name": "后端超时",
+  "input": "flag",
+  "fetch": [{ "url": "https://api.example.com/hongbao/check", "method": "POST", "error": "timeout" }],
+  "expect": { "add": 0, "message": "服务器忙，稍后再试" }
+}
+```
+
 - 每个 `{ "url", "method", "status", "headers", "json" 或 "text" }`：`method` 默认 `GET`，`status` 默认 200，`json` 的 `content-type` 默认 `application/json`。写 `{ "url", "method", "error": "timeout" | "unreachable" | "too-big" }` 就是这个请求失败（超时、连不上、返回超过 64 KB）。
 - 代码发出的请求按方法和完整地址，对上一个还没用过的返回。有请求没写返回（`fetch()` 会抛“测试里没写这个请求的返回”）、写了的返回没用上，这条测试都不通过。
 - 白名单、次数和大小的限制照线上查。
@@ -1007,8 +1025,8 @@ export async function judge(submission, tools) {
 - `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
 - `npm run simulate`：一行一次提交：第几次、谁、输入、加减了多少和之后的待结算（比如“+0.50 · 待结算 1.20”，结算了写“结算 1.20”，什么都没加写“没加钱”）、代码的回复；`others` 改到的人、只给某人看的数据、公开数据（“公开：……”）、动态（“动态：……”）各跟一行；结束了写“判定器结束了这个红包”或“奖池占满了，红包结束”和一起结算的人；最后到截止时间还没结算的人一起结算，写发出多少、几个人领到钱。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址；发给发红包的人填的地址和 `{ url, token: true }` 的请求带模拟的 `X-Hb-Token`；跑的时候在 `http://127.0.0.1:8730` 放公钥和红包信息，端口被占用就换一个，开头写出来；见“后端认人和读红包”的本地开发）。
 - `npm run page`：模拟器。浏览器打开它写的地址（`http://127.0.0.1:8730`），布局和提示大致照网站：宽屏是左边红包窗口、右边网页窗口；手机是底部抽屉；多人是并排几个手机，每个是不同的人，一人提交其他人同步更新。红包窗口里有红包皮（说明里的按钮、奖池还剩、已判定次数）、“开”和指令框、红包状态、我的记录、待结算；判定器写了 `pageAutoOpen` 就一进来打开网页，第一次打开网页先确认，网页第一次提交或要身份时先问许可，都用网站上的原话。工具栏能换布局、换人、“快进到截止”（还没结算的人一起结算）、重新开始。网页从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成模拟器的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。时间也照 `simulate.json`：从它的 `now` 开始走（默认 2026-10-24 12:00），判定的 `at`、公开数据和动态的时间、截止、`cooldownUntil` 和网页里的 `hb.now()` 都在这条时间上，倒计时照常用 `hb.now()` 算。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去（`X-Hb-Token` 用模拟器的钥匙签，`iss` 是模拟器的地址加 `/judge`）；模拟器也答红包信息（`/api/hongbao/test`，快进到截止以后是 `ended`）。`meta.page` 放在地址参数下时，打开的是 `simulate.json` 里填的那个地址上的网页（经模拟器转一道，换上模拟器的 SDK），不用 `page/`。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
-  - `npm run page -- --shot`：给 AI 用的。不开浏览器窗口，在后台打开模拟器，截三张图存到 `shots/`（`wide.png` 宽屏网页打开、`phone.png` 手机抽屉露一条、`phone-open.png` 手机抽屉拉起），再列出网页里的报错、加载失败的请求、接没接上 SDK；有问题时退出码不是 0。`--play` 先按 `simulate.json` 提交完再截。要一个浏览器：先找这台电脑的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就照提示运行 `npx playwright install chromium`。
-- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版起还比公开数据、动态和结束，第五版起还比 `add`、`settle`、`player` 和 `others`）。早先几版开放的红包用那一版的运行时重放。
+  - `npm run page -- --shot`：给 AI 用的。不开浏览器窗口，在后台打开模拟器，截三张图存到 `shots/`（`wide.png` 宽屏网页打开、`phone.png` 手机抽屉露一条、`phone-open.png` 手机抽屉拉起），再列出网页里的报错、加载失败的请求、接没接上 SDK；有问题时退出码不是 0。`--play` 先按 `simulate.json` 提交完再截。要一个浏览器：先找这台电脑的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就照提示在开发包目录里运行 `npx playwright-core install chromium`（Linux 上加 `--with-deps`）；别用 `npx playwright`，它会另装一个版本，开发包的驱动找不到它的浏览器。
+- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版起还比公开数据、动态和结束，第五版起还比 `add`、`settle`、`player` 和 `others`）。记录里的金额和 `hongbao.unit`、`step`、`points` 都是代码当时看到的（三方积分红包是多少个最小单位）。早先几版开放的红包用那一版的运行时重放。
 
 失败时退出码都不是 0。
 

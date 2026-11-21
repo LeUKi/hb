@@ -1187,13 +1187,20 @@ export function readHongbaoRules(value) {
   };
 }
 
-/** “1–10 份”, “至少 3 份”, “最多 10 份” (or in LDC): a rule's range. */
-function spanOf({ min, max }, show) {
+/** LDC's: how hongbaoRuleProblems words an amount in 分 unless told. */
+const LDC_AMOUNTS = { format: formatAmount, unit: "LDC" };
+
+/**
+ * “1–10 份”, “至少 3 份”, “最多 10 份”, or amounts (in 分) as `amounts`
+ * words them, “1.00–50.00 LDC”: a rule's range.
+ */
+function spanOf({ min, max }, amounts) {
+  const one = (n) =>
+    amounts ? `${amounts.format(n)} ${amounts.unit}` : `${n} 份`;
   if (min !== undefined && max !== undefined)
-    return show === "份"
-      ? `${min}–${max} 份`
-      : `${formatAmount(min)}–${formatAmount(max)} LDC`;
-  const one = (n) => (show === "份" ? `${n} 份` : ldc(n));
+    return amounts
+      ? `${amounts.format(min)}–${amounts.format(max)} ${amounts.unit}`
+      : `${min}–${max} 份`;
   return min !== undefined ? `至少 ${one(min)}` : `最多 ${one(max)}`;
 }
 
@@ -1207,25 +1214,30 @@ const outside = (rule, value) =>
 /**
  * Where the 红包's numbers fall outside what the judge asks (§4, 发多少):
  * `[{ field, message }]`, field one of count, total, minEach. Amounts are
- * in 分.
+ * in 分; `amounts` words them in the 红包's own unit (`{ format(分),
+ * unit }`, LDC's unless given: a 三方积分红包's, sweep 2026-11-21).
  */
-export function hongbaoRuleProblems(rules, { count, total, minEach }) {
+export function hongbaoRuleProblems(
+  rules,
+  { count, total, minEach },
+  amounts = LDC_AMOUNTS,
+) {
   if (!rules) return [];
   const problems = [];
   if (outside(rules.count, count))
     problems.push({
       field: "count",
-      message: `这个判定器要求 ${spanOf(rules.count, "份")}`,
+      message: `这个判定器要求 ${spanOf(rules.count)}`,
     });
   if (outside(rules.total, total))
     problems.push({
       field: "total",
-      message: `这个判定器要求总奖池 ${spanOf(rules.total, "LDC")}`,
+      message: `这个判定器要求总奖池 ${spanOf(rules.total, amounts)}`,
     });
   if (outside(rules.minEach, minEach))
     problems.push({
       field: "minEach",
-      message: `这个判定器要求每份至少 ${ldc(rules.minEach.min)}`,
+      message: `这个判定器要求每份至少 ${amounts.format(rules.minEach.min)} ${amounts.unit}`,
     });
   return problems;
 }

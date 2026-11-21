@@ -28,6 +28,7 @@ import {
 import type { JudgeRecords } from "../../kit/judge";
 import {
   allowedBy,
+  hongbaoRuleProblems,
   judgeNext,
   paramsCommitment,
   readHongbaoRules,
@@ -750,6 +751,83 @@ describe("npm run replay", () => {
     ]);
     expect(changed.lines).not.toContainEqual(expect.stringContaining("次判定"));
     expect(changed.exitCode).toBe(1);
+  }, 30_000);
+
+  // The records give amounts, unit, step and points as the code saw them
+  // (records.ts); a replay hands the code the same, setup() too. Before,
+  // every 三方积分 and 🐟 one read as 不一致 (sweep 2026-11-21).
+  const UNITS = `export const meta = { name: "按单位", points: true };
+export function setup(params, hongbao) {
+  return { view: { summary: "奖池 " + hongbao.total + " " + hongbao.unit } };
+}
+export function judge(submission, tools) {
+  if (submission.input !== "${ANSWER}") return { message: "不对" };
+  const add = Math.min(5, submission.hongbao.unclaimed);
+  return { add, settle: true, message: "领到 " + tools.money.format(add) + " " + submission.hongbao.unit };
+}`;
+
+  const replayOf = async (records: JudgeRecords, dir: string) =>
+    run(replayCommand, {
+      dir,
+      cwd: kit({ "judge-records-x.json": records }),
+      args: ["judge-records-x.json"],
+    });
+
+  it("replays a 三方积分 红包 in its 最小单位, with its unit", async () => {
+    const points = { name: "星星", unit: "星星", step: "1" };
+    const dir = kit({
+      "judge.js": UNITS,
+      "simulate.json": {
+        hongbao: { total: 1000, points },
+        submissions: turns(["小明", "小红"]),
+      },
+    });
+    const { simulation: simulated } = await run(simulateCommand, {
+      dir,
+      args: ["--seed", "points"],
+    });
+    if (!simulated) throw new Error("No simulation");
+    const records = recordsOf(simulated, UNITS);
+    expect(records.judgments[1]?.verdict.message).toBe("领到 5 星星");
+    records.hongbao = {
+      ...records.hongbao,
+      unit: "星星",
+      step: "1",
+      points: { name: "星星", unit: "星星", host: "points.example.com" },
+    };
+    const replayed = await replayOf(records, dir);
+    expect(replayed.lines).toContain("开放时 setup 一致");
+    expect(replayed.lines.at(-1)).toBe(
+      `${records.judgments.length} 次判定全部一致`,
+    );
+    expect(replayed.exitCode).toBe(0);
+  }, 30_000);
+
+  it("replays a 🐟 红包 with 🐟 as its unit, and an older file as LDC", async () => {
+    const dir = kit({
+      "judge.js": UNITS,
+      "simulate.json": simulation(["小明", "小红"]),
+    });
+    const { simulation: simulated } = await run(simulateCommand, {
+      dir,
+      args: ["--seed", "fish"],
+    });
+    if (!simulated) throw new Error("No simulation");
+    const ldc = recordsOf(simulated, UNITS);
+    // An older file, without unit: LDC, as before.
+    const older = await replayOf(ldc, dir);
+    expect(older.lines.at(-1)).toBe(`${ldc.judgments.length} 次判定全部一致`);
+    // What the site gave a 🐟 红包's code says 🐟 where LDC's says LDC.
+    const fish = JSON.parse(
+      JSON.stringify(ldc).replaceAll(" LDC", " 🐟"),
+    ) as JudgeRecords;
+    fish.hongbao = { ...fish.hongbao, unit: "🐟", step: "0.01", points: null };
+    const replayed = await replayOf(fish, dir);
+    expect(replayed.lines).toContain("开放时 setup 一致");
+    expect(replayed.lines.at(-1)).toBe(
+      `${fish.judgments.length} 次判定全部一致`,
+    );
+    expect(replayed.exitCode).toBe(0);
   }, 30_000);
 });
 
@@ -1543,6 +1621,37 @@ describe("hongbao.title 和 hongbao.note", () => {
         "hongbao 里不认识 name：只能写 count、total、minEach、deadline、prompt、humanCheck、pageAutoOpen、title、note",
       ],
     });
+  });
+});
+
+// 发多少's range in the 红包's own unit (sweep 2026-11-21): the form
+// scales a meta.points judge's min and max by the step, as its default,
+// and words them in the 三方积分's unit.
+describe("hongbaoRuleProblems", () => {
+  it("says the pool's range in LDC, or in the unit it is given", () => {
+    const rules = { total: { min: 100, max: 5000 } };
+    expect(hongbaoRuleProblems(rules, { total: 1000 })).toEqual([]);
+    expect(hongbaoRuleProblems(rules, { total: 50 })).toEqual([
+      { field: "total", message: "这个判定器要求总奖池 1.00–50.00 LDC" },
+    ]);
+    // 1 星星 is 100 分: in 分, 1000 星星 is within 100–5000 星星.
+    const step = 100;
+    const stars = {
+      format: (minor: number) => String(minor / step),
+      unit: "星星",
+    };
+    const scaled = { total: { min: 100 * step, max: 5000 * step } };
+    expect(hongbaoRuleProblems(scaled, { total: 1000 * step }, stars)).toEqual(
+      [],
+    );
+    expect(hongbaoRuleProblems(scaled, { total: 6000 * step }, stars)).toEqual([
+      { field: "total", message: "这个判定器要求总奖池 100–5000 星星" },
+    ]);
+    expect(
+      hongbaoRuleProblems({ total: { min: 5 * step } }, { total: step }, stars),
+    ).toEqual([
+      { field: "total", message: "这个判定器要求总奖池 至少 5 星星" },
+    ]);
   });
 });
 

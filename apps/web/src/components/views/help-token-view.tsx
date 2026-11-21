@@ -162,11 +162,26 @@ for claim in page["items"]:
           ]}
         />
         <Block label="curl" code={claim} />
+        {/* 代码判定 answers judged since protocol 5 (ClaimResult in
+            packages/contracts; docs/multi-prize-design.md §4.1): this page
+            said rejected, which only older 红包 still give (sweep
+            2026-11-21). */}
         <p className="px-1 text-sm text-ink-2">
           返回 <Code>result</Code>：<Code>claimed</Code> 领到了、
           <Code>already_claimed</Code> 已经领过、<Code>registered</Code>{" "}
-          限时开奖报上名了、<Code>incorrect</Code> 口令不对、
-          <Code>ended</Code> 已经结束、<Code>rejected</Code> 代码判定没通过。
+          限时开奖报上名了、<Code>already_registered</Code> 已经报过名、
+          <Code>incorrect</Code> 口令不对、<Code>draft</Code> 还没开放、
+          <Code>ended</Code> 已经结束、<Code>archived</Code> 已归档、
+          <Code>cancelled</Code> 排队时取消了。
+        </p>
+        <p className="px-1 text-sm text-ink-2">
+          代码判定红包每判定一次都返回 <Code>judged</Code>：<Code>message</Code>{" "}
+          是代码的回复，<Code>moved.added</Code> 是这次加减的，
+          <Code>moved.pending</Code> 是这次以后的待结算；这次结算了才有{" "}
+          <Code>settled</Code>
+          ，领到了在 <Code>settled.claim</Code>，结算 0 时是 <Code>null</Code>
+          。更早开放的代码判定红包还可能返回 <Code>claimed</Code> 或{" "}
+          <Code>rejected</Code>（没通过）。
         </p>
       </PageSection>
       <PageSection

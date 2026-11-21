@@ -79,6 +79,9 @@ if (answer.identified) {
   say(identityReasons[answer.reason] ?? "没有拿到身份"); // 原因见下面
 }`;
 
+// jwtVerify throws on an expired (10 minutes) or forged token: caught to
+// null like the other refusals, as kit/AGENTS.md's claimsOf, so a copied
+// backend answers 401 and not a 500 (sweep 2026-11-21).
 const verifyCode = (
   origin: string,
 ) => `// Cloudflare Workers 或 Node 18+，npm install jose
@@ -90,12 +93,17 @@ const keys = createRemoteJWKSet(new URL("${origin}/api/page-identity/keys"));
 export async function whoIs(request, nonceOf) {
   const token = request.headers.get("Authorization")?.replace(/^Bearer /, "");
   if (!token) return null;
-  const { payload } = await jwtVerify(token, keys, {
-    issuer: "${origin}",
-    audience: "https://你的网页的来源", // 比如 https://game.example.com
-    algorithms: ["ES256"],
-    clockTolerance: 30,
-  });
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, keys, {
+      issuer: "${origin}",
+      audience: "https://你的网页的来源", // 比如 https://game.example.com
+      algorithms: ["ES256"],
+      clockTolerance: 30,
+    }));
+  } catch {
+    return null; // 过期、签名或 aud 不对：回 401，网页再调一次 hb.identity()
+  }
   // 只认自己的红包；nonce 要是你刚发的，用过就作废
   if (!myHongbao(payload.hongbao) || !(await nonceOf(payload.nonce))) return null;
   // payload.sub：LINUX DO 数字 ID（认人用它，不用用户名）

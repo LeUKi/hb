@@ -55,7 +55,7 @@
           "additionalProperties": { "$ref": "#/$defs/player" }
         },
         "state": {
-          "description": "代码之前存的共用状态（任意 JSON），默认 null；最大 16 KB，最多嵌套 100 层"
+          "description": "代码之前存的共用状态（任意 JSON），默认 null；最大 64 KB，最多嵌套 100 层"
         },
         "seed": {
           "description": "种子（64 位小写十六进制）：tools.random 和 tools.userRandom 由它推出来。默认固定的测试种子",
@@ -157,13 +157,13 @@
               "description": "积分的名称，1–8 个字",
               "type": "string",
               "minLength": 1,
-              "maxLength": 6
+              "maxLength": 8
             },
             "unit": {
               "description": "积分的单位，最多 4 个汉字或 8 个字母（汉字算 2，字母和数字算 1）",
               "type": "string",
               "minLength": 1,
-              "maxLength": 4
+              "maxLength": 16
             },
             "step": {
               "description": "最小单位，写成字符串：\"0.01\"、\"1\"、\"100\"（0.01 的整数倍，到 1 亿）",
@@ -292,7 +292,7 @@
       }
     },
     "step": {
-      "description": "多步场景的一步。同一个 who 是同一个人；已经领过的人、或者份已经领完了还提交，这一步算不通过（线上根本不会交给代码）。",
+      "description": "多步场景的一步。同一个 who 是同一个人；已经结算的人、或者红包已经结束了（代码 end、奖池占满）还提交，这一步算不通过（线上根本不会交给代码）。",
       "type": "object",
       "required": ["who", "input", "expect"],
       "additionalProperties": false,

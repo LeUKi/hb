@@ -920,14 +920,22 @@ async function browserOf() {
     throw new KitError(
       "没有 playwright-core：在开发包目录里运行 npm install（只装驱动，不带浏览器）",
     );
+  // The kit has playwright-core only: `npx playwright` would fetch the
+  // latest playwright, whose Chromium build this driver does not look for,
+  // so the hint names the kit's own bin. The bundled try's error says why
+  // it failed (not there, or on Linux the system libraries); only its
+  // first line, as the rest suggests `npx playwright` again (sweep
+  // 2026-11-21). Tests skip on the 没找到浏览器 prefix.
+  let last;
   for (const channel of ["chrome", "msedge", undefined])
     try {
       return await chromium.launch(channel ? { channel } : {});
-    } catch {
-      // The next one.
+    } catch (error) {
+      last = error;
     }
+  const why = String(last?.message ?? last ?? "").split("\n")[0];
   throw new KitError(
-    "没找到浏览器：装 Chrome 或 Edge，或者运行 npx playwright install chromium（约 150 MB）",
+    `没找到浏览器：装 Chrome 或 Edge，或者在开发包目录里运行 npx playwright-core install chromium（约 150 MB；Linux 上加 --with-deps 连系统库一起装）${why ? `\n${why}` : ""}`,
   );
 }
 

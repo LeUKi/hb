@@ -21,6 +21,7 @@ import {
   setupSeed,
   submissionSeed,
   submissionsOf,
+  unitsOfRecords,
   userSeed,
 } from "../../runtime/index.mjs";
 import {
@@ -55,6 +56,14 @@ function recordsProblem(records) {
     if (!isWhole(hongbao[key])) return `缺 hongbao.${key}`;
   for (const key of ["fingerprint", "seedCommitment"])
     if (typeof hongbao[key] !== "string") return `缺 hongbao.${key}`;
+  // From protocol 5 the site writes the unit the code was told.
+  if (
+    hongbao.unit !== undefined &&
+    (typeof hongbao.unit !== "string" ||
+      typeof hongbao.step !== "string" ||
+      (hongbao.points != null && !isObject(hongbao.points)))
+  )
+    return "hongbao.unit、step、points 不对";
   if (hongbao.seed !== null && typeof hongbao.seed !== "string")
     return "hongbao.seed 要是字符串或 null";
   if (records.params !== undefined && !isObject(records.params))
@@ -317,6 +326,10 @@ export async function replayCommand({
           // Protocol 5 tells setup() n and 0.01 (no shares).
           count: ledger ? defaultCount(hongbao.total) : hongbao.count,
           minEach: ledger ? 1 : hongbao.minEach,
+          // And its unit, as on the site (opening.ts hongbaoForJudge): a
+          // setup() that wrote hongbao.unit replayed as 不一致 without it
+          // (sweep 2026-11-21).
+          ...(ledger ? unitsOfRecords(records) : {}),
         },
         { now: setup.at, seed: setupSeed(hongbao.id, hongbao.seed) },
       );
