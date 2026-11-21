@@ -1,6 +1,6 @@
 import { BALANCE_LIMITS, formatSignedAmount, TIP_LIMITS } from "@hb/contracts";
 import { useSessionUser } from "../../lib/session";
-import { type HelpChapter, HelpDoc, HelpLink } from "./help-doc";
+import { type HelpChapter, HelpDoc, HelpLink, OwnerLink } from "./help-doc";
 
 // 🐟额和 PLUS (docs/help-center-design.md §4.4).
 
@@ -159,14 +159,7 @@ export const fishChapters: HelpChapter[] = [
           <>
             <p>
               要已经开通的人邀请。可以在社区
-              <a
-                href="/api/site/owner"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-accent-ink hover:underline"
-              >
-                私信站长 ↗
-              </a>
+              <OwnerLink />
               ，说一下想用它做什么，正常的请求都会给你邀请；也可以请身边已经开通的朋友邀请你。
             </p>
             <p>

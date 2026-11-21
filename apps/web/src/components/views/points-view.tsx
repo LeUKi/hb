@@ -10,6 +10,7 @@ import {
 } from "../../lib/points";
 import { useSessionUser } from "../../lib/session";
 import { amountText } from "../../lib/units";
+import { OwnerLink } from "../help/help-doc";
 import {
   Callout,
   EmptyNote,
@@ -68,8 +69,9 @@ export function PointsView() {
           />
           {!data.plus && (
             <Callout tone="warning" title="开通🐟额 PLUS 才能添加">
-              要在你的网站上做好三个接口（查余额、发放、查单），通过接口测试，再等站长审核。开通🐟额
-              PLUS 以后就能开始。
+              要在你的网站上做好三个接口（查余额、发放、查单），通过接口测试，再等站长审核。还没开通的，可以在社区
+              <OwnerLink />
+              ，说说你的网站和积分，正常的请求都会收到开通邀请。
             </Callout>
           )}
           <PageSection

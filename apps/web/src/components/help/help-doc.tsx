@@ -37,6 +37,23 @@ export type HelpChapter = {
 };
 
 /**
+ * 私信站长 ↗: the 站长's 社区 messages, through the site (/api/site/owner
+ * sends on to them; their name is not in the code). A new tab.
+ */
+export function OwnerLink({ children = "私信站长" }: { children?: ReactNode }) {
+  return (
+    <a
+      href="/api/site/owner"
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium text-accent-ink hover:underline"
+    >
+      {children} ↗
+    </a>
+  );
+}
+
+/**
  * A link inside an answer: to another page of the site, or to a question
  * (#q-…). A real link, so a modified click opens a new tab.
  */

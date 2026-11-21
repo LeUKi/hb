@@ -1,6 +1,6 @@
 import { PAYMENT_RESEND_MINUTES, POINTS_LIMITS } from "@hb/contracts";
 import { Code } from "../ui/code";
-import { type HelpChapter, HelpLink } from "./help-doc";
+import { type HelpChapter, HelpLink, OwnerLink } from "./help-doc";
 
 // 发行三方积分's 常见问题 (docs/help-center-design.md §4.6): for a site whose
 // own 积分 should be usable for 红包; each answer sends on to its section of
@@ -32,6 +32,11 @@ export const pointsFaq: HelpChapter[] = [
               ID、能给每个用户发可收回的密钥的网站。要先开通🐟额
               PLUS，每人最多同时添加 {POINTS_LIMITS.systemsPerOwner} 种，在
               <HelpLink to="/points">三方积分</HelpLink>页点“添加积分”。
+            </p>
+            <p>
+              还没开通的，可以在社区
+              <OwnerLink />
+              ，说说你的网站和积分，正常的请求都会收到开通邀请。
             </p>
           </>
         ),

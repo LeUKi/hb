@@ -1,6 +1,6 @@
 import { PAYMENT_RESEND_MINUTES, POINTS_LIMITS } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
-import { HelpChapters, HelpFrame } from "../help/help-doc";
+import { HelpChapters, HelpFrame, OwnerLink } from "../help/help-doc";
 import { pointsFaq } from "../help/points-faq";
 import { PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
@@ -130,7 +130,9 @@ export function HelpPointsView() {
         <Panel className={text}>
           <p>
             要先开通🐟额 PLUS，每人最多同时接入 {POINTS_LIMITS.systemsPerOwner}{" "}
-            种。
+            种。还没开通的，可以在社区
+            <OwnerLink />
+            ，说说你的网站和积分，正常的请求都会收到开通邀请。
           </p>
           <ol className="grid list-decimal gap-1 pl-5">
             <li>

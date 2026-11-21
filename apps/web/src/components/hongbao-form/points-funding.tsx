@@ -214,6 +214,25 @@ function PickDialog({
         <p className="px-1 text-xs text-ink-3">
           领到的积分进领取者在那个网站的账户；发出的从你在那边的账户扣，要先填你在那边的密钥。
         </p>
+        {/* For a site that might issue its own (the user, 2026-11-21): the
+            issuer's guide, in a new tab so this 红包 stays as it is. */}
+        <div className="mt-2 grid gap-1 border-line border-t px-1 pt-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <PointsMark className="size-4 shrink-0" aria-hidden="true" />
+            你的网站也有积分？
+          </p>
+          <p className="text-xs leading-5 text-ink-3">
+            接进来以后，大家发红包时就能选它，领到的直接进领取者在你网站的账户。
+            <a
+              href="/help/points"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-accent-ink hover:underline"
+            >
+              看看怎么接入 ↗
+            </a>
+          </p>
+        </div>
       </div>
     </WindowDialog>
   );
