@@ -540,6 +540,13 @@ describe("社区小程序's routes", () => {
       forumUser: { username: "named_one", name: "被指定的人" },
     });
     expect(((await first.json()) as { result: string }).result).toBe("claimed");
+    // The account it made has no sign-in at all: neither mark users/find.ts
+    // VOUCHED reads.
+    expect(
+      await env.DB.prepare(
+        "SELECT last_login_at, profile_seen_at FROM users WHERE external_id='332940'",
+      ).first(),
+    ).toEqual({ last_login_at: null, profile_seen_at: null });
     const asker = await actor();
     const ask = async (path: string) =>
       (
@@ -611,6 +618,29 @@ describe("社区小程序's routes", () => {
     expect(await ask("/api/people?username=first_one")).toMatchObject({
       person: { linuxDoId: "332940" },
     });
+    // Someone whose last LINUX DO sign-in came before profile_seen_at
+    // existed (2026-10-22): last_login_at alone vouches for the name
+    // (sweep 2026-11-21).
+    await env.DB.prepare(
+      `INSERT INTO users (id, provider, external_id, username, display_name, active, created_at, updated_at, last_login_at)
+        VALUES (?, 'linux_do', '5151', 'Signed_Before', '老朋友', 1, ?, ?, ?)`,
+    )
+      .bind(crypto.randomUUID(), now, now, now)
+      .run();
+    expect(await ask("/api/people?username=signed_before")).toMatchObject({
+      person: { linuxDoId: "5151" },
+    });
+    expect(await ask("/api/people/batch?username=signed_before")).toMatchObject(
+      { people: [{ linuxDoId: "5151" }] },
+    );
+    expect(
+      await findRecipientByUsername(bindings, "signed_before"),
+    ).toMatchObject({ external_id: "5151" });
+    expect(
+      await scopeOf({
+        users: [{ username: "signed_before", linuxDoId: null }],
+      }),
+    ).toEqual({ users: [{ username: "Signed_Before", linuxDoId: "5151" }] });
   });
 
   it("keeps the 信任等级 the 社区 signs: a first-timer's account has it, and a 领取范围 by level knows them", async () => {

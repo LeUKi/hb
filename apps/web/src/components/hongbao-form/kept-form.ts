@@ -5,7 +5,7 @@
 // (sweep 2026-11-21). Never another account's, never a 密钥 typed for a
 // 判定器 (保存后不再显示, docs/judge-key-design.md §3), and not laid over a
 // 红包 changed meanwhile.
-import type { ManagedActivity } from "@hb/contracts";
+import type { CreateActivityInput, ManagedActivity } from "@hb/contracts";
 import { useSyncExternalStore } from "react";
 import { emptyForm, type FormState } from "./form-state";
 import { sameJson } from "./same-json";
@@ -24,10 +24,25 @@ type Kept = {
   form: FormState;
   /** 密钥 were typed, and left out. */
   keysDropped: boolean;
+  /**
+   * 发红包's save whose answer was lost before the sign-in ended, as it was
+   * sent (its requestId): the form comes back on 重试原提交, so pressing
+   * again cannot make a second draft (sweep 2026-11-21).
+   */
+  lostCreate?: CreateActivityInput;
+  /** One was lost with a 密钥 in it: never written down, so not resent. */
+  unconfirmed?: boolean;
 };
 
 /** Brought back as the form opens. */
-export type KeptForm = { form: FormState; keysDropped: boolean };
+export type KeptForm = {
+  form: FormState;
+  keysDropped: boolean;
+  /** 发红包's save left unconfirmed, to send again as it was. */
+  lostCreate: CreateActivityInput | null;
+  /** One was left unconfirmed that cannot be sent again (its 密钥). */
+  unconfirmed: boolean;
+};
 
 const targetOf = (activity?: ManagedActivity) => activity?.id ?? "new";
 
@@ -81,15 +96,21 @@ export function forgetKeptForm() {
   told();
 }
 
-/** Written once, as the form unmounts with its account gone. */
+/**
+ * Written once, as the form unmounts with its account gone; `lostCreate`,
+ * 发红包's save whose answer was lost (重试原提交), goes with it.
+ */
 export function keepForm(
   userId: string,
   activity: ManagedActivity | undefined,
   form: FormState,
+  lostCreate?: CreateActivityInput,
 ) {
   const keysDropped = Object.values(form.judge.keys).some(
     (value) => value.trim() !== "",
   );
+  const lostKeys =
+    Object.keys(lostCreate?.activity.judge?.keys ?? {}).length > 0;
   const kept: Kept = {
     userId,
     target: targetOf(activity),
@@ -97,6 +118,11 @@ export function keepForm(
     at: Date.now(),
     form: { ...form, judge: { ...form.judge, keys: {} } },
     keysDropped,
+    ...(lostCreate && !activity
+      ? lostKeys
+        ? { unconfirmed: true }
+        : { lostCreate }
+      : {}),
   };
   try {
     sessionStorage.setItem(KEPT, JSON.stringify(kept));
@@ -146,6 +172,7 @@ export function takeKeptForm(
   if (activity && !sameJson(activity.config, kept.base)) return null;
   // Written by an older build: what it lacks starts as a new form has it.
   const empty = emptyForm();
+  const lost = kept.lostCreate;
   return {
     form: {
       ...empty,
@@ -153,5 +180,16 @@ export function takeKeptForm(
       judge: { ...empty.judge, ...kept.form.judge, keys: {} },
     },
     keysDropped: kept.keysDropped === true,
+    // Only /new creates; one read back malformed is not sent.
+    lostCreate:
+      !activity &&
+      typeof lost === "object" &&
+      lost !== null &&
+      typeof lost.requestId === "string" &&
+      typeof lost.activity === "object" &&
+      lost.activity !== null
+        ? lost
+        : null,
+    unconfirmed: !activity && kept.unconfirmed === true,
   };
 }

@@ -338,11 +338,22 @@ export function useClaimReward(userId: string, csrfToken: string) {
           queryKey: ["password-private", userId, id],
         });
     },
-    onError: (error, { input: _variables }, context) => {
+    onError: (error, { id, input: _variables }, context) => {
       const identity = context?.identity;
       if (!account.isCurrentIdentity(identity)) return;
       if (_variables.participationMode !== "direct" && context?.ticket)
         void settleAttempt(context.ticket, null);
+      // 商户余额不足 (docs/payout-stop-design.md §6): a press that meets a
+      // wait which has just started reads the 红包 again, so its page shows
+      // the pause now rather than when the sweep's push arrives (sweep
+      // 2026-11-21, F1).
+      if (
+        error instanceof ActivityRequestError &&
+        error.code === "MERCHANT_FUNDS_PAUSED"
+      )
+        void queryClient.invalidateQueries({
+          queryKey: ["activity-public", id],
+        });
       if (error instanceof ActivityRequestError && error.status === 429) {
         if (error.attemptCooldown)
           applyAttemptCooldown(userId, error.attemptCooldown);

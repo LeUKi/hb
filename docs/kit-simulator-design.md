@@ -37,7 +37,7 @@
 - 判定器写了 `pageAutoOpen` 就一进来打开（宽屏打开窗口，手机拉起抽屉）。
 - 网页第一次 `hb.submit()` 或 `hb.identity()`：弹“让这个网页知道你是谁、替你提交？”（[page-identity-design](page-identity-design.md) 第 3 节）。
 - 没登录的人：`hb.login()` 弹一张模拟的登录卡片，写“这是模拟器：在上面的“玩家”里换一个人，就是登录了”。
-- 指令框的提示：“红包已结束。”“你已领过这个红包。”“判定器出错了，这次没有判定，可以再提交一次。”“判定器连续出错，暂停领取”，冷却写在按钮上。
+- 指令框的提示：“红包已结束。”“你已领过这个红包。”“判定器出错了，这次没有判定，可以再提交一次。”“暂停领取。”；提交回来带了原因的，写原因（2026-11-21），冷却写在按钮上。
 
 **快进到截止**：把红包的时钟拨到截止时间，还没结算的人一起结算，同 `npm run simulate` 的最后一步。
 
@@ -71,7 +71,7 @@
 
 有问题时退出码不是 0，Agent 能据此判断要不要接着改。没接上 SDK 只写一行提醒、不算问题（不用 SDK 的网页也可以）。`shots/` 写进开发包的 `.gitignore`。`npm run page -- --shot --play` 先按 `simulate.json` 让里面的人提交完再截图，看玩到一半的样子。
 
-**浏览器**：用开发包新加的 `playwright-core`（只是驱动，几 MB，不带浏览器），先找这台机器上的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就提示运行 `npx playwright install chromium`（约 150 MB），开发包默认不下载。
+**浏览器**：用开发包新加的 `playwright-core`（只是驱动，几 MB，不带浏览器），先找这台机器上的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就提示在开发包目录里运行 `npx playwright-core install chromium`（约 150 MB，Linux 上加 `--with-deps` 连系统库一起装），开发包默认不下载。不用 `npx playwright`：它会另装一个版本的 Playwright，下载的浏览器开发包的驱动找不到（2026-11-21 改）。
 
 ## 5 文档
 

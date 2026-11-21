@@ -660,6 +660,14 @@ function Page({
       else if (result.result === "draft") setMessage("这个红包还没开放。");
       else void read();
     } catch (error) {
+      // A press that met a 余额不足 wait just begun (payout-stop-design §6):
+      // read the 红包 again so its seal pauses now, not at the sweep's push
+      // (sweep 2026-11-21, F1).
+      if (
+        error instanceof HongbaoError &&
+        error.code === "MERCHANT_FUNDS_PAUSED"
+      )
+        void read();
       if (error instanceof HongbaoError && error.code === "SIGN_IN_FIRST")
         setSignIn(error.message);
       else
@@ -758,6 +766,13 @@ function Page({
               value={typed}
               invalid={Boolean(message)}
               autoFocus
+              // A 口令 is matched exactly, case and all (business-spec-v1
+              // 二.2): no capital, correction or suggestions from the
+              // phone's keyboard, as on 红包站 (sweep 2026-11-21).
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
               onChange={(event) => {
                 setTyped(event.target.value);
                 setMessage(null);

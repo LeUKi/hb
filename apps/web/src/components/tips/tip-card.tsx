@@ -307,14 +307,19 @@ export function TipCardView({
   // Cap's codes (CAP_instr_blocked) and the browser's own words for a
   // failed fetch (“Failed to fetch”, “Load failed”) said plainly; a fetch
   // that never got an answer rejects with a TypeError, and the card's own
-  // messages are plain Errors (sweep 2026-11-21, TIP-RAW-ERRORS).
+  // messages are plain Errors (sweep 2026-11-21, TIP-RAW-ERRORS). An
+  // answer that was not JSON (a SyntaxError) or an abort is no answer
+  // either, as lib/activities.ts failureText has it; the card keeps its own
+  // copy of that rule because the 社区's mini app builds it with a stand-in
+  // for lib/activities.ts (sweep 2026-11-21 E5).
   function fail(error: unknown) {
     const text =
       error instanceof CapProblem
         ? capProblemText(error.code, AGAIN)
         : error instanceof TypeError
           ? "连不上红包站，请再试一次。"
-          : error instanceof Error
+          : error instanceof Error &&
+              !(error instanceof SyntaxError || error instanceof DOMException)
             ? error.message
             : "没有完成，请再试一次。";
     setProblem(text);

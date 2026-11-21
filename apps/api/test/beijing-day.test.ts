@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { startOfBeijingDay as fromBalance } from "../src/balance/day";
 import {
   BEIJING_OFFSET_MS,
   nextBeijingMidnight,
@@ -40,10 +39,5 @@ describe("the site's day starts at midnight in Beijing", () => {
     expect(nextBeijingMidnight(beijing("2026-11-22T00:00:00"))).toBe(
       beijing("2026-11-23T00:00:00"),
     );
-  });
-
-  it("is the same day for code that still imports it from balance", () => {
-    const now = beijing("2026-11-21T09:30:00");
-    expect(fromBalance(now)).toBe(startOfBeijingDay(now));
   });
 });

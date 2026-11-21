@@ -1141,6 +1141,9 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
           : null,
       pageUrl: input.pageUrl ?? "",
       pageAutoOpen: input.pageUrl ? input.pageAutoOpen === true : false,
+      // 允许用令牌领: a refused save that changed only this must not read
+      // as saved (sweep 2026-11-21).
+      allowTokens: input.allowTokens !== false,
       // What a save sends of its code (its versions come back with it).
       judge: input.judge
         ? {

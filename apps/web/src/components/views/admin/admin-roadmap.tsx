@@ -520,6 +520,9 @@ export function AdminRoadmap() {
           placeholder="点一件看详情。"
           unit="件"
           noun="需求"
+          // Narrow windows: a question stacked over the detail dialog
+          // leaves it waiting, its × included (sweep 2026-11-21).
+          covered={asking !== null}
           empty={<EmptyNote title={emptyText[status]} />}
           row={(item) => <RowBody item={item} />}
           detail={(item) => (

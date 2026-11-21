@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Fish as FishIcon } from "lucide-react";
 import { useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, failureText } from "../../lib/activities";
 import { type InvitePage, useAcceptInvite, useInvite } from "../../lib/balance";
 import { PlusName } from "../balance/plus";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -60,8 +60,12 @@ export function InviteView({ token }: { token: string }) {
       await accept.mutateAsync();
       goToBalance();
     } catch (failure) {
+      // Accepted already, trying again says so (07 §1; sweep 2026-11-21 E5).
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "接受邀请没有完成：网络或服务出了问题，结果还没确认。可以再试一次。",
+        ),
       );
     }
   };

@@ -92,6 +92,11 @@
       "name": "TOKEN_IDENTITY",
       "namespace_id": "1006",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "OUTBOUND_CHECKS",
+      "namespace_id": "1007",
+      "simple": { "limit": 20, "period": 60 }
     }
   ],
   "services": [{ "binding": "CAP", "service": "hb-cap" }],

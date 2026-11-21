@@ -289,6 +289,19 @@ export const activities = sqliteTable(
       table.id,
     ),
     index("activities_deadline_idx").on(table.deadline),
+    // The lifecycle sweep's candidates (sweep 2026-11-21, B8): the 红包
+    // running now, and those ended but not yet archived, so a run reads
+    // these and not every 红包 ever sent.
+    index("activities_running_idx")
+      .on(table.id)
+      .where(
+        sql`${table.rewardType} = 'ldc' AND ${table.deletedAt} IS NULL AND ${table.openedAt} IS NOT NULL AND ${table.endedAt} IS NULL`,
+      ),
+    index("activities_unarchived_idx")
+      .on(table.endedAt)
+      .where(
+        sql`${table.rewardType} = 'ldc' AND ${table.deletedAt} IS NULL AND ${table.openedAt} IS NOT NULL AND ${table.endedAt} IS NOT NULL AND ${table.archivedAt} IS NULL`,
+      ),
     index("activities_topic_idx").on(table.topicId),
     index("activities_admin_created_idx")
       .on(sql`${table.createdAt} DESC`, sql`${table.id} DESC`)
@@ -557,6 +570,13 @@ export const activityRegistrations = sqliteTable(
     ),
     index("activity_registrations_user_time_idx").on(
       table.userId,
+      table.registeredAt,
+      table.id,
+    ),
+    // A draw's 报名名单 and the five faces over it, in its own order, read
+    // a page at a time and not every sign-up sorted (sweep 2026-11-21).
+    index("activity_registrations_activity_time_idx").on(
+      table.activityId,
       table.registeredAt,
       table.id,
     ),
@@ -1645,6 +1665,11 @@ export const balanceEntries = sqliteTable(
       table.createdAt,
       table.id,
     ),
+    // 明细's 领到红包 lines, newest first, without walking the account's
+    // 转账 and deducts (sweep 2026-11-21).
+    index("balance_entries_hongbao_idx")
+      .on(table.userId, table.createdAt, table.id)
+      .where(sql`${table.kind} = 'hongbao'`),
     check(
       "balance_entries_shape_valid",
       sql`(${table.kind} = 'topup' AND ${table.topupId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0 AND ${table.claimId} IS NULL)
@@ -1866,6 +1891,11 @@ export const balanceLocks = sqliteTable(
       .on(table.activityId)
       .where(sql`${table.status} = 'active'`),
     index("balance_locks_user_status_idx").on(table.userId, table.status),
+    // An account's own 🐟额红包, for 明细's 发红包 and 退回 lines, without
+    // its 转出 locks (sweep 2026-11-21).
+    index("balance_locks_activity_user_idx")
+      .on(table.userId)
+      .where(sql`${table.purpose} = 'activity'`),
     check(
       "balance_locks_purpose_valid",
       sql`(${table.purpose} = 'withdrawal' AND ${table.withdrawalId} IS NOT NULL AND ${table.activityId} IS NULL)
@@ -2295,6 +2325,14 @@ export const codeJudgments = sqliteTable(
     index("code_judgments_claimed_idx")
       .on(table.activityId, table.sequence)
       .where(sql`${table.ok} = 1`),
+    // 我的记录: one person's judgments, newest first, a page at a time
+    // (sweep 2026-11-21).
+    index("code_judgments_user_time_idx").on(
+      table.activityId,
+      table.userId,
+      table.judgedAt,
+      table.submissionRowId,
+    ),
     check(
       "code_judgments_shape",
       sql`typeof(${table.attempt}) = 'integer' AND ${table.attempt} >= 0
@@ -2458,6 +2496,17 @@ export const codeJudgmentMoves = sqliteTable(
       table.userId,
       table.createdAt,
     ),
+    // 我的记录: others' judgments that moved this person, a page at a time
+    // and counted, without their own (sweep 2026-11-21).
+    index("code_judgment_moves_others_idx")
+      .on(
+        table.activityId,
+        table.userId,
+        table.createdAt,
+        table.position,
+        table.submissionRowId,
+      )
+      .where(sql`${table.position} > 0`),
     check(
       "code_judgment_moves_shape",
       sql`typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 10
@@ -3230,6 +3279,12 @@ export const pointsPayments = sqliteTable(
       table.updatedAt,
     ),
     index("points_payments_author_idx").on(table.authorId, table.createdAt),
+    // The 5-minute sweep (§13): leases that outlived their run, and 找不到收款人
+    // past their resend time (sweep 2026-11-21, B5).
+    index("points_payments_status_lease_idx").on(
+      table.status,
+      table.leaseUntil,
+    ),
     // 发放记录's search (§7): a recipient's payouts, and the issuer's number.
     index("points_payments_recipient_idx").on(
       table.systemId,

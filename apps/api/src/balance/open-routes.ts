@@ -20,8 +20,8 @@ import { bodyLimit } from "hono/body-limit";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings, ApiContext } from "../env";
 import { flushPaymentOutbox } from "../payments/scheduler";
+import { nextBeijingMidnight } from "../runtime/day";
 import { authenticateApiKey } from "./api-keys";
-import { startOfBeijingDay } from "./day";
 import { balanceError, RateLimitedError, RequestIssuesError } from "./errors";
 import { decodeRecordCursor, readAccount } from "./ledger";
 import { openApiDocument } from "./openapi";
@@ -327,7 +327,7 @@ export const openRoutes = new Hono<ApiContext>()
             ? null
             : formatAmount(key.daily_limit_minor),
         usedToday: formatAmount(today),
-        resetsAt: new Date(startOfBeijingDay() + 86_400_000).toISOString(),
+        resetsAt: new Date(nextBeijingMidnight()).toISOString(),
       },
     });
   })

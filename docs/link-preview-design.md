@@ -8,6 +8,7 @@
 
 网页 Worker（`apps/web/src/worker.ts`）。除了静态文件（`/assets/*`、`/sdk/*`、`/version.json`、`/og.png`），所有网址都先到 Worker：它取 `index.html`，把 `<!--page-meta-->` 和 `<!--/page-meta-->` 之间换成这个网址的标签，再交给浏览器。不是 HTML 的回答原样返回。
 
+- 本地开发的配置（`apps/web/wrangler.jsonc`）还多放过三类路径：`/src/*`、`/@*`、`/node_modules/*`，这是 Vite 开发服务器自己的模块（2026-11-21）。它们原来也先到 Worker，每个模块请求都要另开一个本机连接，e2e 几组一起跑时本机端口被用光，测试成批假失败。Stage 和生产的配置不用加：构建后的文件都在 `/assets/` 下。几份 wrangler 配置都不写注释，所以原因记在这里。
 - 标签和静态页面的文字在 `apps/web/src/lib/page-meta.ts`，构建时也用它写默认的那一套。
 - 要读数据的页面问 API：`GET /api/site/preview/<类>/<键>`，只回 `{ title, description, tab }`。同一个网址的回答在边缘缓存 60 秒；1.5 秒没回或出错，就用全站通用的标签，页面照常打开。
 - `<title>` 和页面自己设的一样（红包页是红包标题），打开后标签页的标题不会跳。

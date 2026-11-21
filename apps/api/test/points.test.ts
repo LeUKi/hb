@@ -7,6 +7,7 @@ import {
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
+import { scheduleActivity } from "../src/activities/schedule";
 import {
   createActivity,
   getManagedActivity,
@@ -18,7 +19,12 @@ import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { judgeRecords } from "../src/judge/records";
-import { adminOverview, failingDay } from "../src/points/admin";
+import {
+  adminOverview,
+  failingDay,
+  failPayout,
+  requeryPayout,
+} from "../src/points/admin";
 import { listPointsEvents } from "../src/points/events";
 import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
 import {
@@ -448,6 +454,21 @@ describe("三方积分红包", () => {
     ).rejects.toThrow("余额不够");
   });
 
+  it("counts an open 自定义金额 one's rows against the next opening's 额度 (sweep 2026-11-21)", async () => {
+    await online();
+    // 100 星星 of 额度, all of it promised by the first.
+    await opened({ mode: "custom", amounts: ["60", "40"] });
+    const saved = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: points({ mode: "fixed", totalAmount: "100", count: 1 }),
+    });
+    await expect(
+      openActivity(bindings, saved.id, sender.id, saved.version),
+    ).rejects.toThrow(
+      "余额不够：可用 100 星星，这个红包要 100 星星，你其他开放中的红包还要 100 星星",
+    );
+  });
+
   it("ends the 红包 at once on 额度不够 and stops its other payouts", async () => {
     await online();
     const hongbao = await opened({
@@ -613,6 +634,27 @@ describe("三方积分红包", () => {
     await expect(
       openActivity(bindings, draft.id, keyless.id, draft.version),
     ).rejects.toThrow("密钥");
+    // Nor is it timed: 保存并定时 refuses what opening would, not only at
+    // its time (sweep 2026-11-21). One with its key is timed.
+    const inAnHour = () => new Date(Date.now() + 3_600_000).toISOString();
+    await expect(
+      scheduleActivity(bindings, draft.id, keyless.id, {
+        version: draft.version,
+        at: inAnHour(),
+      }),
+    ).rejects.toMatchObject({ code: "POINTS_KEY_NEEDED" });
+    const keyed = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: points(money),
+    });
+    expect(
+      (
+        await scheduleActivity(bindings, keyed.id, sender.id, {
+          version: keyed.version,
+          at: inAnHour(),
+        })
+      ).scheduledOpenAt,
+    ).not.toBeNull();
     // Its system paused since: its title still changes, opening waits.
     await pauseSystem(bindings, admin.id, systemId, true);
     const renamed = await updateActivity(bindings, draft.id, keyless.id, {
@@ -623,6 +665,12 @@ describe("三方积分红包", () => {
       title: "改个标题",
       openingBlockedReason: "POINTS_NOT_ONLINE",
     });
+    await expect(
+      scheduleActivity(bindings, draft.id, keyless.id, {
+        version: renamed.version,
+        at: inAnHour(),
+      }),
+    ).rejects.toMatchObject({ code: "POINTS_NOT_ONLINE" });
     // The step holds on every save; a paused system is not chosen anew.
     await expect(
       updateActivity(bindings, draft.id, keyless.id, {
@@ -1162,6 +1210,54 @@ describe("站长端：操作记录和发放质量 (§17)", () => {
     ).rejects.toThrow("每秒最多调用要在");
   });
 
+  it("settles a payout with no known result once: 标为发放失败 is final, never queried or sent again (sweep 2026-11-21 ADM-1)", async () => {
+    await online();
+    const hongbao = await opened({
+      mode: "fixed",
+      totalAmount: "30",
+      count: 3,
+    });
+    const a = await actor();
+    issuer.open(a.externalId, a.username, 0);
+    const claimed = await claim(hongbao.id, a);
+    const id = claimed.claim.payment?.id ?? "";
+    await env.DB.prepare(
+      "UPDATE points_payments SET status='unknown',reason='unknown',next_run_at=NULL WHERE id=?",
+    )
+      .bind(id)
+      .run();
+    const calls = issuer.calls.length;
+    await failPayout(bindings, id, admin.id);
+    expect(await payout(claimed.claim.id)).toMatchObject({
+      status: "failed",
+      reason: "admin",
+      next_run_at: null,
+    });
+    // Once only: answered again, or 再查一次 after it, it says it moved.
+    await expect(failPayout(bindings, id, admin.id)).rejects.toMatchObject({
+      status: 409,
+      code: "POINTS_PAYOUT_MOVED",
+      message: "这笔发放的状态刚刚变了，刷新后再看。",
+    });
+    await expect(requeryPayout(bindings, id, admin.id)).rejects.toMatchObject({
+      status: 409,
+      code: "POINTS_PAYOUT_MOVED",
+    });
+    expect(await payout(claimed.claim.id)).toMatchObject({
+      status: "failed",
+      reason: "admin",
+    });
+    // No run takes it; the issuer is not called and nothing is paid.
+    expect(await runPointsPayment(bindings, id)).toBe("skipped");
+    expect(issuer.calls.length).toBe(calls);
+    expect(issuer.accounts.get(a.externalId)?.available).toBe(0);
+    const events = await listPointsEvents(bindings, systemId);
+    expect(events.items[0]).toMatchObject({
+      actor: "admin",
+      action: "payout_failed",
+    });
+  });
+
   it("flags a day only with enough payouts, most refused for the recipient", () => {
     const day = (
       confirmed: number,
@@ -1223,6 +1319,10 @@ export function judge(s, tools) {
       requestId: crypto.randomUUID(),
       activity: input(GAME, deployed.judge?.id ?? ""),
     });
+    expect(
+      (await getManagedActivity(bindings, saved.id, sender.id))
+        .openingBlockedReason,
+    ).toBeUndefined();
     const hongbao = await openActivity(
       bindings,
       saved.id,
@@ -1275,6 +1375,11 @@ export function judge(s, tools) {
       requestId: crypto.randomUUID(),
       activity: input(plain, deployed.judge?.id ?? ""),
     });
+    // The draft's own view says it before opening (sweep 2026-11-21).
+    expect(
+      (await getManagedActivity(bindings, saved.id, sender.id))
+        .openingBlockedReason,
+    ).toBe("JUDGE_NOT_FOR_POINTS");
     await expect(
       openActivity(bindings, saved.id, sender.id, saved.version),
     ).rejects.toMatchObject({ code: "JUDGE_NOT_FOR_POINTS" });

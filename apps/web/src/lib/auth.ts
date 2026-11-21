@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
 import { useEffect } from "react";
 import { api } from "../api";
+import { forgetKeptForm } from "../components/hongbao-form/kept-form";
 import {
   applySessionAttemptCooldown,
   clearAttemptCooldown,
@@ -203,6 +204,10 @@ export function useLogout(csrfToken: string | null | undefined) {
       });
       forceAnonymousSession = false;
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      // Signing out on purpose offers no form back (kept-form.ts): cleared
+      // last, after a form open under it has left behind the gate and kept
+      // what was typed (sweep 2026-11-21).
+      forgetKeptForm();
     },
   });
 }

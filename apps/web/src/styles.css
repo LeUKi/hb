@@ -40,6 +40,9 @@
 
   --color-*: initial;
   --color-white: #ffffff;
+  /* A raised face (Segmented's, a pressed chip's) over a fill-2 track:
+     white in light; dark gives it its own (below). */
+  --color-raised: #ffffff;
   --color-black: #000000;
   /* Text carries a faint red undertone instead of brown. */
   --color-ink: #2a1519;
@@ -2733,6 +2736,35 @@ html[data-embed] .build-stamp {
 .tip-card .btn-secondary {
   --btn-line: var(--t-line);
 }
+/* 深色 outside the site (an embedded 打赏卡 with ?theme=dark or on a dark
+   system, and the 社区小程序, which imports this file): the shared dark
+   tokens turn the words light, so the secondary buttons (查一下, 再打开,
+   再打赏) take the dark glass, and words on gold keep the dark gold ink
+   (the light one is for gold words on the dark page). The site's own are
+   under data-site-dark, which neither ever has. Unlayered, so they win over
+   @layer components; one rule for both. The :where keeps them as weak as a
+   plain :root[data-mode="dark"] rule, so the mini app's buttons over the
+   red cover (mini.css) still outrank them (sweep 2026-11-21,
+   EMBED-DARK-BUTTONS). */
+:root[data-mode="dark"]:where(:not([data-site-dark])) .btn-secondary {
+  --btn-top: rgb(255 255 255 / 0.08);
+  --btn-bottom: rgb(255 255 255 / 0.08);
+  --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --btn-drop: 0 2px 6px -2px rgb(0 0 0 / 0.5);
+}
+:root[data-mode="dark"]:where(:not([data-site-dark])) .btn-secondary:hover {
+  --btn-top: rgb(255 255 255 / 0.13);
+  --btn-bottom: rgb(255 255 255 / 0.13);
+}
+:root[data-mode="dark"]:where(:not([data-site-dark]))
+  .btn-secondary:active:not(:disabled, [data-disabled]) {
+  --btn-inset: inset 0 1px 3px rgb(0 0 0 / 0.35);
+  --btn-drop: 0 1px 2px -1px rgb(0 0 0 / 0.3);
+}
+:root[data-mode="dark"]:where(:not([data-site-dark]))
+  :is(.avatar-ring, .chip-gold, .title-badge[data-title="highest"]) {
+  color: #6a4510;
+}
 /* A choice on the card: two lines (the amount, then “LDC”). */
 .tip-option {
   display: grid;
@@ -2859,6 +2891,12 @@ html[data-embed] .build-stamp {
   color-scheme: dark;
   --mini-page: #222222;
   --color-white: color-mix(in srgb, var(--mini-page), #fff 10%);
+  /* Over a fill-2 track the dark --color-white was the track's own colour
+     (1.01:1 on glass, darker than the track on panels and pops), so the
+     face is a white tint a step over it (about 1.45:1 everywhere, like
+     light's 1.42). Here, not only under data-site-dark, so the 社区小程序's
+     Segmented gets it too (sweep 2026-11-21). */
+  --color-raised: rgb(255 255 255 / 0.12);
   --chart-1: #3987e5;
   --chart-2: #d95926;
   --color-ink: #ededed;

@@ -27,6 +27,7 @@ import {
   publicationEligibility,
   publicationMessages,
 } from "../payments/publication";
+import { pointsBlockedReason } from "../points/funding";
 import {
   allowsRealOpening,
   readPlatformControls,
@@ -172,6 +173,12 @@ async function scheduleBlocked(
       configuration(row),
       held,
     );
+    if (blocked) return blocked;
+  } else if (row.funding === "points") {
+    // 三方积分: its switch, its system and the sender's key, as the draft's
+    // own view says (a draft now saves without them); 额度 is asked of the
+    // issuer at its time, as opening asks it (sweep 2026-11-21).
+    const blocked = await pointsBlockedReason(env, row);
     if (blocked) return blocked;
   } else if (row.merchantId) {
     const merchant = await ownedMerchant(env, row.merchantId, row.authorId);

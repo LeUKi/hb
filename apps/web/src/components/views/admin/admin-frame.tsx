@@ -327,7 +327,7 @@ export function FilterChip({
           aria-label="清除这个筛选"
           // A lit spot on the tint: in dark the raised white tint, not the
           // dark --color-white's grey (sweep 2026-11-21).
-          className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-[var(--color-raised,var(--color-white))]/60"
+          className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-raised/60"
         >
           <X className="size-3.5" aria-hidden="true" />
         </button>
@@ -360,7 +360,7 @@ export function ToggleChip({
           // white (white in light; about white 21% in dark, where the
           // face alone sat at the chips' own colour; sweep 2026-11-21).
           pressed
-            ? "bg-[color-mix(in_srgb,var(--color-raised,var(--color-white)),#fff_10%)] font-medium text-ink raised"
+            ? "bg-[color-mix(in_srgb,var(--color-raised),#fff_10%)] font-medium text-ink raised"
             : "bg-fill-2 text-ink-2 hover:text-ink",
         )}
       >
@@ -393,6 +393,7 @@ export function ListDetail<T extends { id: string }>({
   placeholder,
   unit,
   noun,
+  covered = false,
 }: {
   items: T[];
   list: LazyList;
@@ -413,6 +414,11 @@ export function ListDetail<T extends { id: string }>({
   unit: string;
   /** What one row is, for the dialog's title: 红包 / 用户 / 付款. */
   noun: string;
+  /**
+   * A dialog opened beside the detail dialog is over it: the detail waits
+   * (narrow windows; sweep 2026-11-21).
+   */
+  covered?: boolean;
 }) {
   const { roomy } = useWindowInfo();
   const titleId = useId();
@@ -458,7 +464,7 @@ export function ListDetail<T extends { id: string }>({
                     // darker than a hovered row (as ToggleChip's face;
                     // sweep 2026-11-21).
                     item.id === selectedId
-                      ? "bg-[color-mix(in_srgb,var(--color-raised,var(--color-white)),#fff_10%)]/80"
+                      ? "bg-[color-mix(in_srgb,var(--color-raised),#fff_10%)]/80"
                       : "hover:bg-fill-2",
                   )}
                 >
@@ -501,6 +507,7 @@ export function ListDetail<T extends { id: string }>({
           open={selected !== null}
           onClose={() => onSelect(null)}
           labelledBy={titleId}
+          inert={covered}
         >
           {dialogItem && (
             <div className="grid gap-4 p-5">

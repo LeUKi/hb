@@ -149,6 +149,7 @@ const aiPrompt = (
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。
    - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。
    - await hb.me()、hb.myView()、hb.mine(next) 是看的人自己的情况、判定器写给他的数据和他的记录；hb.now() 是校准过的时间；hb.login() 要在他点了按钮时调用。
+   - hb.me() 的 why 或 hb.submit() 的 reason 是 paused 时，红包暂停领取：判定器连续出错，或者红包作者的 LDC 商户余额不足；余额不足时 hb.submit() 带的 message 是原因，照着显示。
    - await hb.identity({ nonce }) 拿一个红包站签名的身份令牌，见第 8 条。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
    - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的模拟器（npm run page，宽屏、手机、多人三种布局；npm run page -- --shot 截宽屏和手机三张图、列出网页报错，改完网页跑一次）和数字炸弹、刮刮乐两个样例。
@@ -157,7 +158,7 @@ const aiPrompt = (
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
    - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它；payload.judge、payload.judgeVersion 是代码判定红包的判定器编号和第几版：大家共用的后端只给自己的判定器用时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
-   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）, unit（LDC、🐟 或三方积分的单位）, step（最小单位："0.01"、"1"…）, points（三方积分的名称、单位和发行方的域名，别的红包是 null）, pool（总奖池）, unclaimed（奖池还剩，第五版以前是 null；金额按最小单位的小数位写）, units（{ pool, unclaimed }：多少个最小单位）, openedAt, deadlineAt（ISO，精确到毫秒；openedAt 就是判定器拿到的 submission.hongbao.openedAt）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
+   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused（判定器连续出错、领取暂停时是 true）, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）, unit（LDC、🐟 或三方积分的单位）, step（最小单位："0.01"、"1"…）, points（三方积分的名称、单位和发行方的域名，别的红包是 null）, pool（总奖池）, unclaimed（奖池还剩，第五版以前是 null；金额按最小单位的小数位写）, units（{ pool, unclaimed }：多少个最小单位）, openedAt, deadlineAt（ISO，精确到毫秒；openedAt 就是判定器拿到的 submission.hongbao.openedAt）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器核对才算数（联网问后端，或者验后端签的凭证）；令牌不能用来替他提交。
 9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
@@ -318,7 +319,8 @@ export function HelpPageView() {
             。要这个红包现在的情况，读红包信息{" "}
             <Code>GET {origin}/api/hongbao/红包编号</Code>，谁都能读：
             <Code>status</Code>（<Code>active</Code> 或 <Code>ended</Code>
-            ；草稿只有这一项）、<Code>paused</Code>（领取暂停）、
+            ；草稿只有这一项）、<Code>paused</Code>
+            （判定器连续出错，领取暂停）、
             <Code>sender</Code>、<Code>judge</Code>（判定器和第几版）、
             <Code>fingerprint</Code>、<Code>params</Code>
             （现在公开的参数）、<Code>unit</Code>（LDC、🐟 或三方积分的单位）、
@@ -355,6 +357,16 @@ export function HelpPageView() {
               AGENTS.md 的“SDK” ↗
             </a>
             和类型文件 <Code>page/hb.d.ts</Code>。
+          </p>
+          {/* The SDK's paused is wider than 红包信息's, which is its code's
+              alone (hongbao-info.ts): a merchant short of funds pauses
+              claims too (payout-stop-design §6; sweep 2026-11-21, F5). */}
+          <p>
+            <Code>hb.me()</Code> 的 <Code>why</Code> 或 <Code>hb.submit()</Code>{" "}
+            的 <Code>reason</Code> 是 <Code>paused</Code>
+            时，红包暂停领取：判定器连续出错，或者红包作者的 LDC
+            商户余额不足。余额不足时 <Code>hb.submit()</Code> 带的{" "}
+            <Code>message</Code> 是原因，照着显示就行。
           </p>
         </Panel>
         <Panel className={text}>

@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useId, useRef, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, failureText } from "../../lib/activities";
 import {
   type BalanceFilter,
   type BalancePage,
@@ -1045,8 +1045,13 @@ function InviteDialog({
       // As it was typed (the link works whatever the case).
       setMade({ url: result.url, username: name });
     } catch (failure) {
+      // A link lost on the way was never seen, so trying again is safe (07 §1;
+      // sweep 2026-11-21 E5).
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "生成链接没有完成：网络或服务出了问题，还没拿到链接。可以再试一次。",
+        ),
       );
     }
   };

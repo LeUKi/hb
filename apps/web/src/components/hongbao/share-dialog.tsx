@@ -582,7 +582,7 @@ function PasswordPicker({
               className={`flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                 index === value
                   ? // Segmented's raised face, dark included (sweep 2026-11-21).
-                    "bg-[var(--color-raised,var(--color-white))] font-medium text-ink raised"
+                    "bg-raised font-medium text-ink raised"
                   : "text-ink-2 hover:text-ink"
               }`}
             >

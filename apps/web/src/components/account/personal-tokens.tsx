@@ -6,6 +6,7 @@ import {
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { failureText } from "../../lib/activities";
 import {
   usePersonalTokenActions,
   usePersonalTokens,
@@ -298,8 +299,13 @@ function NewTokenDialog({
       });
       setToken(made.token);
     } catch (failure) {
+      // A token made without its answer is never shown again: it can only be
+      // stopped (07 §1; sweep 2026-11-21 E5).
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "生成令牌没有完成：网络或服务出了问题，令牌可能已经生成了。可以再试一次，多出来的令牌在列表里停用。",
+        ),
       );
     }
   };
@@ -423,7 +429,10 @@ function TokenDialog({
       setStopping(false);
     } catch (failure) {
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "停用没有完成：网络或服务出了问题，可能已经停用了。可以再试一次。",
+        ),
       );
     }
   };

@@ -3,8 +3,8 @@
 import { databaseNow } from "../activities/lifecycle";
 import type { ApiBindings } from "../env";
 import { credentialVerificationView } from "../payments/verification";
+import { startOfBeijingDay } from "../runtime/day";
 import { listApiKeys } from "./api-keys";
-import { startOfBeijingDay } from "./day";
 import { memberOf } from "./invites";
 import { decodeRecordCursor, listRecords, readAccount } from "./ledger";
 import { readPlatformAppRow } from "./platform-app";

@@ -12,11 +12,19 @@ export type SiteUser = {
 /**
  * Only a name LINUX DO has vouched for leads to an account: one the 社区
  * mini app made carries the name its request body claimed, unsigned, so
- * until that person signs in with LINUX DO (profile_seen_at) the name finds
- * no one (docs/mini-app-design.md §7; sweep 2026-11-21). Otherwise anyone
- * could take a name not yet here and receive what is meant for it.
+ * until that person signs in with LINUX DO the name finds no one
+ * (docs/mini-app-design.md §7; sweep 2026-11-21). Otherwise anyone could
+ * take a name not yet here and receive what is meant for it.
+ *
+ * Only a sign-in sets last_login_at: LINUX DO's (auth/oauth.ts upsertUser,
+ * which sets profile_seen_at with it), and before 2026-10-15 the retired
+ * LiteAuth one, a LINUX DO identity too. The mini app's first-timers have
+ * neither. profile_seen_at only came on 2026-10-22 (migration 0038) and was
+ * not filled in, so last_login_at counts as well: someone whose last
+ * sign-in was before then is still found by name (sweep 2026-11-21).
  */
-export const VOUCHED = "profile_seen_at IS NOT NULL";
+export const VOUCHED =
+  "(profile_seen_at IS NOT NULL OR last_login_at IS NOT NULL)";
 
 /**
  * Someone who has been here, by LINUX DO username in any case: 转账's

@@ -60,23 +60,25 @@ type Pending =
 
 const lost = "尚未确认保存结果，请重试原提交，避免重复提交。";
 
+/** What a form brought back across a lost sign-in opens with (kept-form). */
+function keptNotice(kept: KeptForm): Notice {
+  const next = kept.lostCreate
+    ? `。${lost}`
+    : kept.unconfirmed
+      ? "。上次保存没有等到结果，可能已经存成了草稿，保存前先到红包记录的「我发的」里看一看。"
+      : "，确认后再保存。";
+  return {
+    tone: "warning",
+    text: `登录失效前填的内容已恢复${next}${kept.keysDropped ? "填过的密钥没有留下，要重新填写。" : ""}`,
+  };
+}
+
 /**
  * 报名 moves a 限时开奖's version without changing what it says
  * (registration-service): a save refused for that alone is sent again on
  * the version read back, this many times at most (sweep 2026-11-21).
  */
 const resends = 2;
-
-/**
- * sameInput, 允许用令牌领 included, which it leaves out: a refused save
- * that changed only that must not read as saved (sweep 2026-11-21).
- */
-function sameSave(saved: ActivityInput, sent: ActivityInput) {
-  return (
-    sameInput(saved, sent) &&
-    (saved.allowTokens !== false) === (sent.allowTokens !== false)
-  );
-}
 
 /**
  * Saving a 红包, as production does it: 保存草稿 or 保存并开放 (the 商户
@@ -128,19 +130,27 @@ export function useSubmit({
   const [scheduling, setScheduling] = useState(false);
   // Which button started it: that one says what is happening.
   const [opening, setOpening] = useState(false);
+  // 发红包's save whose answer was lost before the sign-in ended comes back
+  // as it was left, on 重试原提交 with its requestId, so it cannot make a
+  // second draft. On 保存草稿: whether to open, or when (定时 is not kept),
+  // is asked again on its page (sweep 2026-11-21).
   const [uncertain, setUncertain] = useState<{
     open: boolean;
     pending: Pending;
-  } | null>(null);
+  } | null>(() =>
+    kept?.lostCreate && !activity
+      ? {
+          open: false,
+          pending: {
+            kind: "create",
+            request: kept.lostCreate,
+            form: withDefaultTitle(kept.form),
+          },
+        }
+      : null,
+  );
   const [notice, setNotice] = useState<Notice | null>(
-    () =>
-      carried ??
-      (kept
-        ? {
-            tone: "warning",
-            text: `登录失效前填的内容已恢复，确认后再保存。${kept.keysDropped ? "填过的密钥没有留下，要重新填写。" : ""}`,
-          }
-        : null),
+    () => carried ?? (kept ? keptNotice(kept) : null),
   );
   /** A notice from a press, felt as it shows (震动反馈). */
   const notify = (note: Notice) => {
@@ -166,17 +176,22 @@ export function useSubmit({
   // The sign-in ended under the form (a 401, a failed check, another
   // account): it unmounts behind the gate, so what was typed is written
   // down once for when this account comes back (kept-form.ts), before the
-  // gate is painted. Leaving the page signed in keeps nothing.
+  // gate is painted. Leaving the page signed in keeps nothing. A create
+  // left on 重试原提交 goes with it (its requestId: no second draft).
   const queryClient = useQueryClient();
   const keeps = kept !== undefined;
-  const typed = useRef({ form, dirty, activity });
-  typed.current = { form, dirty, activity };
+  const typed = useRef({ form, dirty, activity, uncertain });
+  typed.current = { form, dirty, activity, uncertain };
   useLayoutEffect(() => {
     if (!keeps) return;
     return () => {
-      const { form, dirty, activity } = typed.current;
-      if (dirty && sessionUserOf(queryClient)?.id !== user.id)
-        keepForm(user.id, activity, form);
+      const { form, dirty, activity, uncertain } = typed.current;
+      const lostCreate =
+        uncertain?.pending.kind === "create"
+          ? uncertain.pending.request
+          : undefined;
+      if ((dirty || lostCreate) && sessionUserOf(queryClient)?.id !== user.id)
+        keepForm(user.id, activity, form, lostCreate);
     };
   }, [keeps, queryClient, user.id]);
 
@@ -354,7 +369,7 @@ export function useSubmit({
             if (current) await writes.adopt(current.activity);
             if (
               current &&
-              sameSave(current.activity.config, pending.request.activity)
+              sameInput(current.activity.config, pending.request.activity)
             ) {
               setUncertain(null);
               setSaving(false);
@@ -365,7 +380,7 @@ export function useSubmit({
             // goes again as it was, on the version read back.
             const unchanged =
               current !== null &&
-              sameSave(current.activity.config, pending.base);
+              sameInput(current.activity.config, pending.base);
             if (current && unchanged && resent < resends) {
               pending = {
                 ...pending,

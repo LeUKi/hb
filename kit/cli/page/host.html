@@ -233,7 +233,9 @@
         ended: "红包已结束。",
         already_claimed: "你已领过这个红包。",
         judge_failed: "判定器出错了，这次没有判定，可以再提交一次。",
-        paused: "判定器连续出错，暂停领取。",
+        // Its code failing, or the sender's merchant short of funds: the
+        // result's message says which, when it has one (sweep 2026-11-21).
+        paused: "暂停领取。",
         busy: "上一次还没有结果。",
       };
 
@@ -625,7 +627,7 @@
               const result = await send(seat, seat.input.value);
               if (result.judged) seat.input.value = "";
               else if (result.reason !== "cooldown")
-                seat.message = notJudged[result.reason] ?? result.message ?? "没有提交。";
+                seat.message = result.message ?? notJudged[result.reason] ?? "没有提交。";
             } catch (error) {
               seat.message = `出错：${error.message}`;
             } finally {

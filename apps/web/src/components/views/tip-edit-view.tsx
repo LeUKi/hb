@@ -11,6 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
 import { useIsPresent } from "motion/react";
 import { useEffect, useId, useState } from "react";
+import { failureText } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import {
@@ -280,7 +281,18 @@ function EditorForm({
       else await actions.create.mutateAsync(input);
       setSaved(true);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "保存没有完成。");
+      // Under 没有保存: the server's reason, or these words when the outcome
+      // is not known (no answer, or a 5xx). A new card has no request to
+      // repeat, so a second try after one that went through makes a second
+      // card (07 §1; sweep 2026-11-21 E5).
+      setError(
+        failureText(
+          failure,
+          card
+            ? "网络或服务出了问题，结果还没确认。可以再试一次。"
+            : "网络或服务出了问题，打赏卡可能已经建好了。先到我的打赏看看，再决定要不要再试。",
+        ),
+      );
     }
   };
   const busy = actions.create.isPending || actions.update.isPending;

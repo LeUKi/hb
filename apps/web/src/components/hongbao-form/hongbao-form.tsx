@@ -62,6 +62,7 @@ import {
   paramsLineOf,
   triedHongbao,
 } from "./judge-issues";
+import { takeKeptForm } from "./kept-form";
 import { useFormPoints, useFormUnit } from "./points-funding";
 import { sameJson } from "./same-json";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
@@ -157,11 +158,14 @@ export function HongbaoForm({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [cancelSchedule, setCancelSchedule] = useState(false);
   const scheduleWrites = useActivityWrites(user.id, csrfToken, activity?.id);
+  // What was typed here when the sign-in ended (kept-form.ts), taken once:
+  // it comes back as unsaved changes over what is saved (sweep 2026-11-21).
+  const [kept] = useState(() => takeKeptForm(user.id, activity));
   // What is saved: the form is dirty when it differs; a save moves it.
   const [baseline, setBaseline] = useState<FormState>(() =>
     activity ? formOf(activity) : (preset ?? emptyForm()),
   );
-  const [form, setForm] = useState(baseline);
+  const [form, setForm] = useState(() => kept?.form ?? baseline);
   // As JSON.stringify would tell, without writing the 判定器's code and the
   // texts out on every render: only the parts a change replaced are looked
   // into (sweep 2026-11-21).
@@ -183,7 +187,8 @@ export function HongbaoForm({
   const fishReady = funding?.available === true;
   const fishDefault = useRef(false);
   useEffect(() => {
-    if (editing || copied || fishDefault.current) return;
+    // A form brought back says its own 从哪发.
+    if (editing || copied || kept || fishDefault.current) return;
     if (!merchantLoaded || funding === undefined) return;
     fishDefault.current = true;
     if (merchant || !fishReady || dirty) return;
@@ -193,7 +198,16 @@ export function HongbaoForm({
     });
     setBaseline(start);
     setForm(start);
-  }, [editing, copied, merchantLoaded, merchant, funding, fishReady, dirty]);
+  }, [
+    editing,
+    copied,
+    kept,
+    merchantLoaded,
+    merchant,
+    funding,
+    fishReady,
+    dirty,
+  ]);
   const submit = useSubmit({
     activity,
     user,
@@ -206,6 +220,7 @@ export function HongbaoForm({
       setBaseline(withKeysKept(saved));
       setForm((current) => withKeysKept(current, saved));
     },
+    kept,
   });
   const update: Update = (change) => {
     setForm((current) => change(current));
@@ -329,11 +344,15 @@ export function HongbaoForm({
   });
   const liveChecked =
     fill.answered?.key === checkKey ? fill.answered.problems : null;
+  // The pool's range counts the 三方积分's 最小单位, as its default does
+  // (judge-issues.ts; sweep 2026-11-21).
+  const formUnit = useFormUnit(form);
   const judgeIssues = judgeIssuesOf(
     form,
     declarations,
     liveChecked ??
       (checkedParams?.key === checkKey ? checkedParams.problems : []),
+    formUnit,
   );
   // What check() said as they were filled shows at once (边填边查), its
   // own rules' problems once the step was checked, as ever.
@@ -342,7 +361,6 @@ export function HongbaoForm({
       (problem) => (problem.key || declarations?.params[0]?.key) === key,
     )?.message;
 
-  const formUnit = useFormUnit(form);
   // 发多少 as the 判定器 suggests (§4), in its 三方积分's 最小单位 (meta.
   // points): its default counts 最小单位, so 10000 is 100.00 LDC and, at
   // 10 D币 each, 100000 D币. Left as it came, it follows the unit picked;
@@ -484,9 +502,12 @@ export function HongbaoForm({
   // 用它发红包 (judge-square §6): /new?judge=<编号> opens on 代码判定 at
   // ② 判定器 at once; the step picks that 判定器 there (its newest version
   // that passed, or the version others use), focus then on its first
-  // param. As a starting point, not an unsaved change.
-  const started = useRef(false);
-  const [starting, setStarting] = useState(!editing && Boolean(startJudge));
+  // param. As a starting point, not an unsaved change. A form brought back
+  // (kept-form.ts) holds what was picked then: not started over it.
+  const started = useRef(kept !== null);
+  const [starting, setStarting] = useState(
+    !editing && Boolean(startJudge) && !kept,
+  );
   // Picked so: a line over its card says what comes next, till 下一步.
   const [startHint, setStartHint] = useState(false);
   useEffect(() => {

@@ -17,8 +17,8 @@ export async function limitOutboundCheck(
   userId: string,
 ) {
   // Optional, like the other limiters: tests and local runs may have none.
-  const limiter = (env as ApiBindings & { OUTBOUND_CHECKS?: RateLimit })
-    .OUTBOUND_CHECKS;
-  const outcome = await limiter?.limit({ key: `${check}:${userId}` });
+  const outcome = await env.OUTBOUND_CHECKS?.limit({
+    key: `${check}:${userId}`,
+  });
   if (outcome && !outcome.success) throw new RateLimitedError(60);
 }

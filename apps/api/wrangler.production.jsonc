@@ -115,6 +115,11 @@
       "name": "TOKEN_IDENTITY",
       "namespace_id": "1206",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "OUTBOUND_CHECKS",
+      "namespace_id": "1207",
+      "simple": { "limit": 20, "period": 60 }
     }
   ],
   "analytics_engine_datasets": [

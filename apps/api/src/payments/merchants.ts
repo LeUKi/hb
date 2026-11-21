@@ -36,6 +36,15 @@ function merchantConflict(
   throw new ActivityError(409, "MERCHANT_CONFLICT", message);
 }
 
+/**
+ * A Client ID another merchant configuration holds: its own code, so the
+ * form says this and not that the merchant changed elsewhere, which every
+ * retry would repeat (sweep 2026-11-21).
+ */
+function clientIdTaken(message: string): never {
+  throw new ActivityError(409, "MERCHANT_CLIENT_ID_TAKEN", message);
+}
+
 function merchantCreateDigestInput(input: CreateMerchantInput) {
   const mode = input.mode ?? "simulation";
   const base = {
@@ -311,7 +320,7 @@ export async function createMerchant(
         .bind(input.clientId)
         .first()
     )
-      merchantConflict("此商户应用已配置，请使用原配置维护");
+      clientIdTaken("此商户应用已配置，请使用原配置维护");
     throw error;
   }
   return getMerchant(env, id, authorId);
@@ -387,7 +396,7 @@ export async function updateMerchant(
     .bind(clientId)
     .first<{ merchant_id: string }>();
   if (registration && registration.merchant_id !== id)
-    merchantConflict("此 Client ID 已属于其他商户配置。");
+    clientIdTaken("此 Client ID 已属于其他商户配置。");
   const now = Date.now();
   const nextCredential =
     input.secret === undefined
@@ -457,7 +466,7 @@ export async function updateMerchant(
       .bind(clientId)
       .first<{ merchant_id: string }>();
     if (owner && owner.merchant_id !== id)
-      merchantConflict("此 Client ID 已属于其他商户配置。");
+      clientIdTaken("此 Client ID 已属于其他商户配置。");
     if (impact) {
       const changed = await readMerchantImpact(env, latest);
       if (changed.snapshot !== impact.snapshot)

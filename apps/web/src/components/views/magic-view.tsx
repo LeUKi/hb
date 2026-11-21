@@ -268,7 +268,10 @@ function TooLate({ hop }: { hop: Hop }) {
         route="broken"
         title="付款页已经失效"
         text="Credit 站的付款页只在几分钟内有效。"
-        note="回到社区小程序里的打赏卡，再点一次“去 Credit 站付款”。"
+        // Once opened, the card's button reads 再打开 and opens the same
+        // expired link; a new one comes from ‹, then Credit 站 (sweep
+        // 2026-11-21).
+        note="回到社区小程序里的打赏卡，按“‹”回去再点 Credit 站，会生成新的付款链接。"
         actions={<HomeButton />}
       />
     );

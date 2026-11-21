@@ -8,6 +8,7 @@ import {
 } from "../../lib/commands";
 import { useMaintenance } from "../../lib/maintenance";
 import { useIdentity } from "../../lib/session";
+import { useKeptFor } from "../hongbao-form/kept-form";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { PageSkeleton } from "../page/page-state";
 import { useIdentityRetry } from "../shell/identity-check";
@@ -107,6 +108,9 @@ export function CommandPageView({
   const role = roleOf(identity.user);
   const gate = gateFor(command, role);
   const { openAccount } = useOmniboxController();
+  // 发红包's form, gone as the sign-in ended, kept what was typed
+  // (kept-form.ts): the gate says so (sweep 2026-11-21).
+  const keptNew = useKeptFor();
   // Still finding out who this is (the loader stops waiting after 8 s).
   if (!identity.ready && command.requires !== "guest") return <PageSkeleton />;
   if (identity.failed && command.requires !== "guest")
@@ -126,7 +130,11 @@ export function CommandPageView({
       <MessageView
         icon={command.icon}
         title={command.title}
-        text="登录后可以使用。"
+        text={
+          id === "new" && keptNew
+            ? "登录已失效。重新登录后回到这一页，填好的内容还在。"
+            : "登录后可以使用。"
+        }
         action={
           <Button variant="primary" onClick={openAccount}>
             登录

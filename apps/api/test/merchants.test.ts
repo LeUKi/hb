@@ -365,16 +365,21 @@ describe("merchant API security and idempotency", () => {
         message: "每个账号只能配置一个当前商户，请在已有商户中维护密钥。",
       },
     });
-    expect(
-      (
-        await request(
-          "/api/me/merchants",
-          other,
-          "POST",
-          input({ clientId: payload.clientId }),
-        )
-      ).status,
-    ).toBe(409);
+    // A Client ID another account holds: its own code, not a conflict to
+    // refresh and retry (sweep 2026-11-21).
+    const takenClient = await request(
+      "/api/me/merchants",
+      other,
+      "POST",
+      input({ clientId: payload.clientId }),
+    );
+    expect(takenClient.status).toBe(409);
+    expect(await takenClient.json()).toEqual({
+      error: {
+        code: "MERCHANT_CLIENT_ID_TAKEN",
+        message: "此商户应用已配置，请使用原配置维护",
+      },
+    });
     expect(
       await env.DB.prepare(
         "SELECT COUNT(*) AS count FROM merchant_credentials",
@@ -905,6 +910,30 @@ describe("merchant application configuration revisions", () => {
         .bind(payload.clientId, merchant.id)
         .run(),
     ).rejects.toThrow();
+  });
+
+  it("says a Client ID another merchant holds is taken, on a change too (sweep 2026-11-21)", async () => {
+    const merchant = await create();
+    const theirs = await create(input(), other);
+    const response = await request(
+      `/api/me/merchants/${theirs.id}`,
+      other,
+      "PATCH",
+      {
+        requestId: crypto.randomUUID(),
+        version: theirs.version,
+        label: theirs.label,
+        clientId: merchant.clientId,
+        secret: "OTHER-TEST-SECRET",
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "MERCHANT_CLIENT_ID_TAKEN",
+        message: "此 Client ID 已属于其他商户配置。",
+      },
+    });
   });
 
   it("requires fresh risk confirmation, preserves inputs and payment facts, while label edits need no confirmation", async () => {

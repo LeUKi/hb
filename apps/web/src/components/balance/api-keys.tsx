@@ -6,7 +6,7 @@ import {
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, failureText } from "../../lib/activities";
 import { useApiKey, useApiKeyActions, useApiKeys } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
@@ -333,8 +333,13 @@ function NewKeyDialog({
       });
       setToken(made.token);
     } catch (failure) {
+      // A key made without its answer is never shown again: it can only be
+      // stopped (07 §1; sweep 2026-11-21 E5).
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "生成密钥没有完成：网络或服务出了问题，密钥可能已经生成了。可以再试一次，多出来的密钥在列表里停用。",
+        ),
       );
     }
   };
@@ -450,7 +455,10 @@ function KeyLimitDialog({
       onClose();
     } catch (failure) {
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "保存没有完成：网络或服务出了问题，新的上限可能已经生效了。可以再试一次。",
+        ),
       );
     }
   };
@@ -533,7 +541,10 @@ function KeyDialog({
       await query.refetch();
     } catch (failure) {
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "停用没有完成：网络或服务出了问题，可能已经停用了。可以再试一次。",
+        ),
       );
     }
   };

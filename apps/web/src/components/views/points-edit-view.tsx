@@ -26,7 +26,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import { useAwake } from "../../lib/awake";
 import {
   type PointsOwnerView,
@@ -44,7 +44,7 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
-import { Field, TextArea, TextInput } from "../ui/field";
+import { Field, SecretInput, TextArea, TextInput } from "../ui/field";
 import { NoteMarkdown } from "../ui/markdown";
 import { MorphLabel } from "../ui/morph-label";
 import { PointsCapsule } from "../ui/points-mark";
@@ -154,7 +154,7 @@ function Editor({
   const unit = { unit: config.unit || "积分", step: config.step };
   const save = system ? actions.update : actions.create;
   const saveError = save.error
-    ? save.error instanceof ActivityRequestError
+    ? refused(save.error)
       ? `保存没有完成：${save.error.message}`
       : "保存没有完成，请稍后再试。"
     : null;
@@ -822,7 +822,7 @@ function StatusPart({ system }: { system: PointsOwnerView }) {
   const busy = act.isPending;
   const failed = (what: string) =>
     act.error
-      ? act.error instanceof ActivityRequestError
+      ? refused(act.error)
         ? `${what}没有完成：${act.error.message}`
         : `${what}没有完成，请稍后再试。`
       : null;
@@ -1031,7 +1031,7 @@ function SelfTest({
       ? { passed: tests[0].status === "passed", steps: tests[0].steps }
       : null);
   const error = run.error
-    ? run.error instanceof ActivityRequestError
+    ? refused(run.error)
       ? run.error.message
       : "测试没有完成，请稍后再试。"
     : null;
@@ -1057,10 +1057,10 @@ function SelfTest({
                 : "加密保存，只用于测试"
             }
           >
-            <TextInput
+            {/* A key, never a password: kept out of password managers
+                like the site's other secret fields (sweep 2026-11-21, T4). */}
+            <SecretInput
               id="pt-test-key"
-              type="password"
-              autoComplete="off"
               value={testKey}
               onChange={(event) => setTestKey(event.target.value)}
             />

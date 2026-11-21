@@ -78,6 +78,22 @@ html[data-hold-scroll] {
   --btn-top: rgb(255 255 255 / 0.13);
   --btn-bottom: rgb(255 255 255 / 0.13);
 }
+/* The strip's buttons (the 表情码 copy, the open button, 「N 人在看」) float
+   over the 红包's cover, which stays red: the white veil above left their
+   words low on it. Dark frost instead, as 红包站 has them in dark
+   (sweep 2026-11-21). */
+:root[data-mode="dark"]
+  :is([data-hb-part="actions"], [data-hb-part="viewers"])
+  .btn-secondary {
+  --btn-top: rgb(46 38 40 / 0.7);
+  --btn-bottom: rgb(46 38 40 / 0.7);
+}
+:root[data-mode="dark"]
+  :is([data-hb-part="actions"], [data-hb-part="viewers"])
+  .btn-secondary:hover {
+  --btn-top: rgb(56 47 50 / 0.76);
+  --btn-bottom: rgb(56 47 50 / 0.76);
+}
 :root[data-mode="dark"] .field {
   background: rgb(255 255 255 / 0.06);
   box-shadow: var(--sq-ring-shadow);
@@ -128,4 +144,9 @@ html[data-hold-scroll] {
   box-shadow:
     0 3px 0 0 var(--color-cover-rim),
     0 18px 30px -14px rgb(0 0 0 / 0.7);
+}
+/* The lacquer draws its own metal rim and drop (.hb-code::after); a flat
+   gold band over it stayed gold once ended (sweep 2026-11-21). */
+:root[data-mode="dark"] .hb-code .hb-cover {
+  box-shadow: none;
 }

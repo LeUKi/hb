@@ -321,7 +321,7 @@ return {
 | `already_claimed` | 已经领到过（每人领一次） |
 | `not_open` | 还没开放 |
 | `ended` | 红包已结束 |
-| `paused` | 判定器连续出错，暂停领取 |
+| `paused` | 暂停领取：判定器连续出错，或红包作者的 LDC 商户余额不足（[余额不足终止](payout-stop-design.md) 第 6 节；2026-11-21 起）；余额不足时 `message` 是红包站说的原因 |
 | `judge_failed` | 判定器出错了，这次没有判定，可以再提交 |
 | `try_later` | 提交的人太多、太频繁，或判定暂时不可用 |
 | `invalid_input` | 输入不合规则（空、超过 200 字、有换行），`message` 是原因 |
@@ -427,7 +427,7 @@ return {
 | `login` | 没登录：红包页弹出了登录卡片 |
 | `not_open` | 还没开放 |
 | `ended` | 红包已结束 |
-| `paused` | 判定器连续出错，暂停领取 |
+| `paused` | 暂停领取：判定器连续出错，或红包作者的 LDC 商户余额不足（2026-11-21 起，同上） |
 | `already_claimed` | 已经领到过或报过名（验证其他口令不算，`fill` 只填领取） |
 | `not_in_scope` | 不在领取范围 |
 | `busy` | 指令框正在提交，等有了结果再填 |

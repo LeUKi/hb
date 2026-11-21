@@ -13,7 +13,7 @@ import { PageSection, Panel } from "../../page/page";
 import { LeaveGuard } from "../../shell/leave-guard";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
-import { Field, Switch, TextInput } from "../../ui/field";
+import { Field, SecretInput, Switch, TextInput } from "../../ui/field";
 import { fishText } from "../../ui/fish";
 import { Reveal, RevealInline } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
@@ -440,11 +440,11 @@ export function PlatformAppSection({
                 : "留空就保留现在的密钥。"
             }
           >
-            <TextInput
+            {/* A Credit 应用's key, pasted in: masked, never offered a
+                generated password (sweep 2026-11-21, T4). */}
+            <SecretInput
               id={ids.secret}
-              type="password"
               value={secret}
-              autoComplete="new-password"
               onChange={(event) => setSecret(event.target.value)}
             />
           </Field>

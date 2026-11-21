@@ -298,32 +298,6 @@
         height: auto;
         overflow: visible;
       }
-      /* 深色 (?theme=dark, or auto on a dark system): the shared dark tokens
-         turn the words light, so the secondary buttons (查一下, 再打开,
-         再打赏) take the dark glass, and words on gold the dark gold ink, as
-         in the 社区's mini app (apps/mini/src/mini.css). The site's own are
-         under data-site-dark, which an embed never has. Unlayered, so they
-         win over styles.css's @layer components (sweep 2026-11-21,
-         EMBED-DARK-BUTTONS). */
-      html[data-embed][data-mode="dark"] .btn-secondary {
-        --btn-top: rgb(255 255 255 / 0.08);
-        --btn-bottom: rgb(255 255 255 / 0.08);
-        --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
-        --btn-drop: 0 2px 6px -2px rgb(0 0 0 / 0.5);
-      }
-      html[data-embed][data-mode="dark"] .btn-secondary:hover {
-        --btn-top: rgb(255 255 255 / 0.13);
-        --btn-bottom: rgb(255 255 255 / 0.13);
-      }
-      html[data-embed][data-mode="dark"]
-        .btn-secondary:active:not(:disabled, [data-disabled]) {
-        --btn-inset: inset 0 1px 3px rgb(0 0 0 / 0.35);
-        --btn-drop: 0 1px 2px -1px rgb(0 0 0 / 0.3);
-      }
-      html[data-embed][data-mode="dark"]
-        :is(.avatar-ring, .chip-gold, .title-badge[data-title="highest"]) {
-        color: #6a4510;
-      }
     </style>
   </head>
   <body>

@@ -1,7 +1,7 @@
 import type { BalanceCheckout } from "@hb/contracts";
 import { ExternalLink, RotateCw } from "lucide-react";
 import { useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, failureText } from "../../lib/activities";
 import {
   goToCashier,
   useCheckout,
@@ -88,8 +88,13 @@ function Checkout({ user, id }: { user: SessionUser; id: string }) {
       if (result.cashierUrl) goToCashier(result.cashierUrl);
       else setError("Credit 站暂时没有回应，请稍后再试。");
     } catch (failure) {
+      // Pressing again asks for this same order's cashier (07 §1; sweep
+      // 2026-11-21 E5).
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        failureText(
+          failure,
+          "网络或服务出了问题，还没打开 Credit 站。再按一次去 Credit 站确认，还是这一笔，不会重复付款。",
+        ),
       );
     }
   };

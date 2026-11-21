@@ -13,8 +13,8 @@ import {
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
+import { startOfBeijingDay } from "../runtime/day";
 import { sha256Hex } from "../security/crypto";
-import { startOfBeijingDay } from "./day";
 import { balanceError } from "./errors";
 import { decodeRecordCursor } from "./ledger";
 import { type TransferRow, transferAccess, transferViews } from "./transfers";

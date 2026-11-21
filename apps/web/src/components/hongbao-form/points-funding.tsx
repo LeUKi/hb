@@ -5,7 +5,7 @@
 import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { Check, ChevronRight, KeyRound, X } from "lucide-react";
 import { useId, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import {
@@ -302,8 +302,16 @@ export function KeyDialog({
   const actions = usePointsKeyActions(user?.id ?? "", system.id);
   const save = actions.save;
   const unit = { unit: system.unit, step: system.step };
+  // The server's reason when it turned the key down. Its 503s about the
+  // issuer (连不上, 回复看不懂) are answers too: the key is checked before
+  // anything is saved. No answer, or another 5xx, says only that it did
+  // not go through (07 §1; sweep 2026-11-21 E5).
+  const said =
+    refused(save.error) ||
+    (save.error instanceof ActivityRequestError &&
+      save.error.code?.startsWith("POINTS_ISSUER_"));
   const error = save.error
-    ? save.error instanceof ActivityRequestError
+    ? said
       ? `保存没有完成：${save.error.message}`
       : "保存没有完成，请稍后再试。"
     : null;

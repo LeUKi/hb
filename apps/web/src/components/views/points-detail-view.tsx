@@ -5,7 +5,7 @@ import { POINTS_EXPLAINER } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, KeyRound } from "lucide-react";
 import { useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import { useHashTarget } from "../../lib/hash-target";
 import {
   statusWords,
@@ -242,7 +242,7 @@ function RemoveKeyDialog({
   const user = useSessionUser();
   const { remove } = usePointsKeyActions(user?.id ?? "", systemId);
   const error = remove.error
-    ? remove.error instanceof ActivityRequestError
+    ? refused(remove.error)
       ? `删掉密钥没有完成：${remove.error.message}`
       : "删掉密钥没有完成，请稍后再试。"
     : null;

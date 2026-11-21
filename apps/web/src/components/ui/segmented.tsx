@@ -38,6 +38,9 @@ const sizes = {
   },
 } as const;
 
+/** The fade at a long bar's scrolled edge, in px (1.75rem in trackClass). */
+const EDGE_FADE = 28;
+
 /**
  * Where the chosen option is, as the highlight's x and width: it slides
  * when the choice changes, and follows the option at once when the option
@@ -85,9 +88,10 @@ function useHighlight(track: RefObject<HTMLElement | null>, index: number) {
           ease,
         });
         // An option partly scrolled out of a long bar comes into view
-        // (sideways only: the page itself does not move).
-        const left = target.offsetLeft - 8;
-        const right = target.offsetLeft + target.offsetWidth + 8;
+        // (sideways only: the page itself does not move), clear of the
+        // edge's fade.
+        const left = target.offsetLeft - EDGE_FADE;
+        const right = target.offsetLeft + target.offsetWidth + EDGE_FADE;
         if (
           left < element.scrollLeft ||
           right > element.scrollLeft + element.clientWidth
@@ -100,11 +104,32 @@ function useHighlight(track: RefObject<HTMLElement | null>, index: number) {
       }
       setPlaced(true);
     }
-    const observer = new ResizeObserver(follow);
+    // A bar longer than its row scrolls sideways (07-pages: the square's
+    // filter on phones); an edge with more past it fades (trackClass), so
+    // the row reads as going on instead of slicing a count mid-digit.
+    // Marked on scroll and resize only, so an idle bar never repaints
+    // (sweep 2026-11-21).
+    const edges = () => {
+      const { scrollLeft, clientWidth, scrollWidth } = element;
+      element.toggleAttribute("data-more-start", scrollLeft > 1);
+      element.toggleAttribute(
+        "data-more-end",
+        scrollLeft + clientWidth < scrollWidth - 1,
+      );
+    };
+    edges();
+    const observer = new ResizeObserver(() => {
+      follow();
+      edges();
+    });
     observer.observe(element);
     for (const item of element.querySelectorAll("[data-segment]"))
       observer.observe(item);
-    return () => observer.disconnect();
+    element.addEventListener("scroll", edges, { passive: true });
+    return () => {
+      observer.disconnect();
+      element.removeEventListener("scroll", edges);
+    };
   }, [track, index, reduced, x, width]);
 
   return { x, width, placed };
@@ -128,11 +153,9 @@ function Highlight({
       }}
     >
       <Squircle radius={sizes[size].option}>
-        {/* The raised face's fill (--color-raised): white in light; in dark
-            a white tint a step over the track's fill-2, since the dark
-            --color-white is the track's own colour and the face vanished
-            into it (sweep 2026-11-21). White until the token is defined. */}
-        <span className="block size-full bg-[var(--color-raised,var(--color-white))] raised" />
+        {/* The raised face's own fill, not --color-white, which in dark is
+            the track's colour (styles.css; sweep 2026-11-21). */}
+        <span className="block size-full bg-raised raised" />
       </Squircle>
     </motion.span>
   );
@@ -186,6 +209,10 @@ const itemClass = (size: Size, chosen: boolean, stretch: boolean) =>
 const trackClass = (stretch: boolean) =>
   cn(
     "relative inline-flex w-fit min-w-0 max-w-full overflow-x-auto bg-fill-2 p-0.5 scrollbar-none",
+    // The fade at an edge with more past it (EDGE_FADE wide; useHighlight).
+    "data-more-end:[mask-image:linear-gradient(to_right,#000_calc(100%-1.75rem),transparent)]",
+    "data-more-start:[mask-image:linear-gradient(to_left,#000_calc(100%-1.75rem),transparent)]",
+    "data-more-start:data-more-end:[mask-image:linear-gradient(to_right,transparent,#000_1.75rem,#000_calc(100%-1.75rem),transparent)]",
     stretch && "flex w-full",
   );
 

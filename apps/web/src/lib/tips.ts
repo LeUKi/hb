@@ -30,6 +30,7 @@ import type { TipCardActions } from "../components/tips/tip-card";
 export { previewOf } from "../components/tips/tip-card";
 
 import { readResponse } from "./activities";
+import { answered } from "./answered";
 import { solveCap } from "./cap";
 import { useIdentity } from "./session";
 
@@ -162,7 +163,7 @@ export function useTipList(
       if (filter.method) url.searchParams.set("method", filter.method);
       if (pageParam) url.searchParams.set("cursor", pageParam);
       return readResponse<TipList>(
-        await fetch(url, {
+        await answered(url, {
           signal,
           cache: "no-store",
           credentials: "same-origin",
@@ -210,8 +211,10 @@ export function useTipActions(
       create: async (input: CreateTipInput) => {
         const url = api.api.tip[":code"].$url({ param: { code } });
         if (via === "embed") url.searchParams.set("via", via);
+        // answered, as the API client's own requests: no answer is said
+        // in Chinese, not as the browser's “Load failed” (sweep 2026-11-21).
         return readResponse<TipResult>(
-          await fetch(url, {
+          await answered(url, {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json", ...options.headers },

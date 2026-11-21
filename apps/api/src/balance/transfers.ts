@@ -17,10 +17,10 @@ import {
 import type { ApiBindings } from "../env";
 import { noticeTransfer } from "../notices/events";
 import { reachesCredit } from "../runtime/controls";
+import { startOfBeijingDay } from "../runtime/day";
 import { sha256Hex } from "../security/crypto";
 import { findUserByUsername } from "../users/find";
 import type { ApiKeyRow } from "./api-keys";
-import { startOfBeijingDay } from "./day";
 import { balanceError, RateLimitedError } from "./errors";
 import { readAccount } from "./ledger";
 import { readPlatformAppRow } from "./platform-app";
