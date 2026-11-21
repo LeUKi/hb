@@ -178,7 +178,11 @@ export function MerchantLine() {
   );
 }
 
-/** 🐟额: 可用, none, or short of the total; 转入 is on the 🐟额 page. */
+/**
+ * 🐟额: 可用, none, or short of the total; 转入 is on the 🐟额 page. Its
+ * switch off is said as such, not as none: the 🐟额 page cannot help then
+ * (sweep 2026-11-21).
+ */
 export function FishLine({ total }: { total: number | null }) {
   const user = useSessionUser();
   const funding = useBalanceFunding(user?.id ?? "");
@@ -188,14 +192,17 @@ export function FishLine({ total }: { total: number | null }) {
     ? funding.isError
       ? "error"
       : "loading"
-    : data.available !== true
-      ? "none"
-      : total !== null && total > available
-        ? "short"
-        : "ok";
+    : data.enabled === false
+      ? "off"
+      : data.available !== true
+        ? "none"
+        : total !== null && total > available
+          ? "short"
+          : "ok";
   const text = {
     loading: "正在读你的🐟额",
     error: "读不到你的🐟额，请稍后再试",
+    off: "🐟额红包暂时关闭，换个来源才能发",
     none: "🐟额里没有可用",
     short: `可用只有 ${ldc(available)} 🐟，不够发这个红包`,
     ok: `可用 ${ldc(available)} 🐟`,
@@ -206,7 +213,7 @@ export function FishLine({ total }: { total: number | null }) {
       tone={state === "loading" ? "loading" : state === "ok" ? "ok" : "warn"}
       text={text}
       action={
-        state === "loading" ? undefined : (
+        state === "loading" || state === "off" ? undefined : (
           <LineLink to="/balance" icon={<Wallet aria-hidden="true" />}>
             去🐟额
           </LineLink>

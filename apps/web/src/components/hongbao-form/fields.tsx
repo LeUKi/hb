@@ -51,7 +51,12 @@ import {
   type TimeUnit,
   unitLabels,
 } from "./form-state";
-import { FishLine, MerchantLine, useMerchantNeedsWork } from "./funding-lines";
+import {
+  FishLine,
+  FundingLine,
+  MerchantLine,
+  useMerchantNeedsWork,
+} from "./funding-lines";
 import { MerchantDialog } from "./merchant-dialog";
 import {
   PointsChoice,
@@ -496,10 +501,17 @@ export function FundingChoice({
   form,
   update,
   locked,
+  judgeRefusesPoints = false,
 }: {
   form: FormState;
   update: Update;
   locked: boolean;
+  /**
+   * 代码判定 with a 判定器 that does not count in 最小单位 (meta.points,
+   * third-party-points §10; judge-issues.ts): 三方积分 says so as soon as
+   * both are picked, not at opening (sweep 2026-11-21).
+   */
+  judgeRefusesPoints?: boolean;
 }) {
   const user = useSessionUser();
   const funding = useBalanceFunding(user?.id ?? "", !locked);
@@ -519,6 +531,11 @@ export function FundingChoice({
     form.funding === "points"
       ? points.items.find((item) => item.id === form.pointsSystemId)
       : undefined;
+  // Amber, not a form issue: a draft still saves (07 从哪发); opening is
+  // what refuses it.
+  const refused = form.funding === "points" && judgeRefusesPoints;
+  const otherSources =
+    funding.data?.enabled && user?.balance ? "LDC 商户或🐟额" : "LDC 商户";
   return (
     <div className="flex flex-col gap-2">
       <ChoiceCards
@@ -557,11 +574,25 @@ export function FundingChoice({
           />
         )}
       </ChoiceCards>
-      <Swap id={system ? `points:${system.id}` : form.funding}>
+      <Swap
+        id={
+          refused
+            ? "points:judge"
+            : system
+              ? `points:${system.id}`
+              : form.funding
+        }
+      >
         {form.funding === "merchant" ? (
           <MerchantLine />
         ) : form.funding === "balance" ? (
           <FishLine total={total} />
+        ) : refused ? (
+          <FundingLine
+            state="points:judge"
+            tone="warn"
+            text={`这个判定器不能用在三方积分红包上，换成${otherSources}，或者换一个判定器`}
+          />
         ) : system ? (
           <PointsLine system={system} total={total} />
         ) : null}
@@ -659,7 +690,7 @@ export function PaidByRow({ merchantId }: { merchantId: string }) {
 
 const credentialWords = {
   passed: "密钥检查通过 · 开放时会自动再查一次",
-  checking: "正在检查密钥…",
+  checking: "正在检查密钥",
   rejected: "Client ID 或密钥没通过检查",
   unverified: "密钥还没检查 · 开放时会自动检查",
   unavailable: "暂时查不了密钥",
@@ -680,17 +711,29 @@ export function MerchantRow() {
         <div className="flex items-center gap-3 bg-fill px-3.5 py-2.5">
           <KeyRound className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
           {merchant ? (
-            <span className="grid min-w-0 flex-1">
+            <div className="grid min-w-0 flex-1">
               <span className="truncate text-sm text-ink">
                 {merchant.label}
                 <span className="ml-2 font-mono text-xs text-ink-3">
                   {merchant.clientId}
                 </span>
               </span>
-              <span className="text-xs text-ink-3">
-                {credentialWords[merchant.credentialVerification.status]}
-              </span>
-            </span>
+              {/* The check is a wait: the sheen while it runs, and its
+                  answer fades in over it (sweep 2026-11-21). */}
+              <Swap id={merchant.credentialVerification.status}>
+                <span
+                  className={cn(
+                    // Its own width, as 发多少's line: the sheen on the
+                    // words, not across the empty row.
+                    "block w-fit max-w-full text-xs text-ink-3",
+                    merchant.credentialVerification.status === "checking" &&
+                      "loading-sheen",
+                  )}
+                >
+                  {credentialWords[merchant.credentialVerification.status]}
+                </span>
+              </Swap>
+            </div>
           ) : (
             <span className="min-w-0 flex-1 text-sm text-ink-2">
               还没有配置 LDC 商户

@@ -134,6 +134,25 @@ export function judgeIssuesOf(
 }
 
 /**
+ * 三方积分 with a 判定器 whose version does not count in 最小单位 (meta.
+ * points, docs/third-party-points-design.md §10): opening refuses it, so
+ * 从哪发 says it in amber once both are picked. Not an Issue: a draft saves
+ * whatever 从哪发 says (07 发多少; sweep 2026-11-21). False while the
+ * version's declarations are not known.
+ */
+export function judgeRefusesPoints(
+  form: FormState,
+  declarations: JudgeDeclarations | null,
+) {
+  return (
+    form.mode === "code" &&
+    form.funding === "points" &&
+    declarations !== null &&
+    declarations.meta?.points !== true
+  );
+}
+
+/**
  * The 红包 试一试 and check() judge on (§6): its pool as filled in, else
  * the 判定器's default, else 1 LDC.
  */

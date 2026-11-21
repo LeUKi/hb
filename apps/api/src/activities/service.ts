@@ -358,6 +358,22 @@ export async function holdsBalance(env: ApiBindings, activityId: string) {
   );
 }
 
+/**
+ * A 代码判定 三方积分红包 whose 判定器 does not count in 最小单位 (docs/
+ * third-party-points-design.md §10): known from the version it was saved
+ * with, so said before opening — in the draft's own view, and by 保存并定时
+ * on the spot rather than at its time (sweep 2026-11-21). With no 判定器
+ * that passed yet, JUDGE_CHECK_REQUIRED says the rest.
+ */
+export async function judgeNotForPoints(env: ApiBindings, row: ActivityRow) {
+  if (row.funding !== "points" || row.participationMode !== "code")
+    return false;
+  const judge = await findJudgeRow(env, row.id);
+  if (!judge) return false;
+  const declarations = await declarationsFor(env, row.authorId, judge);
+  return declarations?.meta?.points !== true;
+}
+
 async function openingBlockedReason(
   env: ApiBindings,
   row: ActivityRow,
@@ -394,7 +410,8 @@ async function openingBlockedReason(
       (await pointsBlockedReason(env, row)) ??
       (row.participationMode === "code"
         ? await codeOpeningBlocked(env, row)
-        : undefined)
+        : undefined) ??
+      ((await judgeNotForPoints(env, row)) ? "JUDGE_NOT_FOR_POINTS" : undefined)
     );
   }
   // 商户直发 saved before its sender had a merchant (07 发多少).

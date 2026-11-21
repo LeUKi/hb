@@ -3,6 +3,7 @@
 // Whose account it pays from is the issuer's word: shown, not required to
 // be the sender's own (§1).
 
+import { type LdcActivityInput, ldcTotalMinor } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { issuerBalance } from "./issuer";
@@ -256,7 +257,10 @@ export async function availableNow(
 /**
  * What the sender's other open 红包 of this system may still pay (§5):
  * their pools less what was paid, refused for good, or claimed by the
- * sender (自领 pays nothing).
+ * sender (自领 pays nothing). A pool is counted as opening counts this
+ * one's (ldcTotalMinor): 自定义金额 keeps its rows, not a totalAmount, and
+ * read from SQL counted as nothing, so one 额度 opened twice (sweep
+ * 2026-11-21).
  */
 export async function committedElsewhere(
   env: ApiBindings,
@@ -265,8 +269,7 @@ export async function committedElsewhere(
   exceptActivityId: string,
 ) {
   const rows = await env.DB.prepare(
-    `SELECT a.id,
-       CAST(ROUND(CAST(json_extract(a.config,'$.money.totalAmount') AS REAL)*100) AS INTEGER) AS pool,
+    `SELECT a.id, a.config,
        COALESCE((SELECT SUM(p.amount_minor) FROM points_payments p
          WHERE p.activity_id=a.id AND p.status IN ('confirmed','failed')),0) AS settled,
        COALESCE((SELECT SUM(r.amount_minor) FROM claims c
@@ -277,9 +280,16 @@ export async function committedElsewhere(
        AND a.opened_at IS NOT NULL AND a.ended_at IS NULL AND a.deleted_at IS NULL`,
   )
     .bind(userId, systemId, exceptActivityId)
-    .all<{ id: string; pool: number; settled: number; own: number }>();
+    .all<{ id: string; config: string; settled: number; own: number }>();
   return rows.results.reduce(
-    (sum, row) => sum + Math.max(0, row.pool - row.settled - row.own),
+    (sum, row) =>
+      sum +
+      Math.max(
+        0,
+        ldcTotalMinor(JSON.parse(row.config) as LdcActivityInput) -
+          row.settled -
+          row.own,
+      ),
     0,
   );
 }
