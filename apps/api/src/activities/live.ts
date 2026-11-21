@@ -117,10 +117,7 @@ export const liveMine = (payment = false) =>
   JSON.stringify(
     (payment
       ? { type: "mine", payment: true }
-      : { type: "mine" }) satisfies Extract<
-      ActivityLiveMessage,
-      { type: "mine" }
-    > & { payment?: true },
+      : { type: "mine" }) satisfies ActivityLiveMessage,
   );
 
 export const liveQueued = (

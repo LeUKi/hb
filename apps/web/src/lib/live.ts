@@ -1,6 +1,7 @@
-import type { ActivityLiveMessage } from "@hb/contracts";
+import type { ActivityLiveMessage, ClaimResult } from "@hb/contracts";
 import {
   type InfiniteData,
+  type Mutation,
   type QueryClient,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -11,6 +12,7 @@ import {
   nextPublicActivityReadGeneration,
   type PublicActivityDetail,
 } from "./activities";
+import { claimMutationKey } from "./claims";
 import { myJudgmentsKey } from "./judge";
 import {
   ANNOUNCEMENTS_KEPT,
@@ -34,6 +36,8 @@ import {
 // after each change, and says `mine` when only the viewer's own part moved
 // (a payment; for the sender, their 名单 or their own edit elsewhere). The
 // page then polls nothing; guests, and anyone the channel turns away, poll.
+// A `mine` while this tab's own claim there waits for its answer waits with
+// it: the answer writes the same (lib/claims.ts).
 
 /**
  * Under Cloudflare's idle timeout; answered by the runtime, not the DO.
@@ -53,6 +57,11 @@ const SETTLED_MS = 30_000;
 const RECONNECT_READ_SPREAD_MS = 3_000;
 /** The channel's own ends: the 红包 is over, push only, another tab took over. */
 const FINAL_CODES = new Set([1000, 1008, 4001]);
+/**
+ * A payment's `mine`s while the 红包 runs: one read at once, then at most
+ * one more per this, once the last has finished (sweep 2026-11-21, L2).
+ */
+const PAYMENT_READ_MS = 500;
 
 /**
  * `running`: the 红包 runs, so its public read can change. `waiting`: it is
@@ -115,6 +124,20 @@ function readOwn(
 }
 
 /**
+ * Only a payment moved (a `mine` with `payment`): the claim and the
+ * sender's 名单. Their own copy of the 红包 has no payment in it, and its
+ * read goes through the claim line everyone waits in; their judgments did
+ * not move (sweep 2026-11-21, L2). Settles when both reads have.
+ */
+function readPayment(client: QueryClient, id: string, userId: string) {
+  const keys = ownKeys(id, userId);
+  return Promise.all([
+    client.invalidateQueries({ queryKey: keys.participation, exact: true }),
+    client.invalidateQueries({ queryKey: keys.roster }),
+  ]);
+}
+
+/**
  * Keeps the 红包's live channel open while `want`: reconnects after a drop
  * (a deploy drops everyone at once, so the waits are spread out), checks
  * the line on coming back to the page, pauses while the page sits in the
@@ -157,6 +180,89 @@ export function useActivityLive(
     let heartbeat: number | undefined;
     let pongWait: number | undefined;
     let ownRead: number | undefined;
+    // A payment read under way, or its window still open: a payment `mine`
+    // now sets `paidAgain`, read once both are done, so one read always
+    // starts after the last `mine` (the final 已到账 is never lost).
+    let paidBusy = false;
+    let paidAgain = false;
+    let paidGap: number | undefined;
+    const readPaid = () => {
+      paidBusy = true;
+      paidAgain = false;
+      const gap = new Promise<void>((done) => {
+        paidGap = window.setTimeout(done, PAYMENT_READ_MS);
+      });
+      void Promise.all([readPayment(client, id, userId), gap]).then(() => {
+        paidBusy = false;
+        if (paidAgain && !stopped) readPaid();
+      });
+    };
+    const onPayment = () => {
+      // Over: a funds stop or the end moved the sender's own copy too
+      // (its version, for edits after the end), and only the payments'
+      // `mine`s follow it.
+      if (wantNow.current !== "running") readOwn(client, id, userId, false);
+      else if (paidBusy) paidAgain = true;
+      else readPaid();
+    };
+    // This tab's claim here, waiting for its answer (sweep 2026-11-21, L3).
+    // Its turn tells all of the claimant's sockets before the answer goes
+    // out, this one too, and the answer writes the same: the claim, the
+    // standing (read again after a protocol 5 judgment), the judgments, the
+    // 红包. So a `mine` meanwhile is held, and read once the claim settles
+    // only if it says more: the answer was lost (a dropped line, a 5xx: the
+    // page still learns what came of it), a payment moved, or someone
+    // else's judgment moved their standing and their own answer did not
+    // read it again.
+    const claimHere = (mutation: Mutation<unknown, unknown, unknown>) =>
+      (mutation.state.variables as { id?: unknown } | undefined)?.id === id;
+    const claiming = () =>
+      client.isMutating({
+        mutationKey: claimMutationKey,
+        predicate: claimHere,
+      }) > 0;
+    let held: {
+      bare: boolean;
+      payment: boolean;
+      failed: boolean;
+      /** Its answer read the standing again (participation-cache.ts). */
+      reread: boolean;
+    } | null = null;
+    let unwatchClaims: (() => void) | undefined;
+    const releaseHeld = () => {
+      unwatchClaims?.();
+      unwatchClaims = undefined;
+      const was = held;
+      held = null;
+      if (!was || stopped) return;
+      if (was.failed) return readOwn(client, id, userId, false);
+      if (was.payment) onPayment();
+      if (
+        was.bare &&
+        !was.reread &&
+        client.getQueryData<ParticipationCache>(participationKey(userId, id))
+          ?.standing
+      )
+        void client.invalidateQueries({
+          queryKey: participationKey(userId, id),
+          exact: true,
+        });
+    };
+    const hold = (payment: boolean) => {
+      held ??= { bare: false, payment: false, failed: false, reread: false };
+      if (payment) held.payment = true;
+      else held.bare = true;
+      unwatchClaims ??= client.getMutationCache().subscribe((event) => {
+        if (event.type !== "updated" || !held || !claimHere(event.mutation))
+          return;
+        if (event.action.type === "error") held.failed = true;
+        else if (event.action.type === "success")
+          held.reread =
+            (event.action.data as ClaimResult | undefined)?.result === "judged";
+        // Settled only after its own onSuccess or onError has run.
+        if (!claiming()) releaseHeld();
+      });
+    };
     const settle = () => {
       window.clearInterval(heartbeat);
       window.clearTimeout(pongWait);
@@ -226,7 +332,10 @@ export function useActivityLive(
         if (message?.type === "mine") {
           // Their claim has its answer (or left the line): no longer waiting.
           setQueued((current) => (current?.id === id ? null : current));
-          readOwn(client, id, userId, false);
+          const payment = message.payment === true;
+          if (claiming()) hold(payment);
+          else if (payment) onPayment();
+          else readOwn(client, id, userId, false);
           return;
         }
         if (message?.type === "queued") {
@@ -363,6 +472,8 @@ export function useActivityLive(
     return () => {
       stopped = true;
       window.clearTimeout(ownRead);
+      window.clearTimeout(paidGap);
+      unwatchClaims?.();
       window.removeEventListener("online", reconnectNow);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);

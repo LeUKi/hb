@@ -1046,7 +1046,16 @@ export type ActivityViewersDetail = {
  * and how many different people looked so far (viewer-stats §3).
  */
 export type ActivityLiveMessage =
-  | { type: "mine" }
+  | {
+      type: "mine";
+      /**
+       * Only a payment of theirs moved (the merchant cycle, 三方积分): the
+       * page reads the claim and the 名单 again, not the sender's own copy
+       * (sweep 2026-11-21, L2). Absent: all of their own part. A client
+       * that does not know it (the 社区小程序) reads all, as before.
+       */
+      payment?: true;
+    }
   /**
    * To the one who sent it, while their claim waits. 代码判定
    * (docs/programmable-hongbao-design.md §3 一批一起写): how many are judged

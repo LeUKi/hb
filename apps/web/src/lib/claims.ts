@@ -6,6 +6,7 @@ import type {
   DrawSummary,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useStore } from "jotai";
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api";
 import { ActivityRequestError, readResponse } from "./activities";
@@ -22,6 +23,7 @@ import {
   sessionScope,
   useAccountSession,
 } from "./auth";
+import { liveActivityAtom } from "./live-state";
 import {
   canSkipDrawRefresh,
   claimDetailKey,
@@ -266,11 +268,30 @@ export function useResendPayment(
   });
 }
 
+/**
+ * useClaimReward's mutations, one key for every 红包: the id is in their
+ * variables. The live channel (lib/live.ts) asks it whether this tab's own
+ * claim in a 红包 still waits for its answer.
+ */
+export const claimMutationKey = ["claim"] as const;
+
+/**
+ * Outcomes after which the 红包 itself may be newer than the page's read,
+ * with nothing sure to push it: read again even on the live channel.
+ */
+const PUBLIC_MOVED = new Set<ClaimResult["result"]>([
+  "draft",
+  "ended",
+  "archived",
+]);
+
 /** Claim, or sign up for a timed draw, in one 红包 (the id travels with it). */
 export function useClaimReward(userId: string, csrfToken: string) {
   const queryClient = useQueryClient();
+  const store = useStore();
   const account = useAccountSession(userId, "session");
   return useMutation({
+    mutationKey: claimMutationKey,
     // 震动反馈: the claim flow feels its own result.
     meta: { haptics: false },
     gcTime: 0,
@@ -322,9 +343,16 @@ export function useClaimReward(userId: string, csrfToken: string) {
         ))
       )
         return;
-      void queryClient.invalidateQueries({
-        queryKey: ["activity-public", id],
-      });
+      // On the live channel the 红包 arrives pushed: the whole read after a
+      // share or a sign-up, 代码判定's count, pool, view and 动态 after a
+      // judgment. Read here too, it was one more whole read per claim, 15
+      // D1 queries for 矿洞夺宝, thrown away when the push landed (sweep
+      // 2026-11-21, L3). Off the channel (turned away, or claimed from
+      // another page), it is read.
+      if (store.get(liveActivityAtom) !== id || PUBLIC_MOVED.has(result.result))
+        void queryClient.invalidateQueries({
+          queryKey: ["activity-public", id],
+        });
       void queryClient.invalidateQueries({
         queryKey: ["activity-private", userId],
       });
@@ -333,7 +361,12 @@ export function useClaimReward(userId: string, csrfToken: string) {
       void queryClient.invalidateQueries({
         queryKey: ["activity-roster", id],
       });
-      if (_variables.participationMode !== "direct")
+      // 口令 only: a direct or 代码判定 红包 has none to read (sweep
+      // 2026-11-21, L7).
+      if (
+        _variables.participationMode !== "direct" &&
+        _variables.participationMode !== "code"
+      )
         void queryClient.invalidateQueries({
           queryKey: ["password-private", userId, id],
         });
