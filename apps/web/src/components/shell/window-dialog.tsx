@@ -3,9 +3,11 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -19,9 +21,16 @@ import { useWindowInfo } from "./window-info";
 /**
  * How many dialogs this content is inside: a dialog opened here stacks
  * over them all, with its own 压暗层 over the one below (a detail shown as
- * a dialog → its picker → a confirm: three levels).
+ * a dialog → its picker → a confirm: three levels). `cover`, from the
+ * window dialog it is in: a dialog opened there calls it while it is open,
+ * and the one it was opened from waits underneath, out of reach, until it
+ * closes (sweep 2026-11-21: Shift+Tab from 确认转账 went back into the 转账
+ * form under its 压暗层).
  */
-const InsideDialog = createContext(0);
+type Inside = { depth: number; cover?: () => () => void };
+const InsideDialog = createContext<Inside>({ depth: 0 });
+/** In a 红包's panel, which is not a window dialog: nothing to cover. */
+const inPanel: Inside = { depth: 1 };
 
 /** Each level's 压暗层 and frame, over the level below. */
 const layers = [
@@ -35,7 +44,9 @@ const layers = [
  * in it stacks over it, its own 压暗层 covering it, as over a window dialog.
  */
 export function StacksDialogs({ children }: { children: ReactNode }) {
-  return <InsideDialog.Provider value={1}>{children}</InsideDialog.Provider>;
+  return (
+    <InsideDialog.Provider value={inPanel}>{children}</InsideDialog.Provider>
+  );
 }
 
 /**
@@ -74,15 +85,36 @@ export function WindowDialog({
   initialFocus?: () => HTMLElement | null | undefined;
   /** Opened from another dialog: drawn over it, its own 压暗层 covering it. */
   nested?: boolean;
-  /** Another dialog is open over this one: this one waits. */
+  /**
+   * Another dialog is open over this one: this one waits. Only for one
+   * opened beside it (`nested`); one opened from inside it does this by
+   * itself.
+   */
   inert?: boolean;
   children: ReactNode;
 }) {
   // Opened from inside another dialog (a detail pane shown as one): drawn
   // over it, never beside it at the same level.
   const inside = useContext(InsideDialog);
-  const depth = Math.min(Math.max(inside, nested ? 1 : 0), layers.length - 1);
+  const depth = Math.min(
+    Math.max(inside.depth, nested ? 1 : 0),
+    layers.length - 1,
+  );
   const layer = layers[depth] ?? layers[0];
+  // Dialogs opened from this one and open now: while there are any, this
+  // one waits under their 压暗层, as AppWindow keeps the page under its
+  // own, so Tab from them never comes back into it.
+  const [covers, setCovers] = useState(0);
+  const cover = useCallback(() => {
+    setCovers((count) => count + 1);
+    return () => setCovers((count) => count - 1);
+  }, []);
+  const within = useMemo<Inside>(
+    () => ({ depth: depth + 1, cover }),
+    [depth, cover],
+  );
+  const latestCover = useRef(inside.cover);
+  latestCover.current = inside.cover;
   const latestClosed = useRef(onClosed);
   latestClosed.current = onClosed;
   const latestFocus = useRef(initialFocus);
@@ -98,6 +130,7 @@ export function WindowDialog({
   }, []);
 
   const setOpenCount = useSetAtom(windowDialogsAtom);
+  const release = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!open) return;
     returnTo.current = document.activeElement as HTMLElement | null;
@@ -106,8 +139,27 @@ export function WindowDialog({
     (latestFocus.current?.() ?? panelRef.current)?.focus({
       preventScroll: true,
     });
-    return () => setOpenCount((count) => count - 1);
+    // Over the dialog it was opened from, that one waits meanwhile: only
+    // now, once where focus returns to is read and focus is here.
+    const uncover = latestCover.current?.();
+    let held = true;
+    const give = () => {
+      if (!held) return;
+      held = false;
+      setOpenCount((count) => count - 1);
+      uncover?.();
+    };
+    release.current = give;
+    return give;
   }, [open, setOpenCount]);
+  // What it kept out of reach comes back in the commit that closes it, not
+  // a frame later: for less motion the exit ends at once, and focus can
+  // only return into what is within reach again (sweep 2026-11-21: it fell
+  // to the page's body).
+  useLayoutEffect(() => {
+    if (!open) return;
+    return () => release.current?.();
+  }, [open]);
 
   const cancel = () => {
     if (!busy) onClose();
@@ -155,7 +207,7 @@ export function WindowDialog({
               aria-modal="true"
               aria-labelledby={labelledBy}
               tabIndex={-1}
-              inert={inert}
+              inert={inert || covers > 0}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   // This dialog only, not one it was opened from.
@@ -196,7 +248,7 @@ export function WindowDialog({
                   className="glass-pop relative flex min-h-0 flex-1 flex-col overflow-y-auto"
                   {...fade}
                 >
-                  <InsideDialog.Provider value={depth + 1}>
+                  <InsideDialog.Provider value={within}>
                     {children}
                   </InsideDialog.Provider>
                 </motion.div>

@@ -355,7 +355,14 @@ export function KeyDialog({
             {system.issuerName} 决定。
           </p>
         )}
-        <Field label="密钥" htmlFor="points-key" error={error ?? undefined}>
+        {/* live: the error comes while focus is on 保存, away from the
+            field it describes; said as it appears (sweep 2026-11-21 I8). */}
+        <Field
+          label="密钥"
+          htmlFor="points-key"
+          error={error ?? undefined}
+          live
+        >
           <TextInput
             id="points-key"
             value={key}

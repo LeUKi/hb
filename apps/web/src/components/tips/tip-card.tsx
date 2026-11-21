@@ -18,8 +18,10 @@ import {
 } from "react";
 import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
+import { agoLabel } from "../../lib/roster-time";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { isPlainEnter } from "../ui/field";
 import { RollingNumber } from "../ui/morph-label";
 import { radius, Squircle } from "../ui/squircle";
 import { tipCardHeight } from "./embed";
@@ -218,6 +220,30 @@ export function TipCardView({
     setArmed(false);
     const timer = window.setTimeout(() => setArmed(true), 500);
     return () => window.clearTimeout(timer);
+  }, [step]);
+
+  // A new step replaces the last one's buttons, the one just pressed among
+  // them, so focus fell to the top of the page, or of the 社区's frame
+  // (sweep 2026-11-21, I10). If focus was in the card, or nowhere, it moves
+  // into the new step (the old one, still leaving, is skipped): to the
+  // field where the step is for typing (其他, 留言), else to the first
+  // button, mostly ‹ 返回, so a second Enter cannot press on into the next
+  // step. Other fields are left alone: focusing one opens a phone's
+  // keyboard.
+  const stage = useRef<HTMLDivElement>(null);
+  const focusedStep = useRef(step);
+  useEffect(() => {
+    if (focusedStep.current === step) return;
+    focusedStep.current = step;
+    const root = stage.current;
+    const active = document.activeElement;
+    if (!root || (active && active !== document.body && !root.contains(active)))
+      return;
+    const pane = root.querySelector(`[data-step="${step}"]`);
+    const target =
+      pane?.querySelector<HTMLElement>("[data-step-focus]") ??
+      pane?.querySelector<HTMLElement>("button:not(:disabled)");
+    target?.focus({ preventScroll: true });
   }, [step]);
 
   useEffect(() => {
@@ -875,9 +901,11 @@ export function TipCardView({
               <TipInput
                 value={message}
                 onChange={setMessage}
+                label="留言"
                 placeholder="最多 50 个字"
                 maxLength={TIP_LIMITS.messageMax}
                 onEnter={() => go("pay", -1)}
+                takesFocus
               />
               <Button variant="primary" size="sm" onClick={() => go("pay", -1)}>
                 好
@@ -1029,6 +1057,7 @@ export function TipCardView({
           <TipInput
             value={message}
             onChange={setMessage}
+            label="留言"
             placeholder={`留言（${msgHint}）`}
             maxLength={TIP_LIMITS.messageMax}
           />
@@ -1121,10 +1150,11 @@ export function TipCardView({
           maxWidth: MAX_WIDTH[card.style],
         }}
       >
-        <div className="relative" style={{ height: inner }}>
+        <div ref={stage} className="relative" style={{ height: inner }}>
           <AnimatePresence initial={false} custom={direction}>
             <motion.div
               key={step}
+              data-step={step}
               custom={direction}
               variants={slide}
               initial="enter"
@@ -1152,26 +1182,37 @@ export function TipCardView({
 function TipInput({
   value,
   onChange,
+  label,
   placeholder,
   maxLength,
   onEnter,
+  takesFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** Its name, said by screen readers: a placeholder is only a hint. */
+  label: string;
   placeholder: string;
   maxLength: number;
   onEnter?: () => void;
+  /** Its step is for typing it: focus comes here when the step opens. */
+  takesFocus?: boolean;
 }) {
   return (
     <Squircle radius={radius.input}>
       <input
         value={value}
+        aria-label={label}
+        data-step-focus={takesFocus || undefined}
         maxLength={maxLength}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.nativeEvent.isComposing)
-            onEnter?.();
+          if (!onEnter || !isPlainEnter(event)) return;
+          // Used up here: its step goes and focus moves to a button in the
+          // next one, which the keypress still to come would press too.
+          event.preventDefault();
+          onEnter();
         }}
         className="h-10 min-w-0 flex-1 bg-white px-3 text-[15px] text-ink shadow-[inset_0_0_0_1px_var(--t-line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_2px_var(--t-accent)]"
       />
@@ -1200,9 +1241,11 @@ function OtherAmount({
       <TipInput
         value={value}
         onChange={onChange}
+        label="其他数额"
         placeholder="多少 LDC"
         maxLength={7}
         onEnter={() => ok && onDone(parsed)}
+        takesFocus
       />
       <Button
         variant="primary"
@@ -1300,8 +1343,13 @@ function TipLists({
                 <span className="min-w-0 flex-1 truncate text-ink-2">
                   {row.messageHidden ? "留言已隐藏" : row.message}
                 </span>
+                {/* The site's one “多久以前” (sweep 2026-11-21, A4): short
+                    enough for the row, “昨天”, then “5 天前”. */}
                 <span className="shrink-0 text-xs text-ink-3">
-                  {ago(row.at)}
+                  {agoLabel(row.at, Date.now(), {
+                    days: true,
+                    yesterday: true,
+                  })}
                 </span>
                 <span
                   className={cn(
@@ -1341,14 +1389,4 @@ function TipLists({
       </AnimatePresence>
     </div>
   );
-}
-
-/** “刚刚”, “3 分钟前”, “2 小时前”, “昨天”, “5 天前”. */
-function ago(at: number) {
-  const seconds = Math.max(0, (Date.now() - at) / 1000);
-  if (seconds < 60) return "刚刚";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`;
-  if (seconds < 2 * 86_400) return "昨天";
-  return `${Math.floor(seconds / 86_400)} 天前`;
 }

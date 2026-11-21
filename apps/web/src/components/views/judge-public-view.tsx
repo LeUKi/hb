@@ -4,11 +4,10 @@ import type {
   JudgePageVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Check, ChevronRight, Copy, X } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { AlertTriangle, ChevronRight, X } from "lucide-react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { optionLines, paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
-import { haptic } from "../../lib/haptics";
 import { useJudgeActivities, useJudgePageCode } from "../../lib/judge";
 import { squareRecordOf } from "../../lib/records";
 import { useIdentity } from "../../lib/session";
@@ -34,7 +33,7 @@ import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
-import { CopyButton } from "../ui/copy-button";
+import { CopyButton, CopyLabelButton } from "../ui/copy-button";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
@@ -314,29 +313,12 @@ function Versions({
   );
 }
 
-/** 复制代码, said for a moment once done. */
+/** 复制代码, said for a moment once done (or 请手动复制). */
 function CopyCode({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1400);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   return (
-    <Button
-      variant="quiet"
-      size="sm"
-      className="-mr-2"
-      onClick={() => {
-        void navigator.clipboard?.writeText(code).then(() => {
-          haptic("light");
-          setCopied(true);
-        });
-      }}
-    >
-      {copied ? <Check /> : <Copy />}
-      {copied ? "已复制" : "复制代码"}
-    </Button>
+    <CopyLabelButton value={code} variant="quiet" size="sm" className="-mr-2">
+      复制代码
+    </CopyLabelButton>
   );
 }
 

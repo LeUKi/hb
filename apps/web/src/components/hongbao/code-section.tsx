@@ -2,14 +2,7 @@ import type { JudgeParam, PublicJudge } from "@hb/contracts";
 import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import {
-  Braces,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  X,
-} from "lucide-react";
+import { Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   revealsAtEnd,
@@ -17,7 +10,6 @@ import {
   sortedJson,
 } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
-import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
 import { useIdentity } from "../../lib/session";
@@ -28,7 +20,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
-import { CopyButton } from "../ui/copy-button";
+import { CopyButton, CopyLabelButton } from "../ui/copy-button";
 import { radius, Squircle } from "../ui/squircle";
 import { PanelWait } from "./panel-wait";
 import { useHongbaoPageData } from "./use-hongbao-data";
@@ -371,13 +363,7 @@ function CodeBody({
   const published = Boolean(judge?.code);
   const checks = useChecks(activityId, judge);
   const usable = useJudgeUsable(judge?.judge);
-  const [copied, setCopied] = useState(false);
   const [whole, setWhole] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1400);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   if (!page || !judge)
     return (
       <PanelWait
@@ -480,20 +466,14 @@ function CodeBody({
               {published ? "判定器代码 · 已公开" : "判定器代码 · 结束后公开"}
             </span>
             {code && (
-              <Button
+              <CopyLabelButton
+                value={code}
                 variant="quiet"
                 size="sm"
                 className="-mr-2"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(code).then(() => {
-                    haptic("light");
-                    setCopied(true);
-                  });
-                }}
               >
-                {copied ? <Check /> : <Copy />}
-                {copied ? "已复制" : "复制代码"}
-              </Button>
+                复制代码
+              </CopyLabelButton>
             )}
           </div>
           {code && (

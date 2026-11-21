@@ -644,6 +644,7 @@ function SideWindow({
 }) {
   const reduced = useReducedMotionPref();
   const { loaded } = useAtomValue(heldAtom);
+  const dialogOpen = useWindowDialogOpen();
   // Full screen, the window reaches from its place in the row (kept, so
   // nothing beside it moves) to the page's edges: where that place is,
   // read as it goes (its first frame already starts from there) and again
@@ -696,7 +697,9 @@ function SideWindow({
           : undefined,
       }}
       aria-hidden={!open}
-      inert={!open}
+      // Hidden, or waiting with the 红包 window's page while one of its
+      // dialogs is open.
+      inert={!open || dialogOpen}
     >
       <div
         className="absolute"
@@ -985,16 +988,28 @@ function SheetHeader({
 }
 
 /**
- * Something of the 红包 window's dims the whole screen: one of its dialogs
- * (名单弹窗, 用户卡片, a confirmation) or its expanded 指令框.
+ * One of the 红包 window's dialogs is open (名单弹窗, 用户卡片, a
+ * confirmation): its page is out of reach meanwhile (AppWindow), and so is
+ * the page's window beside it (sweep 2026-11-21: Tab from such a dialog
+ * went on into it). Not for the expanded 指令框, which leaves the page
+ * within reach too.
  */
-function useWindowCovered() {
+function useWindowDialogOpen() {
   const panel = useLocation({
     select: (location) => Boolean(location.state.panel),
   });
   const dialogs = useAtomValue(windowDialogsAtom) > 0;
+  return panel || dialogs;
+}
+
+/**
+ * Something of the 红包 window's dims the whole screen: one of its dialogs
+ * (名单弹窗, 用户卡片, a confirmation) or its expanded 指令框.
+ */
+function useWindowCovered() {
+  const dialogOpen = useWindowDialogOpen();
   const omnibox = useOmniboxMode() === "expanded";
-  return panel || dialogs || omnibox;
+  return dialogOpen || omnibox;
 }
 
 /**
@@ -1283,6 +1298,8 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // A dialog of the 红包 window's comes over it (the SDK's 让这个网页替你提交,
   // a human check, the login card): out of full screen until it closes.
   const windowCovered = useWindowCovered();
+  // The line between the windows waits with the page's window too.
+  const windowDialogOpen = useWindowDialogOpen();
   const full = split && fullAsked && !windowCovered;
   const [fullTick, setFullTick] = useState(0);
   const setPageFull = useSetAtom(pageFullAtom);
@@ -1427,6 +1444,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
                 left: mainWidth + GAP / 2,
                 transition: frame.moving ? `left ${MOVE}` : undefined,
               }}
+              inert={windowDialogOpen}
             >
               <motion.div
                 className="absolute inset-y-0 left-0"

@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   Check,
   ClipboardPaste,
-  Copy,
   FileUp,
   Info,
   X,
@@ -23,7 +22,6 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
-import { haptic } from "../../lib/haptics";
 import {
   carryNewJudge,
   fetchJudgeVersion,
@@ -39,6 +37,7 @@ import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
+import { CopyLabelButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
@@ -619,12 +618,6 @@ function CodeDialog({
   code: string;
 }) {
   const titleId = useId();
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1400);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
   return (
     <WindowDialog
       open={open}
@@ -665,19 +658,9 @@ function CodeDialog({
                   去判定器页改 ↗
                 </ButtonLink>
               )}
-              <Button
-                variant="quiet"
-                size="sm"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(code).then(() => {
-                    haptic("light");
-                    setCopied(true);
-                  });
-                }}
-              >
-                {copied ? <Check /> : <Copy />}
-                {copied ? "已复制" : "复制代码"}
-              </Button>
+              <CopyLabelButton value={code} variant="quiet" size="sm">
+                复制代码
+              </CopyLabelButton>
             </span>
           </p>
         </header>

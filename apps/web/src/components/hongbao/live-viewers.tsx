@@ -19,6 +19,7 @@ import { clockLabel } from "../../lib/roster-time";
 import { readViewers, viewersKey } from "../../lib/viewers";
 import { buttonHeight, buttonRadius, useButtonShape } from "../ui/button";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
+import { PopLayer, tabOut } from "../ui/popover";
 import { radius, Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
 import { ViewerCurve } from "./viewer-curve";
 
@@ -255,29 +256,51 @@ function ViewersCard({
 
   const latestClose = useRef(onClose);
   latestClose.current = onClose;
+  // As the 资料卡 does (sweep 2026-11-21: never focused, the card left its
+  // curve out of the keyboard's reach): focus moves in once the card is
+  // placed (it renders a frame later), Tab goes on to the curve.
+  useEffect(() => {
+    if (open && place) card.current?.focus({ preventScroll: true });
+  }, [open, place]);
   useEffect(() => {
     if (!open) return;
-    const close = () => latestClose.current();
+    const onClose = () => latestClose.current();
     const inside = (node: EventTarget | null) =>
       node instanceof Node &&
       Boolean(card.current?.contains(node) || anchor.current?.contains(node));
+    // Esc, a scroll or resize closes it; focus inside comes back to the
+    // chip.
+    const close = () => {
+      const hadFocus = inside(document.activeElement);
+      onClose();
+      if (hadFocus) anchor.current?.focus({ preventScroll: true });
+    };
     const outside = (event: PointerEvent) => {
-      if (!inside(event.target)) close();
+      if (!inside(event.target)) onClose();
+    };
+    // Focus gone elsewhere (the 指令框, a dialog): the card goes too.
+    const focusMoved = (event: FocusEvent) => {
+      if (!inside(event.target)) onClose();
     };
     const key = (event: KeyboardEvent) => {
+      // Tab out of the card goes on from the chip (popover.tsx).
+      if (tabOut(event, card.current, anchor.current)) {
+        onClose();
+        return;
+      }
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
-      const hadFocus = inside(document.activeElement);
       close();
-      if (hadFocus) anchor.current?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", focusMoved, true);
     document.addEventListener("keydown", key, true);
     document.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", focusMoved, true);
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
@@ -288,13 +311,14 @@ function ViewersCard({
   return createPortal(
     <AnimatePresence>
       {open && place && (
-        <motion.div
+        <PopLayer
           key="card"
           ref={card}
           id={id}
           role="dialog"
           aria-label="在看人数"
-          className="absolute z-[60]"
+          tabIndex={-1}
+          className="absolute z-[60] outline-none"
           style={{
             left: place.x,
             top: place.y,
@@ -321,7 +345,7 @@ function ViewersCard({
               />
             </div>
           </Squircle>
-        </motion.div>
+        </PopLayer>
       )}
     </AnimatePresence>,
     host,

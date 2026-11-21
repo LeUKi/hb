@@ -1127,10 +1127,10 @@ test.describe("🐟额", () => {
       .click();
     const stopped = page.getByRole("dialog", { name: "已停用的密钥 · 2 个" });
     await expect(stopped.getByText("旧网站")).toBeVisible();
-    await expect(stopped.getByText("管理员停用")).toBeVisible();
+    await expect(stopped.getByText("站长停用")).toBeVisible();
     await stopped.getByRole("button", { name: /被停的/ }).click();
     const stoppedKey = page.getByRole("dialog", { name: "密钥「被停的」" });
-    await expect(stoppedKey.getByText("管理员停用：滥用")).toBeVisible();
+    await expect(stoppedKey.getByText("站长停用：滥用")).toBeVisible();
     await expect(stoppedKey.getByRole("button", { name: "停用" })).toHaveCount(
       0,
     );

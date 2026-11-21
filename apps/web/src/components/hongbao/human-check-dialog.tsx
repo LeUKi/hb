@@ -30,18 +30,26 @@ function problemText(code: string) {
   return `人机验证没有通过（错误码 ${code}）。点“重试”；一直不过的话，关掉广告拦截插件或换个浏览器再试。`;
 }
 
+/** Said while Turnstile's script loads (shown, and in the status line). */
+const TURNSTILE_WAIT = "正在加载人机验证…";
+/** Said while Cap works (shown, and in the status line). */
+const CAP_WAIT = "浏览器在后台算一小会儿题，不用操作，一两秒就好。";
+
 /** The widget: Turnstile draws its own spinner, then passes on its own. */
 function TurnstileWidget({
   request,
   onProblem,
+  onLoaded,
 }: {
   request: HumanCheckRequest;
   onProblem: (code: string) => void;
+  /** Its script is here and the widget drawn: nothing to wait for. */
+  onLoaded: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
-  const latest = useRef({ request, onProblem });
-  latest.current = { request, onProblem };
+  const latest = useRef({ request, onProblem, onLoaded });
+  latest.current = { request, onProblem, onLoaded };
   const { challenge } = request;
 
   useEffect(() => {
@@ -51,6 +59,7 @@ function TurnstileWidget({
       (turnstile) => {
         if (gone || !box.current) return;
         setLoaded(true);
+        latest.current.onLoaded();
         widget = turnstile.render(box.current, {
           sitekey: challenge.siteKey,
           action: challenge.action,
@@ -79,10 +88,14 @@ function TurnstileWidget({
 
   return (
     <div className="grid min-h-[65px] place-items-center">
+      {/* Said by the dialog's status line, which stays. */}
       {!loaded && (
-        <p role="status" className="flex items-center gap-2 text-sm text-ink-3">
+        <p
+          aria-hidden="true"
+          className="flex items-center gap-2 text-sm text-ink-3"
+        >
           <Spinner />
-          正在加载人机验证…
+          {TURNSTILE_WAIT}
         </p>
       )}
       <div ref={box} className="w-full empty:hidden" />
@@ -120,17 +133,17 @@ function CapWidget({
     return () => controller.abort();
   }, [challenge]);
 
+  // Said by the dialog's status line, which stays: this one is drawn anew
+  // on each 重试.
   return (
-    <div role="status" className="grid gap-2 py-2">
+    <div aria-hidden="true" className="grid gap-2 py-2">
       <div className="loading-sheen h-2 overflow-hidden rounded-full bg-fill">
         <div
           className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
           style={{ width: `${Math.max(4, progress)}%` }}
         />
       </div>
-      <p className="text-sm text-ink-3">
-        浏览器在后台算一小会儿题，不用操作，一两秒就好。
-      </p>
+      <p className="text-sm text-ink-3">{CAP_WAIT}</p>
     </div>
   );
 }
@@ -147,6 +160,8 @@ export function HumanCheckDialog() {
   const shown = request ?? last.current;
   const [problem, setProblem] = useState<string | null>(null);
   const [round, setRound] = useState(0);
+  // The round whose Turnstile widget has loaded (no more 正在加载).
+  const [loadedRound, setLoadedRound] = useState<number | null>(null);
 
   // A new challenge (a new claim, or asking again) starts clean.
   const challenge = request?.challenge;
@@ -154,12 +169,25 @@ export function HumanCheckDialog() {
     if (challenge) {
       setProblem(null);
       setRound(0);
+      setLoadedRound(null);
     }
   }, [challenge]);
 
   const passed = shown?.passed === true;
   const verb = shown?.challenge.action === "register" ? "报名" : "领取";
   const who = shown?.author ? ` @${shown.author} ` : "红包作者";
+  // What it is doing, for screen readers, from one line there as long as
+  // the dialog is: a status put in with its words is often not read out
+  // (sweep 2026-11-21 I8). A problem is said by the dialog's alert.
+  const said = passed
+    ? `已通过，正在${verb}…`
+    : !shown || problem
+      ? ""
+      : shown.challenge.method === "cap"
+        ? CAP_WAIT
+        : loadedRound === round
+          ? ""
+          : TURNSTILE_WAIT;
   return (
     <ConfirmDialog
       open={request !== null}
@@ -204,14 +232,25 @@ export function HumanCheckDialog() {
         <CapWidget key={round} request={shown} onProblem={setProblem} />
       )}
       {shown && shown.challenge.method !== "cap" && (
-        <TurnstileWidget key={round} request={shown} onProblem={setProblem} />
+        <TurnstileWidget
+          key={round}
+          request={shown}
+          onProblem={setProblem}
+          onLoaded={() => setLoadedRound(round)}
+        />
       )}
       {passed && (
-        <p role="status" className="flex items-center gap-2 text-sm text-ink-2">
+        <p
+          aria-hidden="true"
+          className="flex items-center gap-2 text-sm text-ink-2"
+        >
           <Spinner />
           已通过，正在{verb}…
         </p>
       )}
+      <p role="status" className="sr-only">
+        {said}
+      </p>
     </ConfirmDialog>
   );
 }

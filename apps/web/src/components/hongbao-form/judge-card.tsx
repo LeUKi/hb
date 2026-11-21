@@ -86,6 +86,9 @@ export function FilePicker({
   );
 }
 
+/** 粘贴 refused by the browser: what to do instead (shown, and said). */
+const KEY_PASTE = "浏览器没让读剪贴板：按 ⌘V 或 Ctrl+V 粘贴，或者从文件选。";
+
 const stateLabels: Record<Exclude<JudgeStatus, "empty">, string> = {
   new: "未部署",
   deploying: "部署中…",
@@ -502,12 +505,17 @@ export function JudgeCard({
           )}
           <Reveal show={keyPaste && !locked}>
             <p
-              role="status"
+              aria-hidden="true"
               className="hb-judge-quiet px-3.5 pb-3 text-center text-xs"
             >
-              浏览器没让读剪贴板：按 ⌘V 或 Ctrl+V 粘贴，或者从文件选。
+              {KEY_PASTE}
             </p>
           </Reveal>
+          {/* Said from a line that stays: put in with its words, the note
+              above is often not read out (sweep 2026-11-21 I8). */}
+          <p role="status" className="sr-only">
+            {keyPaste && !locked ? KEY_PASTE : ""}
+          </p>
         </fieldset>
       </Squircle>
       <FilePicker

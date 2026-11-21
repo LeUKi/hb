@@ -24,15 +24,43 @@ export function sinceOpen(ms: number | null | undefined) {
 }
 
 /**
- * How long ago, as people say it (参与名单's 挑战, 05 §7): "刚刚" under a
- * minute, "3 分钟前", "2 小时前", then the date and time.
+ * How long ago, as people say it (参与名单's 挑战, 05 §7), and the one way
+ * the site says it (sweep 2026-11-21, A4: five helpers disagreed, 90
+ * minutes read 1 小时前 in one place and 2 小时前 in another): "刚刚" under
+ * a minute, "3 分钟前", "2 小时前" in whole units rounded down, then the
+ * date and time. With `days`, where a date would not fit or read well (the
+ * 指令框's history, the 打赏卡's list, a sentence), a day on is "3 天前"
+ * instead, counted by the calendar as clockLabel counts them, so it agrees
+ * with the date; with `yesterday` too, the day before today is "昨天".
  */
-export function agoLabel(at: number, now = Date.now()) {
+export function agoLabel(
+  at: number,
+  now = Date.now(),
+  {
+    days = false,
+    yesterday = false,
+  }: { days?: boolean; yesterday?: boolean } = {},
+) {
   const minutes = Math.floor((now - at) / 60_000);
   if (minutes < 1) return "刚刚";
   if (minutes < 60) return `${minutes} 分钟前`;
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 小时前`;
-  return clockLabel(at, now);
+  if (!days) return clockLabel(at, now);
+  const back = Math.max(1, -dayOffset(at, now));
+  return yesterday && back === 1 ? "昨天" : `${back} 天前`;
+}
+
+/** Which day `at` falls on, from today's: 0 today, 1 tomorrow, -1 yesterday. */
+function dayOffset(at: number, now: number) {
+  const start = (value: number) => {
+    const date = new Date(value);
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    ).getTime();
+  };
+  return Math.round((start(at) - start(now)) / 86_400_000);
 }
 
 /** "2026-10-14 17:58:04", shown on hover. */
@@ -50,9 +78,7 @@ export function clockLabel(at: number, now = Date.now()) {
   const date = new Date(at);
   const today = new Date(now);
   const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  const day = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-  const days = Math.round((day(date) - day(today)) / 86_400_000);
+  const days = dayOffset(at, now);
   if (days === 0) return clock;
   if (days === 1) return `明天 ${clock}`;
   if (days === -1) return `昨天 ${clock}`;

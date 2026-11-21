@@ -1,5 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import {
   type RefObject,
   useEffect,
@@ -14,6 +14,7 @@ import { useEmbedded } from "../../lib/embedded";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Avatar } from "./avatar";
 import { LinuxDoMark } from "./linux-do-mark";
+import { PopLayer, tabOut } from "./popover";
 import { radius, Squircle, SquirclePlate } from "./squircle";
 
 const CARD_WIDTH = 256;
@@ -22,7 +23,8 @@ const CARD_WIDTH = 256;
  * 资料卡: a person's name that opens their card — avatar, name, @用户名 and
  * their LINUX DO profile (production's user-identity popover). The card
  * lives in the window layer, so a dialog or a scrolling list cannot clip it;
- * Esc, a click elsewhere or any scroll closes it, and focus comes back.
+ * Esc, a click elsewhere or any scroll closes it, and focus comes back; Tab
+ * out of it goes on from the name.
  */
 export function PersonName({
   name,
@@ -147,8 +149,13 @@ function ProfileCard({
     const focusMoved = (event: FocusEvent) => {
       if (!inside(event.target)) onClose();
     };
-    // Esc is the card's only while focus is on it (or its name).
     const key = (event: KeyboardEvent) => {
+      // Tab out of the card goes on from its name (popover.tsx).
+      if (tabOut(event, card.current, anchor.current)) {
+        onClose();
+        return;
+      }
+      // Esc is the card's only while focus is on it (or its name).
       if (event.key !== "Escape" || !inside(document.activeElement)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -173,7 +180,7 @@ function ProfileCard({
   return createPortal(
     <AnimatePresence>
       {open && place && (
-        <motion.div
+        <PopLayer
           key="card"
           ref={card}
           role="dialog"
@@ -230,7 +237,7 @@ function ProfileCard({
               )}
             </div>
           </Squircle>
-        </motion.div>
+        </PopLayer>
       )}
     </AnimatePresence>,
     host,

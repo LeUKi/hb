@@ -21,6 +21,7 @@ import {
 import { useReducedMotionPref } from "../../lib/motion";
 import { optimizePassword } from "../../lib/password-rules";
 import type { RecentEntry } from "../../lib/recent-inputs";
+import { agoLabel } from "../../lib/roster-time";
 import { type EntryScheme, looksLikeAddress } from "../../lib/scheme";
 import { useSessionUser } from "../../lib/session";
 import { PlusMark } from "../balance/plus";
@@ -157,15 +158,6 @@ const statusTone = {
   unmatched: "bg-ink-3",
   unconfirmed: "bg-warning",
 } as const;
-
-export function relativeTime(at: number) {
-  const minutes = Math.round((Date.now() - at) / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.round(hours / 24)} 天前`;
-}
 
 function Row({
   icon,
@@ -384,8 +376,10 @@ export function SuggestionContent({
             />
             {statusText[item.entry.status]}
           </span>
+          {/* The site's one “多久以前” (sweep 2026-11-21, A4), in days
+              past one: a date would crowd the row. */}
           <span className="hidden @wide/window:inline">
-            {relativeTime(item.entry.at)}
+            {agoLabel(item.entry.at, Date.now(), { days: true })}
           </span>
         </span>
       }

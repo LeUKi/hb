@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import {
   type ReactNode,
   type RefObject,
@@ -20,6 +20,7 @@ import {
   useButtonShape,
 } from "./button";
 import { MorphLabel } from "./morph-label";
+import { PopLayer, tabOut } from "./popover";
 import { radius, Squircle, SquircleFill, SquirclePlate } from "./squircle";
 
 export type SplitItem = { label: string; onSelect: () => void };
@@ -29,7 +30,8 @@ export type SplitItem = { label: string; onSelect: () => void };
  * two halves, a thin line between them; the arrow opens a few more ways to
  * do it. The menu hangs in the window layer above the button (below when
  * there is no room), follows it, and goes with Esc (focus back on the
- * arrow), a press elsewhere or Tab.
+ * arrow), a press elsewhere or Tab (on from the arrow; Shift+Tab stops on
+ * it).
  */
 export function SplitButton({
   variant = "primary",
@@ -230,7 +232,11 @@ function SplitMenu({
         close(true);
         return;
       }
-      if (event.key === "Tab") close(false);
+      if (event.key !== "Tab") return;
+      // From the arrow, not from the end of the window layer where the
+      // menu hangs (popover.tsx).
+      tabOut(event, menu.current, arrow.current, true);
+      close(false);
     };
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("keydown", key, true);
@@ -244,7 +250,7 @@ function SplitMenu({
   return createPortal(
     <AnimatePresence>
       {open && place && (
-        <motion.div
+        <PopLayer
           key="menu"
           ref={menu}
           className="absolute z-[60] w-max min-w-40"
@@ -306,7 +312,7 @@ function SplitMenu({
               ))}
             </div>
           </Squircle>
-        </motion.div>
+        </PopLayer>
       )}
     </AnimatePresence>,
     host,

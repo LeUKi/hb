@@ -260,6 +260,8 @@ export function TransferDialog({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<BalanceTransfer | null>(null);
+  // The 已转给 line, focused once the confirmation has gone (below).
+  const result = useRef<HTMLParagraphElement>(null);
   const requestId = useRef(crypto.randomUUID());
   // Looked up once typing pauses (0.3 s), not on every key.
   const settledName = useSettled(username);
@@ -421,7 +423,13 @@ export function TransferDialog({
     >
       <Swap id={done ? "done" : "form"}>
         {done ? (
-          <p role="status" className="text-sm text-ink">
+          // Put in with its words, a status line is often not read out:
+          // focus comes here instead, which reads it (sweep 2026-11-21 I8).
+          <p
+            ref={result}
+            tabIndex={-1}
+            className="text-sm text-ink outline-none"
+          >
             {done.destination === "credit"
               ? `已提交，正在发到 @${done.counterpart.username} 的 Credit 账户。`
               : `已转给 @${done.counterpart.username} ${fishText(done.amountMinor)} 🐟。`}
@@ -583,6 +591,10 @@ export function TransferDialog({
           setConfirming(false);
           setError(null);
         }}
+        // Sent: focus came back to the button it was opened from, which
+        // now says 再转一笔 (Enter would clear the form). It goes on to
+        // the 已转给 line, read out as it lands; only there once sent.
+        onClosed={() => result.current?.focus()}
         busy={busy}
         title={
           credit

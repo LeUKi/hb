@@ -43,6 +43,7 @@ import { ldc, TipCardView } from "../tips/tip-card";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
+import { CopyLabelButton } from "../ui/copy-button";
 import { RevealInline } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
@@ -63,7 +64,10 @@ export function TipsView() {
   return <MyTips key={user.id} user={user} />;
 }
 
-/** A button that copies, and says so for a moment. */
+/**
+ * A button that copies, and says so for a moment: the site's copy button
+ * with words (sweep 2026-11-21 I5), words only, at the 打赏卡's size.
+ */
 export function CopyTextButton({
   text,
   label,
@@ -71,20 +75,10 @@ export function CopyTextButton({
   text: string;
   label: string;
 }) {
-  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
-  const copy = () => {
-    const write = navigator.clipboard?.writeText(text);
-    if (!write) return setState("failed");
-    write.then(
-      () => setState("done"),
-      () => setState("failed"),
-    );
-    window.setTimeout(() => setState("idle"), 1600);
-  };
   return (
-    <Button size="xs" onClick={copy}>
-      {state === "done" ? "已复制" : state === "failed" ? "没复制上" : label}
-    </Button>
+    <CopyLabelButton value={text} size="xs" icon={null}>
+      {label}
+    </CopyLabelButton>
   );
 }
 

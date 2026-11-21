@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { useAwake } from "../../lib/awake";
 import {
   type PointsOwnerView,
   type SelfTestStep,
@@ -45,8 +46,9 @@ import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { Field, TextArea, TextInput } from "../ui/field";
 import { NoteMarkdown } from "../ui/markdown";
+import { MorphLabel } from "../ui/morph-label";
 import { PointsCapsule } from "../ui/points-mark";
-import { Reveal, RevealInline } from "../ui/reveal";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { MessageView } from "./message-view";
@@ -156,6 +158,7 @@ function Editor({
       ? `保存没有完成：${save.error.message}`
       : "保存没有完成，请稍后再试。"
     : null;
+  const justSaved = save.isSuccess && !dirty && system !== undefined;
   const endpointMoved =
     latest !== undefined &&
     (config.baseUrl.replace(/\/+$/, "") !== latest.baseUrl ||
@@ -505,11 +508,12 @@ function Editor({
           </p>
         </Reveal>
         <div className="flex items-center justify-end gap-3">
-          <RevealInline show={save.isSuccess && !dirty && system !== undefined}>
-            <span role="status" className="text-sm text-ink-3">
-              已保存
-            </span>
-          </RevealInline>
+          {/* There all along, only its words change: a status put in with
+              its words is often not read out (sweep 2026-11-21 I8). They
+              grow in and fold away, as CopyButton's 已复制. */}
+          <span role="status" className="text-sm text-ink-3">
+            <MorphLabel align="start">{justSaved ? "已保存" : ""}</MorphLabel>
+          </span>
           <Button
             variant="primary"
             aria-disabled={
@@ -773,16 +777,22 @@ function ArrivedPreview({
 const shownOnly = (minor: number, unit: { step: number }) =>
   formatDisplayAmount(minor, unit.step).text;
 
-/** The resend countdown, ticking from 5:00 for the preview. */
+/**
+ * The resend countdown, ticking from 5:00 for the preview: only while
+ * someone is here and the page is in front, held where it is meanwhile
+ * (闲着不画, docs/redesign/09-idle-frames.md; sweep 2026-11-21 P2).
+ */
 function Ticking() {
   const [left, setLeft] = useState(300);
+  const awake = useAwake();
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setLeft((value) => (value <= 0 ? 300 : value - 1)),
-      1000,
-    );
+    if (!awake) return;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      setLeft((value) => (value <= 0 ? 300 : value - 1));
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [awake]);
   return (
     <span className="font-mono tabular-nums">
       {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}

@@ -764,6 +764,7 @@ export function PasswordList({
     lines: number;
     shown: boolean;
   } | null>(null);
+  const leftOutLines = leftOut?.lines ?? 0;
   /**
    * Several lines pasted: one 口令 each, from this row down — into it if it
    * is empty, else in new rows under it — up to the limit.
@@ -913,11 +914,18 @@ export function PasswordList({
         })}
       </ul>
       <Reveal show={Boolean(leftOut?.shown)}>
-        <p role="status" className="text-xs text-warning">
-          最多 {LIMITS.passwords} 个口令，后面 {leftOut?.lines ?? 0}{" "}
-          行没有加进来。
+        <p aria-hidden="true" className="text-xs text-warning">
+          最多 {LIMITS.passwords} 个口令，后面 {leftOutLines} 行没有加进来。
         </p>
       </Reveal>
+      {/* Said from a line that stays, as heard right after the paste: put
+          in with its words, the note above is often not read out (sweep
+          2026-11-21 I8). */}
+      <p role="status" className="sr-only">
+        {leftOut?.shown
+          ? `粘贴的后面 ${leftOutLines} 行没有加进来：最多 ${LIMITS.passwords} 个口令。`
+          : ""}
+      </p>
       {/* Locked: the step's own 开放后不能修改 covers the 口令 too. */}
       {adding && (
         <div className="flex flex-wrap items-center gap-3">

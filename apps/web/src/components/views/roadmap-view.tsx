@@ -53,12 +53,16 @@ function startedLabel(at: string | null) {
   return days < 1 ? "今天开工" : `开工 ${days} 天`;
 }
 
-/** 3 天前 (§2.3): agoLabel's words for a day, then days, then the date. */
+/**
+ * 3 天前 (§2.3): the site's one “多久以前” in days past one (sweep
+ * 2026-11-21, A4), then from 30 days the date.
+ */
 function sinceLabel(at: string) {
   const time = Date.parse(at);
-  const days = Math.floor((Date.now() - time) / DAY);
-  if (days < 1) return agoLabel(time);
-  return days < 30 ? `${days} 天前` : dayLabel(time);
+  const now = Date.now();
+  return now - time < 30 * DAY
+    ? agoLabel(time, now, { days: true })
+    : dayLabel(time, now);
 }
 
 /** Whose: “@小明 提的”, nothing for the 站长's own. */

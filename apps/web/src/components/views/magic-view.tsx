@@ -1,5 +1,5 @@
 import type { MiniMagic } from "@hb/contracts";
-import { MINI_HOP_PATH } from "@hb/contracts";
+import { MINI_HOP_PATH, MINI_HOP_TTL_MS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import {
@@ -12,6 +12,7 @@ import {
 import { getLoginHref, useLogout } from "../../lib/auth";
 import { cn } from "../../lib/cn";
 import { useMagic } from "../../lib/magic";
+import { agoLabel } from "../../lib/roster-time";
 import { useIdentity } from "../../lib/session";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { PageLoad, PageSkeleton, queryLoad } from "../page/page-state";
@@ -61,15 +62,6 @@ const titleOf: Record<Hop["kind"], string> = {
   credit: "前往 Credit 站付款",
   page: "打开红包站的页面",
 };
-
-/** How long ago, in the page's words. */
-function agoOf(at: number) {
-  const minutes = Math.max(1, Math.floor((Date.now() - at) / 60_000));
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.floor(hours / 24)} 天前`;
-}
 
 /** Goes there, in place of this page (back skips it); once. */
 function useOpen() {
@@ -280,11 +272,18 @@ function TooLate({ hop }: { hop: Hop }) {
         actions={<HomeButton />}
       />
     );
+  // The site's one “多久以前” (sweep 2026-11-21, A4), in days past one, as
+  // the sentence reads. 红包站 found it over ten minutes old: a clock here
+  // running behind says no less (not “刚刚” beside “超过 10 分钟”).
+  const now = Date.now();
+  const ago = agoLabel(Math.min(hop.at, now - MINI_HOP_TTL_MS), now, {
+    days: true,
+  });
   return (
     <MagicLayout
       route="still"
       title="这次打开已经过时"
-      text={`${whatOf(hop)}，是 ${agoOf(hop.at)}在社区小程序里点的。`}
+      text={`${whatOf(hop)}，是 ${ago}在社区小程序里点的。`}
       note="超过 10 分钟就不再自动打开。还要的话点“仍然打开”，或者回社区再点一次。"
       actions={
         <>
