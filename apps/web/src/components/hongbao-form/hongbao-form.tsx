@@ -59,6 +59,7 @@ import {
 import {
   declaredParams,
   judgeIssuesOf,
+  judgeRefusesPoints,
   paramsLineOf,
   triedHongbao,
 } from "./judge-issues";
@@ -103,6 +104,10 @@ const notice = {
 const quietLineOf: Partial<Record<SettingsGroup, string>> = {
   split: "hb-quiet-split",
   timing: "hb-quiet-timing",
+  // 领取范围's problems count on 起个标题 (steps.ts), whose 更多设置 line
+  // turns red for them: a save lands there, not on a field in the closed
+  // panel (sweep 2026-11-21).
+  scope: "hb-quiet-more",
   notes: "hb-quiet-more",
   public: "hb-quiet-more",
 };
@@ -486,6 +491,14 @@ export function HongbaoForm({
   const pickMode = (mode: RewardMode) => {
     const changed = mode !== form.mode;
     update((current) => withMode(current, mode));
+    // Another 玩法 has fields of its own: its steps are checked again by
+    // 下一步 or a save (07 §5), so its empty fields do not open in red. The
+    // title and 更多设置 do not change with it (sweep 2026-11-21).
+    if (changed)
+      setChecked(
+        (current) =>
+          new Set([...current].filter((id) => id === "mode" || id === "title")),
+      );
     // A beat for the pressed card to show, then on to 发多少.
     if (editing) {
       if (changed)
@@ -704,7 +717,12 @@ export function HongbaoForm({
   const moreLine = [
     form.afterClaimInfo.trim() ? "有附言" : "附言未填",
     form.topic.trim() ? "关联了帖子" : "不关联帖子",
-    form.listed || form.mode === "code" ? "加入红包广场" : "不加入红包广场",
+    // 首页领取 off joins it too, as saving sends (form-state inputOf).
+    form.listed ||
+    form.mode === "code" ||
+    (form.participation === "password" && form.pageOnly)
+      ? "加入红包广场"
+      : "不加入红包广场",
     // Said only when turned off: on is how every 红包 starts.
     ...(form.allowTokens ? [] : ["不让令牌领"]),
     form.quantity === "exact" ? "精确数量" : "模糊数量",
@@ -742,6 +760,9 @@ export function HongbaoForm({
             errorOf={errorOf}
             locked={locked}
             openSheet={(group) => openSheet(group)}
+            // Said at 从哪发 once both are picked, not at opening (third-
+            // party-points §10; sweep 2026-11-21).
+            judgeRefusesPoints={judgeRefusesPoints(form, declarations)}
             after={
               // 试一试 after the pool, for a 判定器 with no params step.
               form.mode === "code" && !hasParams ? (
@@ -824,6 +845,12 @@ export function HongbaoForm({
             openSheet={(group) => openSheet(group)}
             moreLine={moreLine}
             moreError={groupError(["scope", "notes", "public"])}
+            // Red for a problem: 更多设置 opens at it (sweep 2026-11-21).
+            moreAt={
+              (["scope", "notes", "public"] as const).find((group) =>
+                groupError([group]),
+              ) ?? "notes"
+            }
             schedule={
               opened || (scheduledAt ?? scheduleAt) === null ? undefined : (
                 <ScheduleLine
@@ -837,7 +864,10 @@ export function HongbaoForm({
     }
   };
 
-  const allChecked = checked.size === order.length;
+  // By the steps this order has: a 参数 step checked and then gone (a
+  // 判定器 without params, another 玩法) does not keep it false (sweep
+  // 2026-11-21).
+  const allChecked = order.every((step) => checked.has(step.id));
   // The notice shows once: in the page on wide windows, in the 吸底条
   // otherwise. Read out by the lasting region at the form's top.
   const status = (
@@ -856,6 +886,17 @@ export function HongbaoForm({
     </>
   );
   const last = linear.current === order.length;
+  // What opening (or 定时) locks, said over its buttons wherever they are:
+  // in the card, in the 吸底条's page, or on 📝 (07 §5 第 4 步; sweep
+  // 2026-11-21).
+  const openNote =
+    scheduleAt !== null
+      ? form.mode === "code"
+        ? "定时以后奖励、判定器和时间就不能再改，要改先取消定时。"
+        : "定时以后奖励、参与方式和时间就不能再改，口令只能添加，要改先取消定时。"
+      : form.mode === "code"
+        ? "开放后奖励、判定器和时间都不能再改。"
+        : "开放后奖励、参与方式和时间都不能再改，口令只能添加。";
   const buttons = (small: boolean) =>
     !editing && !last ? (
       // The bar's buttons are all one height, on every step.
@@ -1037,13 +1078,7 @@ export function HongbaoForm({
                           {last && !fixed && (
                             // A long note wraps; the buttons stay together.
                             <span className="mr-auto min-w-0 flex-1 basis-48 text-xs text-ink-3">
-                              {scheduleAt !== null
-                                ? form.mode === "code"
-                                  ? "定时以后奖励、判定器和时间就不能再改，要改先取消定时。"
-                                  : "定时以后奖励、参与方式和时间就不能再改，口令只能添加，要改先取消定时。"
-                                : form.mode === "code"
-                                  ? "开放后奖励、判定器和时间都不能再改。"
-                                  : "开放后奖励、参与方式和时间都不能再改，口令只能添加。"}
+                              {openNote}
                             </span>
                           )}
                           <div className="flex shrink-0 gap-2">
@@ -1051,6 +1086,13 @@ export function HongbaoForm({
                           </div>
                         </div>
                       </div>
+                    )}
+                    {/* Narrow /new: the buttons are in the 吸底条; the note
+                        stays in the card, growing with it. */}
+                    {!editing && !roomy && last && !fixed && (
+                      <p className="border-line border-t pt-4 text-xs text-ink-3">
+                        {openNote}
+                      </p>
                     )}
                   </StepCard>
                 );
@@ -1079,6 +1121,10 @@ export function HongbaoForm({
           {editing && roomy && (
             <div className="flex flex-col gap-3">
               {status}
+              {/* A draft not yet timed: what its primary press locks. */}
+              {draft && !fixed && (
+                <p className="text-xs text-ink-3">{openNote}</p>
+              )}
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {draft && (
                   <Button
@@ -1123,6 +1169,9 @@ export function HongbaoForm({
                     {scheduled ? "取消定时" : "删除草稿"}
                   </Button>
                 </div>
+              )}
+              {editing && draft && !fixed && (
+                <p className="text-xs text-ink-3">{openNote}</p>
               )}
               <ActionBar left={<Swap id={barKind}>{barLeft}</Swap>}>
                 {buttons(true)}

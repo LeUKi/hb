@@ -304,17 +304,27 @@ export function drawTiming(form: FormState): FormState["timing"] {
   };
 }
 
-/** Another 玩法: a timed draw counts to its draw time, the others to a deadline. */
+/**
+ * Another 玩法: a timed draw counts to its draw time, the others to a
+ * deadline. Leaving 代码判定, 首页领取 off and 加入红包广场 go back to how
+ * a 红包 starts: a 代码判定 one saves them forced on (contracts), so a
+ * draft or copy of one reads them back on, and nobody chose them for the
+ * new 玩法 — both are fixed once it opens (sweep 2026-11-21).
+ */
 export function withMode(form: FormState, mode: RewardMode): FormState {
   if (mode === form.mode) return form;
+  const start = emptyForm();
   return {
     ...form,
     mode,
+    ...(form.mode === "code"
+      ? { pageOnly: start.pageOnly, listed: start.listed }
+      : {}),
     timing:
       mode === "timed_draw"
         ? drawTiming(form)
         : form.mode === "timed_draw"
-          ? emptyForm().timing
+          ? start.timing
           : form.timing,
   };
 }
@@ -738,9 +748,8 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     money.mode === "fixed"
       ? ldc(amountToMinor(money.totalAmount) / money.count)
       : "";
-  return {
+  const built: FormState = {
     ...base,
-    title: config.title,
     funding: config.funding ?? "merchant",
     pointsSystemId: config.pointsSystemId ?? "",
     mode: money.mode,
@@ -823,6 +832,14 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
           })),
         }
       : base.scope,
+  };
+  // The default filled in at saving (withDefaultTitle) comes back as the
+  // default, so it follows 份数 and 玩法 again rather than standing as if
+  // typed; a title saved under an older default stays as it is (07 §5;
+  // sweep 2026-11-21). defaultTitle does not read the title.
+  return {
+    ...built,
+    title: config.title === defaultTitle(built) ? "" : config.title,
   };
 }
 

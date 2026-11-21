@@ -144,7 +144,7 @@ export function useSubmit({
           pending: {
             kind: "create",
             request: kept.lostCreate,
-            form: withDefaultTitle(kept.form),
+            form: kept.form,
           },
         }
       : null,
@@ -325,6 +325,9 @@ export function useSubmit({
       activity && opened
         ? openedInputOf(activity, payload)
         : inputOf(payload, merchant?.id ?? paying ?? "");
+    // The form as typed becomes 📝's baseline, its title left empty when it
+    // was: the default filled in above is only sent, so the form is not
+    // left changed by it (sweep 2026-11-21).
     let pending: Pending =
       retrying && uncertain
         ? uncertain.pending
@@ -332,13 +335,13 @@ export function useSubmit({
           ? {
               kind: "update",
               request: { version: activity.version, activity: input },
-              form: payload,
+              form,
               base: activity.config,
             }
           : {
               kind: "create",
               request: { requestId: crypto.randomUUID(), activity: input },
-              form: payload,
+              form,
             };
     inFlight.current = true;
     setOpening(open);

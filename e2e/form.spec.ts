@@ -386,6 +386,35 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).not.toHaveProperty("humanCheck");
   });
 
+  test("换玩法：查过的发多少不跟着换过去，新玩法的空框等按下一步才红（sweep 2026-11-21）", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /^第 1 步 玩法：/ }).click();
+    await page.getByRole("button", { name: /^固定均分/ }).click();
+    await expect(page.locator("#hb-fixed-unit")).toBeVisible();
+    await expect(shown(page, "每份金额要大于 0，最多两位小数")).toHaveCount(0);
+    await expect(shown(page, "份数要在 1 到 1,000 之间")).toHaveCount(0);
+    await page.locator("#hb-fixed-unit").press("Enter");
+    await expect(shown(page, "每份金额要大于 0，最多两位小数")).toBeVisible();
+  });
+
+  test("手机宽：最后一步的卡片里也写开放后哪些不能再改（sweep 2026-11-21）", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await expect(
+      shown(page, "开放后奖励、参与方式和时间都不能再改，口令只能添加。"),
+    ).toBeVisible();
+  });
+
   test("口令：粘贴多行拆成多个口令，最多 32 个，多出来的写明", async ({
     page,
     context,

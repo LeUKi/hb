@@ -418,13 +418,12 @@ export function SettingsSheet({
                   label="首页领取"
                   description="关掉后，口令只能在红包页输入，红包会加入红包广场。"
                   checked={!form.pageOnly}
+                  // Off, it is found in 红包广场 (07 §6): the switch below
+                  // shows on and saving sends it, so `listed` stays the
+                  // sender's own choice for when this is on again (sweep
+                  // 2026-11-21).
                   onChange={(home) =>
-                    update((current) => ({
-                      ...current,
-                      pageOnly: !home,
-                      // Found in 红包广场 (07 §6): it goes on with it.
-                      listed: !home || current.listed,
-                    }))
+                    update((current) => ({ ...current, pageOnly: !home }))
                   }
                 />
                 {/* Off: a 口令 sent alone matches nothing on the start page,

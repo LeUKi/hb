@@ -212,6 +212,7 @@ export function AmountStep({
   errorOf,
   locked,
   openSheet,
+  judgeRefusesPoints,
   after,
 }: {
   form: FormState;
@@ -219,13 +220,23 @@ export function AmountStep({
   errorOf: ErrorOf;
   locked: boolean;
   openSheet: OpenSheet;
+  /**
+   * 代码判定 with a 判定器 that does not count in 最小单位 (judge-issues.ts):
+   * 从哪发 says 三方积分 will not do (sweep 2026-11-21).
+   */
+  judgeRefusesPoints?: boolean;
   /** Under it all: 代码判定's 试一试 when its 判定器 has no params step. */
   after?: ReactNode;
 }) {
   const split = splitLine(form);
   return (
     <div className="grid gap-4">
-      <FundingChoice form={form} update={update} locked={locked} />
+      <FundingChoice
+        form={form}
+        update={update}
+        locked={locked}
+        judgeRefusesPoints={judgeRefusesPoints}
+      />
       <AmountFields
         form={form}
         update={update}
@@ -354,6 +365,7 @@ export function TitleStep({
   openSheet,
   moreLine,
   moreError,
+  moreAt = "notes",
   schedule,
 }: {
   form: FormState;
@@ -363,6 +375,8 @@ export function TitleStep({
   /** What 更多设置 holds now ("附言未填 · 不加入广场 · …"). */
   moreLine: string;
   moreError?: string;
+  /** The group 更多设置 opens at: the first with a problem, else 附言. */
+  moreAt?: SettingsGroup;
   /** 定时开放's line once a time is chosen (scheduled-opening §1), last. */
   schedule?: ReactNode;
 }) {
@@ -433,7 +447,7 @@ export function TitleStep({
           </span>
         }
         error={moreError}
-        onOpen={() => openSheet("notes")}
+        onOpen={() => openSheet(moreAt)}
       />
       {/* Once a time is chosen: it opens in place (the arrow chooses it). */}
       <Reveal show={Boolean(schedule)}>{schedule}</Reveal>
