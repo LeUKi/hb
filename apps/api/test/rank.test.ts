@@ -360,6 +360,71 @@ describe("排行榜", () => {
     expect(later.items.map((item) => item.amount)).toEqual(["3.00"]);
   });
 
+  it("works a stale board out once for readers at once, and again after a failed try (sweep 2026-11-21)", async () => {
+    const now = Date.now();
+    const [author, taker] = await Promise.all(["author", "taker"].map(person));
+    if (!author || !taker) throw new Error("people");
+    await hongbao(author, [{ by: taker, minor: 100, at: now - day }]);
+    const query = { board: "received", range: "all" } as const;
+    await rankPage(env, query, null, now);
+    await hongbao(author, [{ by: taker, minor: 200, at: now - day }]);
+    // The pass over the claims is the one statement that groups them.
+    let passes = 0;
+    const counting = (fail: boolean) =>
+      ({
+        ...env,
+        DB: {
+          prepare: (sql: string) => {
+            if (sql.includes("GROUP BY")) {
+              passes += 1;
+              if (fail) throw new Error("D1 busy");
+            }
+            return env.DB.prepare(sql);
+          },
+        },
+      }) as unknown as ApiBindings;
+
+    // Five readers once it is stale: one works it out, four keep the kept
+    // board with its true time.
+    const stale = now + 5 * 60 * 1000;
+    const pages = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        rankPage(counting(false), query, null, stale),
+      ),
+    );
+    expect(passes).toBe(1);
+    expect(
+      pages.map((page) => [
+        page.computedAt,
+        page.items.map((item) => item.amount),
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        [stale, ["3.00"]],
+        [now, ["1.00"]],
+      ]),
+    );
+    expect(pages.filter((page) => page.computedAt === now)).toHaveLength(4);
+
+    // A try that fails holds the board 30 s; the reader after that tries.
+    const again = stale + 5 * 60 * 1000;
+    await expect(rankPage(counting(true), query, null, again)).rejects.toThrow(
+      "D1 busy",
+    );
+    passes = 0;
+    const held = await rankPage(counting(false), query, null, again + 10_000);
+    expect(passes).toBe(0);
+    expect(held.items.map((item) => item.amount)).toEqual(["3.00"]);
+    const retried = await rankPage(
+      counting(false),
+      query,
+      null,
+      again + 30_000,
+    );
+    expect(passes).toBe(1);
+    expect(retried.computedAt).toBe(again + 30_000);
+  });
+
   it("lists everyone 20 at a time, each once", async () => {
     const now = Date.now();
     const author = await person("author");

@@ -10,6 +10,7 @@ import {
   findUserByUsername,
   findUsersByUsernames,
   type SiteUser,
+  VOUCHED,
 } from "../users/find";
 import { ActivityError } from "./errors";
 import type { ActivityRow } from "./storage";
@@ -22,6 +23,9 @@ type Person = {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  /** 1 when LINUX DO has vouched for the name (VOUCHED). */
+  vouched: number;
+  last_login_at: number | null;
 };
 
 async function people(
@@ -32,12 +36,16 @@ async function people(
   if (usernames.length === 0 && linuxDoIds.length === 0) return [];
   // Two halves, each by its own index: as one OR, SQLite read every user.
   // Someone found both ways comes back twice, which the callers' maps take.
+  // By name only a vouched name (find.ts VOUCHED); by id anyone, as a
+  // 领取范围 knows a 社区 mini app's account by id (mini-app-design.md §7).
   return (
-    await env.DB.prepare(`SELECT external_id, username, display_name, avatar_url FROM users
-      WHERE provider = 'linux_do' AND active = 1
+    await env.DB.prepare(`SELECT external_id, username, display_name, avatar_url,
+        ${VOUCHED} AS vouched, last_login_at FROM users
+      WHERE provider = 'linux_do' AND active = 1 AND ${VOUCHED}
         AND lower(username) IN (SELECT lower(value) FROM json_each(?))
       UNION ALL
-      SELECT external_id, username, display_name, avatar_url FROM users
+      SELECT external_id, username, display_name, avatar_url,
+        ${VOUCHED} AS vouched, last_login_at FROM users
       WHERE provider = 'linux_do' AND active = 1
         AND external_id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(usernames), JSON.stringify(linuxDoIds))
@@ -46,9 +54,29 @@ async function people(
 }
 
 /**
+ * Who each name stands for: only vouched rows, since the by-id half also
+ * brings back a mini app's account under the name it claimed, and coming
+ * last it would stand for that name over the real one, keeping a scope
+ * pinned to it on every save (sweep 2026-11-21). A name two accounts have
+ * had is the latest to sign in, as findUserByUsername has it.
+ */
+function vouchedByName(found: Person[]) {
+  const byName = new Map<string, Person>();
+  for (const one of found) {
+    if (!one.vouched) continue;
+    const key = one.username.toLowerCase();
+    const kept = byName.get(key);
+    if (!kept || (one.last_login_at ?? 0) > (kept.last_login_at ?? 0))
+      byName.set(key, one);
+  }
+  return byName;
+}
+
+/**
  * As saved (and again at opening): each name that has been here is noted
  * by its LINUX DO ID, so a rename later still counts; one noted before
- * keeps its ID and takes its current name. The rest stay names only.
+ * keeps its ID and takes its current name. The rest stay names only, a
+ * name LINUX DO has not vouched for among them.
  */
 export async function resolveScope(
   env: ApiBindings,
@@ -60,15 +88,20 @@ export async function resolveScope(
     scope.users.map((user) => user.username),
     scope.users.flatMap((user) => (user.linuxDoId ? [user.linuxDoId] : [])),
   );
-  const byName = new Map(found.map((one) => [one.username.toLowerCase(), one]));
+  const byName = vouchedByName(found);
   const byId = new Map(found.map((one) => [one.external_id, one]));
   const users = scope.users.map((user) => {
     const person =
       byName.get(user.username.toLowerCase()) ??
       (user.linuxDoId ? byId.get(user.linuxDoId) : undefined);
-    return person
-      ? { username: person.username, linuxDoId: person.external_id }
-      : { username: user.username, linuxDoId: null };
+    if (!person) return { username: user.username, linuxDoId: null };
+    // An unvouched account (only ever by id) keeps the name it was noted
+    // by: its own is the one it claimed, and taken here it could repeat a
+    // name the scope keeps apart, which the stored scope refuses.
+    return {
+      username: person.vouched ? person.username : user.username,
+      linuxDoId: person.external_id,
+    };
   });
   // Two names may have turned out to be one person.
   const seen = new Set<string>();
@@ -169,7 +202,7 @@ export async function publicScopeWithPeople(
     scope.users.filter((user) => !user.linuxDoId).map((user) => user.username),
     scope.users.flatMap((user) => (user.linuxDoId ? [user.linuxDoId] : [])),
   );
-  const byName = new Map(found.map((one) => [one.username.toLowerCase(), one]));
+  const byName = vouchedByName(found);
   const byId = new Map(found.map((one) => [one.external_id, one]));
   return {
     ...plain,

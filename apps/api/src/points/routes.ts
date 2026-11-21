@@ -11,6 +11,7 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { type ZodType, z } from "zod";
 import { ActivityError } from "../activities/errors";
+import { limitOutboundCheck } from "../activities/outbound-checks";
 import {
   getOptionalSession,
   requireAdmin,
@@ -353,6 +354,10 @@ export const pointsRoutes = new Hono<ApiContext>()
   .get("/me/points/:id/balance", async (c) => {
     const session = await requireAuth(c);
     const row = await requireSystem(c.env, c.req.param("id"));
+    // Each one calls the issuer and counts toward its calls a second (§5),
+    // which payouts keep to: so many a minute a person (outbound-checks.ts,
+    // sweep 2026-11-21).
+    await limitOutboundCheck(c.env, "balance", session.user.id);
     const result = await availableNow(c.env, session.user.id, row);
     return c.json({
       ...result,

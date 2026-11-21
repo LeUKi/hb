@@ -425,4 +425,40 @@ describe("附带网页: may this site frame it", () => {
     expect((await check(other, "https://example.com/off")).status).toBe(409);
     expect(asked).toHaveLength(4);
   });
+
+  it("asks so many times a minute a person, then not at all (sweep 2026-11-21)", async () => {
+    const asked: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      asked.push(String(url));
+      return new Response("<p>yes</p>");
+    });
+    // The limiter as wrangler binds it: one try left, then none.
+    const keys: string[] = [];
+    const limited = {
+      ...bindings,
+      OUTBOUND_CHECKS: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key);
+          return { success: keys.length <= 1 };
+        },
+      },
+    };
+    const check = (url: string) =>
+      app.request(
+        `${origin}/api/me/attached-page/check?url=${encodeURIComponent(url)}`,
+        { headers: { Cookie: author.cookie } },
+        limited,
+      );
+    expect(await (await check("https://example.com/a")).json()).toEqual({
+      embeddable: "yes",
+    });
+    const refused = await check("https://example.com/b");
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("Retry-After")).toBe("60");
+    expect(await refused.json()).toEqual({
+      error: { code: "RATE_LIMITED", message: "尝试过于频繁，请稍后再试。" },
+    });
+    expect(asked).toEqual(["https://example.com/a"]);
+    expect(keys).toEqual([`page:${author.id}`, `page:${author.id}`]);
+  });
 });

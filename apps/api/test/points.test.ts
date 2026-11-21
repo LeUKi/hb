@@ -11,11 +11,13 @@ import {
   createActivity,
   getManagedActivity,
   openActivity,
+  updateActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { judgeRecords } from "../src/judge/records";
 import { adminOverview, failingDay } from "../src/points/admin";
 import { listPointsEvents } from "../src/points/events";
 import { listMyKeys, removeKey, saveKey } from "../src/points/keys";
@@ -595,6 +597,47 @@ describe("三方积分红包", () => {
     expect(issuer.accounts.get(a.externalId)?.available).toBe(0);
   });
 
+  it("saves a draft without one's key, or with its system paused since; opening checks them (07 发多少; sweep 2026-11-21)", async () => {
+    await online();
+    const money = { mode: "fixed", totalAmount: "300", count: 3 } as const;
+    // No key yet: the draft saves, and says what opening waits for.
+    const keyless = await actor();
+    const draft = await createActivity(bindings, keyless.id, {
+      requestId: crypto.randomUUID(),
+      activity: points(money),
+    });
+    expect(
+      (await getManagedActivity(bindings, draft.id, keyless.id))
+        .openingBlockedReason,
+    ).toBe("POINTS_KEY_NEEDED");
+    await expect(
+      openActivity(bindings, draft.id, keyless.id, draft.version),
+    ).rejects.toThrow("密钥");
+    // Its system paused since: its title still changes, opening waits.
+    await pauseSystem(bindings, admin.id, systemId, true);
+    const renamed = await updateActivity(bindings, draft.id, keyless.id, {
+      version: draft.version,
+      activity: { ...points(money), title: "改个标题" },
+    });
+    expect(renamed).toMatchObject({
+      title: "改个标题",
+      openingBlockedReason: "POINTS_NOT_ONLINE",
+    });
+    // The step holds on every save; a paused system is not chosen anew.
+    await expect(
+      updateActivity(bindings, draft.id, keyless.id, {
+        version: renamed.version,
+        activity: points({ mode: "fixed", totalAmount: "3", count: 2 }),
+      }),
+    ).rejects.toThrow("平分");
+    await expect(
+      createActivity(bindings, keyless.id, {
+        requestId: crypto.randomUUID(),
+        activity: points(money),
+      }),
+    ).rejects.toMatchObject({ code: "POINTS_NOT_ONLINE" });
+  });
+
   it("stops claims before a share is taken while its system is paused", async () => {
     await online();
     const hongbao = await opened({
@@ -640,6 +683,51 @@ describe("三方积分红包", () => {
     expect(anonymous.status).toBe(401);
     await removeKey(bindings, sender.id, systemId);
     expect(await listMyKeys(bindings, sender.id)).toEqual([]);
+  });
+
+  it("asks the issuer for one's 额度 so many times a minute a person, then not at all (sweep 2026-11-21)", async () => {
+    await online();
+    const token = crypto.randomUUID();
+    await createDb(env.DB)
+      .insert(sessions)
+      .values({
+        tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
+        userId: sender.id,
+        csrfToken: crypto.randomUUID(),
+        createdAt: new Date(),
+        lastSeenAt: new Date(),
+        expiresAt: new Date(Date.now() + 3600000),
+      });
+    // The limiter as wrangler binds it: one try left, then none.
+    const keys: string[] = [];
+    const limited = {
+      ...bindings,
+      OUTBOUND_CHECKS: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key);
+          return { success: keys.length <= 1 };
+        },
+      },
+    };
+    const balance = () =>
+      app.request(
+        `${origin}/api/me/points/${systemId}/balance`,
+        { headers: { Cookie: `hb_session=${token}` } },
+        limited,
+      );
+    const before = issuer.calls.length;
+    const first = await balance();
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ kind: "ok", available: 10000 });
+    const refused = await balance();
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("Retry-After")).toBe("60");
+    expect(await refused.json()).toEqual({
+      error: { code: "RATE_LIMITED", message: "尝试过于频繁，请稍后再试。" },
+    });
+    // The issuer was asked once, and only that call was written down.
+    expect(issuer.calls.slice(before)).toEqual(["balance"]);
+    expect(keys).toEqual([`balance:${sender.id}`, `balance:${sender.id}`]);
   });
 
   it("splits 拼手气 in whole 最小单位", async () => {
@@ -1164,6 +1252,16 @@ export function judge(s, tools) {
     expect(id).toMatch(/^pp_/);
     expect(await run(id)).toBe("confirmed");
     expect(issuer.accounts.get(player.externalId)?.available).toBe(300);
+    // The sender's records give what the code saw and wrote, in 最小单位
+    // with its unit, so npm run replay agrees (sweep 2026-11-21).
+    const records = await judgeRecords(bindings, hongbao.id, sender.id);
+    expect(records.hongbao).toMatchObject({
+      total: 10,
+      unit: "星星",
+      step: "1",
+      points: { name: expect.any(String), unit: "星星" },
+    });
+    expect(records.judgments[0]?.verdict).toMatchObject({ add: 3 });
   });
 
   it("refuses a judge that does not declare meta.points", async () => {

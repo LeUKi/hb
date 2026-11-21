@@ -48,6 +48,8 @@ async function actor(name = "fish"): Promise<Actor> {
       displayName: `${name}昵称`,
       createdAt: now,
       updatedAt: now,
+      // Signed in with LINUX DO, so the name is theirs (users/find.ts VOUCHED).
+      profileSeenAt: now,
     });
   await createDb(env.DB)
     .insert(sessions)
@@ -470,6 +472,20 @@ describe("转账 to 🐟额", () => {
     expect(owner.json).toMatchObject({ owner: true });
     expect(
       (await call("GET", `/me/balance/recipients?username=nobody_here`, sender))
+        .json,
+    ).toMatchObject({ user: null });
+    // An account the 社区 mini app made carries the name its request body
+    // claimed, unsigned: until LINUX DO vouches for it, no one is found by
+    // it (docs/mini-app-design.md §7; sweep 2026-11-21).
+    const claimed = `claimed${Date.now()}`;
+    await env.DB.prepare(
+      `INSERT INTO users (id,provider,external_id,username,display_name,active,created_at,updated_at)
+        VALUES (?,'linux_do',?,?,'冒名',1,?,?)`,
+    )
+      .bind(crypto.randomUUID(), `9${Date.now()}`, claimed, 1, 1)
+      .run();
+    expect(
+      (await call("GET", `/me/balance/recipients?username=${claimed}`, sender))
         .json,
     ).toMatchObject({ user: null });
     expect(

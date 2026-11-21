@@ -55,6 +55,7 @@ import { findPeople, findPerson } from "./claim-scope";
 import { ActivityError, activityNotFound } from "./errors";
 import { humanCheckOf, passesHumanCheck } from "./human-check";
 import { LIVE_USER_HEADER } from "./live";
+import { limitOutboundCheck } from "./outbound-checks";
 import { activityProofData } from "./random-proof";
 import {
   accountHistorySummary,
@@ -547,11 +548,14 @@ export const activityRoutes = new Hono<ApiContext>()
   // 附带网页 (docs/attached-page-design.md §2.1): may this site show the
   // page in a frame, by its own headers; signed in, while the switch is on.
   .get("/me/attached-page/check", async (c) => {
-    await requireAuth(c);
+    const session = await requireAuth(c);
     if (!(await attachedPagesOn(c.env)))
       throw new ActivityError(409, "PAGE_PAUSED", "附带网页暂时关闭。");
     const url = normalizePageUrl(c.req.query("url") ?? "");
     if (!url) throw new ActivityError(400, "INVALID_PAGE_URL", "地址无效");
+    // Each check calls the page's site: so many a minute a person
+    // (outbound-checks.ts, sweep 2026-11-21).
+    await limitOutboundCheck(c.env, "page", session.user.id);
     c.header("Cache-Control", "no-store");
     return c.json(await checkAttachedPage(c.env, url));
   })

@@ -50,6 +50,8 @@ async function person(
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
+      // Signed in with LINUX DO, so the name is theirs (users/find.ts VOUCHED).
+      profileSeenAt: now,
     });
   return id;
 }

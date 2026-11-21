@@ -19,6 +19,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { liveMiniMessage } from "../src/activities/live";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
+import { findRecipientByUsername } from "../src/balance/transfers";
 import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
@@ -528,6 +529,88 @@ describe("社区小程序's routes", () => {
     expect(((await allowed.json()) as { result: string }).result).toBe(
       "claimed",
     );
+  });
+
+  it("lets no one find a first-timer by the name the mini app told until LINUX DO vouches for it", async () => {
+    // The name comes in the request body, unsigned: anyone could take one
+    // not yet here (sweep 2026-11-21).
+    const first = await claim((await running()).id, {
+      submissionId: crypto.randomUUID(),
+      password: "社区里的口令",
+      forumUser: { username: "named_one", name: "被指定的人" },
+    });
+    expect(((await first.json()) as { result: string }).result).toBe("claimed");
+    const asker = await actor();
+    const ask = async (path: string) =>
+      (
+        await app.request(
+          `${origin}${path}`,
+          { headers: { Cookie: asker.cookie } },
+          bindings,
+        )
+      ).json();
+    const scopeOf = async (scope: LdcActivityInput["scope"]) => {
+      const { id } = await running({ scope });
+      const row = await env.DB.prepare(
+        "SELECT config FROM activities WHERE id=?",
+      )
+        .bind(id)
+        .first<{ config: string }>();
+      return (JSON.parse(row?.config ?? "{}") as LdcActivityInput).scope;
+    };
+    // 指定的人's form, 批量添加 and 转账 find no one by that name (转账's
+    // own route: balance-transfers.test.ts).
+    expect(await ask("/api/people?username=named_one")).toEqual({
+      person: null,
+    });
+    expect(await ask("/api/people/batch?username=named_one")).toEqual({
+      people: [],
+    });
+    expect(await findRecipientByUsername(bindings, "named_one")).toBeNull();
+    // A 指定的人 by that name, saved and opened, stays a name.
+    expect(
+      await scopeOf({ users: [{ username: "named_one", linuxDoId: null }] }),
+    ).toEqual({ users: [{ username: "named_one", linuxDoId: null }] });
+    // Even beside that account noted by id (as a scope saved before was).
+    expect(
+      await scopeOf({
+        users: [
+          { username: "named_one", linuxDoId: null },
+          { username: "earlier_name", linuxDoId: "332940" },
+        ],
+      }),
+    ).toEqual({
+      users: [
+        { username: "named_one", linuxDoId: null },
+        { username: "earlier_name", linuxDoId: "332940" },
+      ],
+    });
+    // Someone else with that name signs in with LINUX DO: a scope already
+    // noted by the first-timer's id goes to them, not the unvouched account.
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO users (id, provider, external_id, username, display_name, active, created_at, updated_at, last_login_at, profile_seen_at)
+        VALUES (?, 'linux_do', '4242', 'Named_One', '真的那位', 1, ?, ?, ?, ?)`,
+    )
+      .bind(crypto.randomUUID(), now, now, now, now)
+      .run();
+    expect(
+      await scopeOf({
+        users: [{ username: "named_one", linuxDoId: "332940" }],
+      }),
+    ).toEqual({ users: [{ username: "Named_One", linuxDoId: "4242" }] });
+    expect(await ask("/api/people?username=named_one")).toMatchObject({
+      person: { linuxDoId: "4242" },
+    });
+    // Once LINUX DO vouches for the first-timer's own name, they are found.
+    await env.DB.prepare(
+      "UPDATE users SET username='first_one', profile_seen_at=? WHERE external_id='332940'",
+    )
+      .bind(now)
+      .run();
+    expect(await ask("/api/people?username=first_one")).toMatchObject({
+      person: { linuxDoId: "332940" },
+    });
   });
 
   it("keeps the 信任等级 the 社区 signs: a first-timer's account has it, and a 领取范围 by level knows them", async () => {

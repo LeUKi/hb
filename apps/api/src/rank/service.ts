@@ -88,6 +88,12 @@ async function compute(
   );
 }
 
+/**
+ * How long a stale board is held by the one reader working it out again
+ * (sweep 2026-11-21): should that fail, the next reader after this tries.
+ */
+const RANK_LEASE_MS = 30_000;
+
 /** The board as of at most 5 minutes ago, worked out again if older. */
 async function snapshot(
   env: ApiBindings,
@@ -101,15 +107,37 @@ async function snapshot(
     .bind(board, range)
     .first<{ computed_at: number; entries: string }>();
   const keptEntries = kept ? (JSON.parse(kept.entries) as Entry[]) : [];
-  if (
-    kept &&
-    now - kept.computed_at < RANK_SNAPSHOT_MS &&
-    // One kept before 人数 counted (2026-11-12) is worked out again.
-    keptEntries.every((entry) => entry.length === 5)
-  )
+  // One kept before 人数 counted (2026-11-12) cannot be shown: it is
+  // worked out again at once, as if there were none.
+  const usable =
+    kept !== null && keptEntries.every((entry) => entry.length === 5);
+  if (usable && now - kept.computed_at < RANK_SNAPSHOT_MS)
     return { computedAt: kept.computed_at, entries: keptEntries };
+  if (usable) {
+    // Older than 5 minutes, still worked out on read (docs/leaderboard-
+    // design.md §3), but by one reader only (sweep 2026-11-21): it moves
+    // the row's time on just enough to look fresh for RANK_LEASE_MS, and
+    // only the reader whose move lands works it out. The others are given
+    // the kept board (with its true time if they read it before the move,
+    // the lease's while the work runs), so a crowd at the expiry costs one
+    // pass over the claims, not one each.
+    const lease = await env.DB.prepare(
+      `UPDATE rank_snapshots SET computed_at=?
+      WHERE board=? AND range=? AND computed_at=? RETURNING computed_at`,
+    )
+      .bind(
+        now - RANK_SNAPSHOT_MS + RANK_LEASE_MS,
+        board,
+        range,
+        kept.computed_at,
+      )
+      .first();
+    if (!lease) return { computedAt: kept.computed_at, entries: keptEntries };
+  }
   const entries = await compute(env, board, range, now);
-  // Two readers at once both work it out; the later one is kept.
+  // With nothing kept, two readers at once both work it out; the later
+  // one is kept. The lease's holder writes its own time, later than the
+  // lease's.
   await env.DB.prepare(
     `INSERT INTO rank_snapshots (board,range,computed_at,entries) VALUES (?,?,?,?)
     ON CONFLICT(board,range) DO UPDATE SET computed_at=excluded.computed_at,entries=excluded.entries

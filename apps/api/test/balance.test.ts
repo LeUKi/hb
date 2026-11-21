@@ -45,6 +45,8 @@ async function actor(username = "fish"): Promise<Actor> {
       displayName: username,
       createdAt: now,
       updatedAt: now,
+      // Signed in with LINUX DO, so the name is theirs (users/find.ts VOUCHED).
+      profileSeenAt: now,
     });
   await createDb(env.DB)
     .insert(sessions)
