@@ -403,6 +403,72 @@ describe("定时开放: its time", () => {
     socket.close();
   });
 
+  it("pushes a new time to its waiters, and a timing taken back, which lets them go (sweep 2026-11-21, L1)", async () => {
+    const viewer = await actor();
+    const saved = await draft();
+    const timed = await scheduleActivity(bindings, saved.id, author.id, {
+      version: saved.version,
+      at: inMinutes(60),
+    });
+    const response = await app.request(
+      `${origin}/api/activities/${saved.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: viewer.cookie,
+        },
+      },
+      bindings,
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const reads: { status: string; scheduledOpenAt?: string }[] = [];
+    const closed: number[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data === "pong") return;
+      const message = JSON.parse(data);
+      if (message.type === "activity") reads.push(message.activity);
+    });
+    socket.addEventListener("close", (event) => {
+      closed.push(event.code);
+    });
+    socket.accept();
+    await vi.waitFor(() => expect(reads).toHaveLength(1));
+    // Moved later: the new time, and the line stays.
+    const later = inMinutes(120);
+    const moved = await request(
+      `/api/me/activities/${saved.id}/schedule`,
+      author,
+      "POST",
+      { version: timed.version, at: later },
+    );
+    expect(moved.status).toBe(200);
+    const { activity: movedActivity } = (await moved.json()) as {
+      activity: { version: number };
+    };
+    // To the minute, as it is kept.
+    await vi.waitFor(() =>
+      expect(reads.at(-1)?.scheduledOpenAt).toBe(
+        new Date(Math.floor(Date.parse(later) / minute) * minute).toISOString(),
+      ),
+    );
+    expect(closed).toEqual([]);
+    // 取消定时: the draft, and the line closes as over.
+    const cancelled = await request(
+      `/api/me/activities/${saved.id}/schedule`,
+      author,
+      "POST",
+      { version: movedActivity.version, at: null },
+    );
+    expect(cancelled.status).toBe(200);
+    await vi.waitFor(() => expect(closed).toEqual([1000]), { timeout: 3000 });
+    expect(reads.at(-1)).toMatchObject({ status: "draft" });
+    expect(reads.at(-1)?.scheduledOpenAt).toBeUndefined();
+  });
+
   it("opens at the first claim after its time, the alarm not in yet", async () => {
     const claimant = await actor();
     const saved = await draft();

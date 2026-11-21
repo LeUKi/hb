@@ -352,9 +352,15 @@ export function useHongbaoPageData(id: string) {
     activity?.draw?.state,
     live,
   );
-  // A draft shows no 口令 to others: they are read once it opens.
+  // A draft shows no 口令 to others: they are read once it opens. Only a
+  // 口令红包 has any: a 代码判定 or 直接领取 one always answered none, read
+  // every 15 s by each guest, after each submission and at the end
+  // (sweep 2026-11-21, L7).
   const passwordsEnabled = Boolean(
-    activity && !author && activity.status !== "draft",
+    activity &&
+      !author &&
+      activity.status !== "draft" &&
+      (activity.participationMode ?? "password") === "password",
   );
   const passwordsQuery = useActivityPasswords(
     userId,

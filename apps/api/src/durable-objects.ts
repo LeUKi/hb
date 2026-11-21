@@ -46,6 +46,7 @@ import {
   LIVE_MINI_TAG,
   LIVE_PING,
   LIVE_PONG,
+  LIVE_READ_REUSE_MS,
   LIVE_SILENT_CODE,
   LIVE_SILENT_MS,
   LIVE_TAG,
@@ -86,6 +87,7 @@ import {
   getPublicActivity,
   openActivity,
   prepareActivityOpening,
+  projectActivitySummary,
   updateActivity,
 } from "./activities/service";
 import { findActivity } from "./activities/storage";
@@ -344,7 +346,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** With it (protocol 4): the view's time and 动态's count last sent. */
   private viewSent: string | null = null;
   private announcedSent = -1;
-  /** Protocol 5: how many paid and whether it ended, as last pushed whole. */
+  /**
+   * Protocol 5: how many paid and whether it ended, as last pushed whole.
+   * Kept in storage, read back with liveSeq: lost on each sleep, the first
+   * judgment after every wake pushed the whole 红包 (about 23 KB a viewer
+   * for 矿洞夺宝) with nobody paid (sweep 2026-11-21, L5).
+   */
   private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
@@ -358,6 +365,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** The channel's number (live.ts), read back once after hibernating. */
   private liveSeq = 0;
   private liveSeqRead: Promise<void> | null = null;
+  /**
+   * Changes announced so far (announce, announceJudged): a public read
+   * begun before the latest is not handed to a new socket (publicRead).
+   */
+  private liveChanges = 0;
+  /** The last public read begun here, with when and after which change. */
+  private liveRead: {
+    at: number;
+    changes: number;
+    read: Promise<PublicActivity>;
+  } | null = null;
 
   constructor(ctx: DurableObjectState, env: ApiBindings) {
     super(ctx, env);
@@ -367,15 +385,54 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
   }
 
-  /** Where the channel's numbering stands, read once per wake. */
+  /**
+   * Where the channel's numbering stands, read once per wake, and with it
+   * what protocol 5 last pushed whole (claimsSent).
+   */
   private async liveSeqNow() {
     this.liveSeqRead ??= this.ctx.storage
-      .get<number>("liveSeq")
+      .get<unknown>(["liveSeq", "liveClaimsSent"])
       .then((kept) => {
-        this.liveSeq = Math.max(this.liveSeq, kept ?? 0);
+        const seq = kept.get("liveSeq");
+        this.liveSeq = Math.max(
+          this.liveSeq,
+          typeof seq === "number" ? seq : 0,
+        );
+        const claims = kept.get("liveClaimsSent");
+        if (this.claimsSent === null && typeof claims === "string")
+          this.claimsSent = claims;
       });
     await this.liveSeqRead;
     return this.liveSeq;
+  }
+
+  /**
+   * The 红包's public read for the channel. `reuse` (a socket connecting):
+   * the last one begun here, finished or still on its way, if no change
+   * was announced since it began and it began under LIVE_READ_REUSE_MS
+   * ago, so sockets close together share one read (sweep 2026-11-21, L6).
+   * A push (broadcast) always reads anew, and later sockets may share it.
+   */
+  private publicRead(id: string, reuse: boolean) {
+    const kept = this.liveRead;
+    if (
+      reuse &&
+      kept &&
+      kept.changes === this.liveChanges &&
+      Date.now() - kept.at < LIVE_READ_REUSE_MS
+    )
+      return { read: kept.read, shared: true };
+    const entry = {
+      at: Date.now(),
+      changes: this.liveChanges,
+      read: getPublicActivity(this.env, id),
+    };
+    this.liveRead = entry;
+    // Failed (gone, D1 down): the next one reads again.
+    entry.read.catch(() => {
+      if (this.liveRead === entry) this.liveRead = null;
+    });
+    return { read: entry.read, shared: false };
   }
 
   /** The next number for a message to everyone, kept for the next wake. */
@@ -398,9 +455,23 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
         { status: 400 },
       );
+    // Full: turned away before reading anything (sweep 2026-11-21, L6).
+    this.dropSilent();
+    if (this.ctx.getWebSockets(LIVE_TAG).length >= MAX_LIVE_SOCKETS)
+      return Response.json(
+        { error: { code: "LIVE_BUSY", message: "实时更新人数已满" } },
+        { status: 503 },
+      );
     let activity: PublicActivity;
+    let { read, shared } = this.publicRead(id, true);
     try {
-      activity = await getPublicActivity(this.env, id);
+      activity = await read;
+      // Over (a payer's page, rare now): its own read, as before, with
+      // the 在看 numbers D1 has by now.
+      if (shared && viewersOver(activity)) {
+        ({ read, shared } = this.publicRead(id, false));
+        activity = await read;
+      }
     } catch {
       return Response.json(
         { error: { code: "ACTIVITY_NOT_FOUND", message: "未找到红包" } },
@@ -420,7 +491,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { error: { code: "ACTIVITY_ENDED", message: "红包已结束" } },
         { status: 410 },
       );
-    this.dropSilent();
+    // Again, as others may have joined while this one read.
     if (this.ctx.getWebSockets(LIVE_TAG).length >= MAX_LIVE_SOCKETS)
       return Response.json(
         { error: { code: "LIVE_BUSY", message: "实时更新人数已满" } },
@@ -451,6 +522,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       ended: liveEnded(activity),
       sender: userId === activity.author.id,
       sockets: this.ctx.getWebSockets(LIVE_TAG).length,
+      // Handed a read begun for another (L6): how often that saves one.
+      shared,
     });
     // What changed between the page's own read and now, and who is here,
     // at the number the channel stands at.
@@ -532,9 +605,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     });
   }
 
-  /** Sends `mine` to these people's sockets; how many heard it. */
-  private tellMine(userIds: Iterable<string>) {
-    const message = liveMine();
+  /**
+   * Sends `mine` to these people's sockets; how many heard it. `payment`:
+   * only a payment moved (live.ts liveMine).
+   */
+  private tellMine(userIds: Iterable<string>, payment = false) {
+    const message = liveMine(payment);
     let told = 0;
     for (const userId of new Set(userIds))
       for (const socket of this.ctx.getWebSockets(liveUserTag(userId))) {
@@ -831,9 +907,10 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { error: { code: "INVALID_REQUEST", message: "通知无效" } },
         { status: 400 },
       );
-    // Ended by 额度不够 or 密钥无效: everyone's page hears it.
+    // Ended by 额度不够 or 密钥无效: everyone's page hears it, and the
+    // sender's own copy changed with it (a bare mine).
     if (ended === true) this.announce(id);
-    this.tellMine(userIds);
+    this.tellMine(userIds, ended !== true);
     return new Response(null, { status: 204 });
   }
 
@@ -855,15 +932,20 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { error: { code: "INVALID_REQUEST", message: "通知无效" } },
         { status: 400 },
       );
-    if (this.tellMine(userIds) > 0) {
+    if (this.tellMine(userIds, true) > 0) {
       // Over already: that may have been the last payment anyone waited on.
+      // Its row tells: the whole public read, built here for every payment
+      // only to learn it still ran, was 4 to 15 queries each, thrown away
+      // (sweep 2026-11-21, L4).
       try {
-        const activity = await getPublicActivity(this.env, id);
-        if (viewersOver(activity)) await this.endViewers();
-        if (liveEnded(activity))
-          await this.releaseSettled(id, activity.author.id);
+        const row = await findActivity(this.env, id);
+        if (row) {
+          const state = projectActivitySummary(row);
+          if (viewersOver(state)) await this.endViewers();
+          if (liveEnded(state)) await this.releaseSettled(id, row.authorId);
+        }
       } catch {
-        // Gone: its sockets close with it.
+        // Unread: the next payment's move, or the page's own read, catches up.
       }
     }
     return new Response(null, { status: 204 });
@@ -874,6 +956,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
    * LIVE_COALESCE_MS; then once more as that window ends, for all of them.
    */
   private announce(id: string) {
+    // A read begun before this is no longer handed to a new socket.
+    this.liveChanges += 1;
     if (this.liveTimer || this.ctx.getWebSockets(LIVE_TAG).length === 0) return;
     const wait = Math.max(0, this.livePushedAt + LIVE_COALESCE_MS - Date.now());
     this.liveTimer = setTimeout(() => {
@@ -926,6 +1010,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
    * nothing else public, so nothing else goes out.
    */
   private announceJudged(id: string) {
+    // Its count, pool and 动态 are in the public read too (publicRead).
+    this.liveChanges += 1;
     if (this.judgedTimer || this.ctx.getWebSockets(LIVE_TAG).length === 0)
       return;
     const wait = Math.max(0, this.judgedPushedAt + LIVE_JUDGED_MS - Date.now());
@@ -934,11 +1020,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       this.judgedPushedAt = Date.now();
       void judgedNews(this.env, id, this.announcedSent)
         .then(async ({ count, unclaimed, claims, view, total, items }) => {
+          // What was last pushed whole, as kept before a sleep (L5).
+          await this.liveSeqNow();
           // Someone paid, or it ended (protocol 5): the 名单 and the rest
           // change, so the whole 红包 goes out; otherwise the pool is all
           // that moved, and it rides with the count.
           if (claims !== undefined && claims !== this.claimsSent) {
             this.claimsSent = claims;
+            // Written only when it moves: a payment, or the end.
+            void this.ctx.storage.put("liveClaimsSent", claims);
             this.announce(id);
           }
           const messages: string[] = [];
@@ -1012,7 +1102,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (sockets.length === 0) return;
     let activity: PublicActivity;
     try {
-      activity = await getPublicActivity(this.env, id);
+      activity = await this.publicRead(id, false).read;
     } catch {
       // The next change, or the page's slower polling, catches up.
       return;
@@ -2198,6 +2288,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
             );
             await this.armSchedule(id);
+            // Its waiters hear the new time, or (taken back) the draft and
+            // leave the channel; the sender's other tabs read their own
+            // copy again. Nothing pushed this, and pages on the channel do
+            // not poll a timed draft (sweep 2026-11-21, L1).
+            this.announce(id);
+            this.tellMine([authorId]);
           } else {
             const parsed = openActivitySchema.safeParse(input);
             if (!parsed.success)
@@ -2212,6 +2308,10 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               undefined,
               parsed.data,
             );
+            // A timed draft opened by hand: its waiters hear it (L1). A
+            // plain draft has nobody on the channel: nothing is sent.
+            this.announce(id);
+            this.tellMine([authorId]);
           }
           await this.scheduleDraw(id);
           return Response.json(

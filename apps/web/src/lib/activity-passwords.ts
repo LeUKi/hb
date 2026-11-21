@@ -46,9 +46,12 @@ export function useActivityPasswords(
       canSolve: false,
     });
   }, [queryClient, userId, id, participationMode]);
+  // Only a 口令红包 has any to read (sweep 2026-11-21, L7); a read kept
+  // from before the mode was sent is one.
+  const hasPasswords = (participationMode ?? "password") === "password";
   return useQuery({
     queryKey: passwordKey(userId, id),
-    enabled: enabled && Boolean(id) && participationMode !== "direct",
+    enabled: enabled && Boolean(id) && hasPasswords,
     queryFn: async ({ signal }) => {
       const identity = sessionIdentity(
         queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user ??
@@ -75,7 +78,7 @@ export function useActivityPasswords(
       return result;
     },
     retry: false,
-    refetchInterval: participationMode === "direct" ? false : poll,
+    refetchInterval: hasPasswords ? poll : false,
   });
 }
 

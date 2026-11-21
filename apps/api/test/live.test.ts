@@ -6,7 +6,14 @@ import {
   type LdcActivityInput,
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createActivity, openActivity } from "../src/activities/service";
+import { liveEnded, viewersOver } from "../src/activities/live";
+import {
+  createActivity,
+  openActivity,
+  projectActivitySummary,
+  projectPublicActivity,
+} from "../src/activities/service";
+import { type ActivityRow, findActivity } from "../src/activities/storage";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
@@ -369,6 +376,64 @@ describe("a running 红包's live channel", () => {
     await payNow();
     await vi.waitFor(() => expect(mine(sender.heard)).toBe(1));
     expect(mine(bystander.heard)).toBe(0);
+    // Only a payment moved: the page need not read the sender's own copy
+    // of the 红包 again (sweep 2026-11-21, L2).
+    expect(
+      sender.heard.find(
+        (message) => message !== "pong" && message.type === "mine",
+      ),
+    ).toEqual({ type: "mine", payment: true });
+  });
+
+  it("tells from the row alone whether a payment's move ends the line, as the public read would (sweep 2026-11-21, L4)", async () => {
+    const activity = await running(3);
+    const row = await findActivity(bindings, activity.id);
+    if (!row) throw new Error("no row");
+    const now = Date.now();
+    const config = JSON.parse(row.config);
+    const drawConfig = JSON.stringify({
+      ...config,
+      money: {
+        mode: "timed_draw",
+        totalAmount: "3.00",
+        participantLimit: 3,
+        distributeFullPool: true,
+      },
+    });
+    const rows: ActivityRow[] = [
+      row,
+      { ...row, openedAt: null },
+      { ...row, openedAt: null, scheduledOpenAt: now + 60_000 },
+      { ...row, endedAt: now },
+      { ...row, deadline: now - 1 },
+      { ...row, claimedCount: row.totalCount },
+      { ...row, archivedAt: now },
+      ...(["waiting", "settling", "completed", "empty"] as const).flatMap(
+        (drawState) => [
+          { ...row, config: drawConfig, drawState },
+          { ...row, config: drawConfig, drawState, deadline: now - 1 },
+        ],
+      ),
+    ];
+    const author = {
+      id: row.authorId,
+      username: "author",
+      displayName: "Author",
+      avatarUrl: null,
+    };
+    const verdicts = rows.map((each) => {
+      const summary = projectActivitySummary(each);
+      const read = projectPublicActivity(each, author);
+      expect([liveEnded(summary), viewersOver(summary)]).toEqual([
+        liveEnded(read),
+        viewersOver(read),
+      ]);
+      return `${liveEnded(read)}|${viewersOver(read)}`;
+    });
+    // Each kind is among them: running, a draft let go, over.
+    expect(new Set(verdicts)).toEqual(
+      new Set(["false|false", "true|false", "true|true"]),
+    );
   });
 
   it("pushes the end at the deadline by itself", async () => {
@@ -545,6 +610,14 @@ describe("a running 红包's live channel", () => {
     await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
       .bind(Date.now() + 600, activity.id)
       .run();
+    // As an edit of it does: a read begun before is not handed to the
+    // next socket (L6).
+    await (
+      await env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id)).fetch(
+        `https://activity.internal/internal/activities/${activity.id}/live/announce`,
+        { method: "POST" },
+      )
+    ).arrayBuffer();
     const two = await connect(activity.id, await actor());
     const three = await connect(activity.id, await actor());
     await vi.waitFor(() => expect(viewers(two.heard)).toBe(2));
@@ -618,6 +691,56 @@ describe("a running 红包's live channel", () => {
       expect(quiet.closed).toEqual([]);
     } finally {
       clock.mockRestore();
+    }
+  });
+
+  it("hands sockets that connect close together one public read, and reads again after a change (sweep 2026-11-21, L6)", async () => {
+    const log = vi.spyOn(console, "log");
+    const activity = await running(3);
+    const object = env.ACTIVITY_DO.idFromName(activity.id).toString();
+    const shared = () =>
+      log.mock.calls
+        .filter(
+          ([event, fields]) =>
+            event === "activity_live_open" &&
+            (fields as { object?: string }).object === object,
+        )
+        .map(([, fields]) => (fields as { shared: boolean }).shared);
+    try {
+      const first = await connect(activity.id, await actor());
+      const second = await connect(activity.id, await actor());
+      await vi.waitFor(() => expect(reads(second.heard)).toHaveLength(1));
+      expect(shared()).toEqual([false, true]);
+      // A claim's push reads anew; a socket right after it shares that
+      // read, which has the claim.
+      await claim(activity.id, await actor());
+      await vi.waitFor(() =>
+        expect(claimed(reads(first.heard).at(-1))).toBe(1),
+      );
+      const third = await connect(activity.id, await actor());
+      await vi.waitFor(() => expect(reads(third.heard)).toHaveLength(1));
+      expect(claimed(reads(third.heard)[0])).toBe(1);
+      expect(shared()).toEqual([false, true, true]);
+      // A change announced and not yet read: the next socket reads anew.
+      const announced = await env.ACTIVITY_DO.get(
+        env.ACTIVITY_DO.idFromName(activity.id),
+      ).fetch(
+        `https://activity.internal/internal/activities/${activity.id}/live/announce`,
+        { method: "POST" },
+      );
+      await announced.arrayBuffer();
+      await connect(activity.id, await actor());
+      expect(shared().at(-1)).toBe(false);
+      // Past LIVE_READ_REUSE_MS: read anew too.
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2_000);
+      try {
+        await connect(activity.id, await actor());
+        expect(shared().at(-1)).toBe(false);
+      } finally {
+        clock.mockRestore();
+      }
+    } finally {
+      log.mockRestore();
     }
   });
 

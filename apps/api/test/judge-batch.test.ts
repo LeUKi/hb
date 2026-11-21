@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import type { ActivityInput, ActivityLiveMessage } from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivity, openActivity } from "../src/activities/service";
@@ -373,6 +373,63 @@ describe("一批一起写, through the 红包's Durable Object", () => {
         ),
       { timeout: 3000 },
     );
+    socket.close();
+  });
+
+  // Its object sleeps between quiet stretches: what was last pushed whole
+  // is kept, so a wake does not push the whole 红包 again with nobody
+  // paid (sweep 2026-11-21, L5).
+  it("pushes no whole 红包 after a sleep when nobody was paid", async () => {
+    const opened = await open();
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: (await actor()).cookie,
+        },
+      },
+      bindings,
+    );
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: ActivityLiveMessage[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong") heard.push(JSON.parse(data));
+    });
+    socket.accept();
+    await vi.waitFor(() => expect(heard[0]?.type).toBe("activity"));
+    expect((await send(opened.id, await actor(), "add 10")).status).toBe(200);
+    await vi.waitFor(() =>
+      expect(heard).toContainEqual(
+        expect.objectContaining({ type: "judged", count: 1 }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    // A wake: what the instance held in memory is gone.
+    await runInDurableObject(
+      env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(opened.id)),
+      (instance) => {
+        Object.assign(instance, {
+          claimsSent: null,
+          liveSeqRead: null,
+          judgedSent: -1,
+          viewSent: null,
+          announcedSent: -1,
+        });
+      },
+    );
+    heard.length = 0;
+    expect((await send(opened.id, await actor(), "add 20")).status).toBe(200);
+    await vi.waitFor(() =>
+      expect(heard).toContainEqual(
+        expect.objectContaining({ type: "judged", count: 2 }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(heard.filter((message) => message.type === "activity")).toEqual([]);
     socket.close();
   });
 

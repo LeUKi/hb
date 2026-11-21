@@ -38,6 +38,15 @@ export const LIVE_COALESCE_MS = 300;
 export const LIVE_JUDGED_MS = LIVE_COALESCE_MS;
 /** Past the deadline by this much, the DO's clock and D1's agree it is. */
 export const LIVE_DEADLINE_MARGIN_MS = 250;
+/**
+ * A socket that connects this soon after the last public read began here,
+ * with no change announced since, is handed that read: a page reads the
+ * 红包 over HTTP just before it connects, and after a deploy every page
+ * reconnects at once, each a whole read in the one object that also runs
+ * the claim line (sweep 2026-11-21, L6). A change no push announces (the
+ * clock, a 站长 switch) reaches a new socket at most this late.
+ */
+export const LIVE_READ_REUSE_MS = 1_500;
 /** What the browser sends to keep the line open; answered without waking. */
 export const LIVE_PING = "ping";
 export const LIVE_PONG = "pong";
@@ -53,11 +62,21 @@ export const LIVE_SILENT_MS = 3 * 60_000;
 export const LIVE_SILENT_CODE = 4002;
 
 /**
+ * What says whether the channel is over: the public read has it, and so
+ * has the row's summary (service.ts projectActivitySummary), which a
+ * payment's move checks rather than the whole read (sweep 2026-11-21, L4).
+ */
+export type LiveState = Pick<
+  PublicActivity,
+  "status" | "scheduledOpenAt" | "draw"
+>;
+
+/**
  * Nothing more will change for anyone watching: the result is out. A draft
  * is not on the channel, unless it is timed to open: people wait for it
  * (N 人在看) and hear it open (scheduled-opening §6).
  */
-export function liveEnded(activity: PublicActivity) {
+export function liveEnded(activity: LiveState) {
   if (activity.status === "draft")
     return activity.scheduledOpenAt === undefined;
   if (activity.draw)
@@ -72,7 +91,7 @@ export function liveEnded(activity: PublicActivity) {
  * draft whose timing was taken back leaves the channel too, but is not
  * over: it may still open.
  */
-export const viewersOver = (activity: PublicActivity) =>
+export const viewersOver = (activity: LiveState) =>
   activity.status !== "draft" && liveEnded(activity);
 
 // Everything sent to everyone carries the channel's number (`seq`, one
@@ -87,8 +106,22 @@ export function liveMessage(activity: PublicActivity, seq: number) {
   } satisfies ActivityLiveMessage);
 }
 
-export const liveMine = () =>
-  JSON.stringify({ type: "mine" } satisfies ActivityLiveMessage);
+/**
+ * `payment`: only a payment of theirs moved (the merchant cycle, 三方积分),
+ * which changes nothing of the sender's own copy of the 红包: a page may
+ * read the claim and the 名单 again and leave that copy, which goes
+ * through the claim line (sweep 2026-11-21, L2). A page that does not
+ * know the field reads all of its own part, as before.
+ */
+export const liveMine = (payment = false) =>
+  JSON.stringify(
+    (payment
+      ? { type: "mine", payment: true }
+      : { type: "mine" }) satisfies Extract<
+      ActivityLiveMessage,
+      { type: "mine" }
+    > & { payment?: true },
+  );
 
 export const liveQueued = (
   ahead: number,
