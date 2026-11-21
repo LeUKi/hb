@@ -18,7 +18,7 @@ import {
 } from "react";
 import { CapProblem, capProblemText } from "../../lib/cap-problem";
 import { cn } from "../../lib/cn";
-import { ease, useReducedMotionPref } from "../../lib/motion";
+import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { agoLabel } from "../../lib/roster-time";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -1377,6 +1377,20 @@ function amountTier(minor: number) {
       : "text-ink-2";
 }
 
+// The names slide sideways: in over 0.32 s from the side moved to, out
+// over 0.18 s the other way, at once with less motion (tip-design §4).
+// `direction` is 1 going to 总榜, -1 going back to 最近.
+type ListTurn = { direction: number; reduced: boolean };
+const listSlide = {
+  enter: ({ direction }: ListTurn) => ({ opacity: 0, x: 12 * direction }),
+  center: { opacity: 1, x: 0 },
+  exit: ({ direction, reduced }: ListTurn) => ({
+    opacity: 0,
+    x: -12 * direction,
+    transition: { duration: reduced ? 0 : 0.18, ease },
+  }),
+};
+
 function TipLists({
   card,
   tab,
@@ -1393,11 +1407,25 @@ function TipLists({
   const recent = (card.recent ?? []).slice(0, LIST_ROWS);
   const top = (card.top ?? []).slice(0, LIST_ROWS);
   const empty = shown === "recent" ? recent.length === 0 : top.length === 0;
+  // The embed has no shell, so no MotionConfig: ask the system here.
+  const reduced = useReducedMotionPref();
+  // 总榜 sits right of 最近: going to it, the names move left.
+  const turn: ListTurn = { direction: shown === "top" ? 1 : -1, reduced };
   return (
-    <div className="grid min-w-0 gap-2 pt-2">
+    <div className="relative grid min-w-0 gap-2 pt-2">
       <div className="flex h-6 min-w-0 items-center gap-2">
         {both ? (
-          <span className="inline-flex shrink-0 gap-0.5 rounded-[10px] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] p-0.5">
+          // The white face slides between the two halves, as the site's
+          // Segmented does; it is the card's own (its colours, its size),
+          // so not Segmented itself (sweep 2026-11-21, R3-TASTE-9).
+          <span className="relative grid shrink-0 grid-cols-[1fr_1fr] rounded-[10px] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] p-0.5">
+            <motion.span
+              aria-hidden="true"
+              className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-lg bg-white"
+              initial={false}
+              animate={{ x: shown === "top" ? "100%" : "0%" }}
+              transition={{ duration: reduced ? 0 : durations.slide, ease }}
+            />
             {(["recent", "top"] as const).map((key) => (
               <button
                 key={key}
@@ -1405,10 +1433,8 @@ function TipLists({
                 aria-pressed={shown === key}
                 onClick={() => onTab(key)}
                 className={cn(
-                  "rounded-lg px-2.5 py-0.5 text-[12.5px] transition-colors",
-                  shown === key
-                    ? "bg-white font-semibold text-ink"
-                    : "text-ink-2",
+                  "relative rounded-lg px-2.5 py-0.5 text-[12.5px] transition-colors",
+                  shown === key ? "font-semibold text-ink" : "text-ink-2",
                 )}
               >
                 {key === "recent" ? "最近" : "总榜"}
@@ -1425,13 +1451,19 @@ function TipLists({
           这张卡 · {card.tipperCount} 人
         </span>
       </div>
-      <AnimatePresence initial={false} mode="wait">
+      {/* The two lists overlap, the old one lifted out (popLayout), so the
+          place is never empty between them; tip-design §4 times, and a
+          plain swap when the system asks for less motion (sweep
+          2026-11-21, R3-TASTE-9). */}
+      <AnimatePresence initial={false} mode="popLayout" custom={turn}>
         <motion.div
           key={shown}
-          initial={{ opacity: 0, x: shown === "top" ? 12 : -12 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: shown === "top" ? -12 : 12 }}
-          transition={{ duration: 0.2, ease }}
+          custom={turn}
+          variants={listSlide}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{ duration: reduced ? 0 : 0.32, ease }}
           className="grid min-w-0 gap-0.5"
         >
           {empty ? (

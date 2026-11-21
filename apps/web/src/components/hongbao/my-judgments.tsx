@@ -453,42 +453,48 @@ export function MyJudgments({ activityId }: { activityId: string }) {
     first?.attempts,
     first?.items ?? [],
   );
-  if (!user || !first || (first.total === 0 && !ours)) return null;
+  // The first submission (or the record read in) opens the section in
+  // place, and what is under it slides; signing out closes it the same way
+  // (Reveal keeps the last section while it closes; sweep 2026-11-21).
   return (
-    <section className="grid gap-2" data-hb-part="my-judgments">
-      <div className="flex min-h-9 items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-ink-3">
-          <RollingText text={`我的记录 · ${first.total} 条`} />
-        </h2>
-        <span className="-mr-2 flex items-center">
-          <Privacy />
-        </span>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        <AnimatePresence initial={false}>
-          {rows.slice(0, ON_PAGE).map((item, index) => (
-            <JudgmentRow
-              key={keyOf(item)}
-              item={item}
-              pending={pending !== null && index === 0}
-            />
-          ))}
-        </AnimatePresence>
-      </ul>
-      {first.total > ON_PAGE && (
-        <Button
-          id="judgments-all"
-          variant="ghost"
-          size="xs"
-          aria-haspopup="dialog"
-          className="gap-0.5 justify-self-center pr-1.5"
-          onClick={() => switchOverlay(router, { panel: "judgments" })}
-        >
-          全部 {first.total} 条
-          <ChevronRight aria-hidden="true" />
-        </Button>
+    <Reveal show={Boolean(user && first && (first.total > 0 || ours))}>
+      {first && (
+        <section className="grid gap-2" data-hb-part="my-judgments">
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-ink-3">
+              <RollingText text={`我的记录 · ${first.total} 条`} />
+            </h2>
+            <span className="-mr-2 flex items-center">
+              <Privacy />
+            </span>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            <AnimatePresence initial={false}>
+              {rows.slice(0, ON_PAGE).map((item, index) => (
+                <JudgmentRow
+                  key={keyOf(item)}
+                  item={item}
+                  pending={pending !== null && index === 0}
+                />
+              ))}
+            </AnimatePresence>
+          </ul>
+          {first.total > ON_PAGE && (
+            <Button
+              id="judgments-all"
+              variant="ghost"
+              size="xs"
+              aria-haspopup="dialog"
+              className="gap-0.5 justify-self-center pr-1.5"
+              onClick={() => switchOverlay(router, { panel: "judgments" })}
+            >
+              全部 {first.total} 条
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          )}
+        </section>
       )}
-    </section>
+    </Reveal>
   );
 }
 

@@ -12,6 +12,7 @@ import {
   type ReactNode,
   type Ref,
   useContext,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
@@ -44,7 +45,7 @@ import { FishMark } from "../ui/fish";
 import { NoteMarkdown } from "../ui/markdown";
 import { MorphLabel } from "../ui/morph-label";
 import { PersonName } from "../ui/person";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { useNow } from "./clock";
@@ -149,59 +150,128 @@ function ResendCountdown({ to }: { to: number }) {
   );
 }
 
+/** The one 重新发送, as the card that offers it sees it (useResend). */
+type Resend = {
+  /** Signed in here, so it can be sent from this page. */
+  ready: boolean;
+  pending: boolean;
+  /** Opens the confirm. */
+  ask: () => void;
+};
+
 /**
  * 重新发送 asks first (the user, 2026-11-11): a payment is sent again only
  * once, so the person says their account is ready before it goes. One
  * wording for every 三方积分, which issuers do not write, and the same shape
  * for Credit.
+ *
+ * MyResult keeps it, not the card with the button: a resend that lands
+ * turns that card into the payment's line at once (and a refusal can turn
+ * it into 发放失败), so the confirm outlives the card. It stays open and
+ * busy until the page shows the answer, says a failure inside with 再试一次
+ * (07 §1), and fades out over the new line (sweep 2026-11-21).
  */
-function ResendButton({
+function useResend({
+  activityId,
+  claimId,
   account,
   amount,
-  pending,
-  onConfirm,
+  onResent,
+  onGone,
 }: {
-  /** "已经在 x.com 开好账户", "已经注册好 LINUX DO Credit 账户". */
+  activityId: string;
+  claimId: string | null;
+  /** "已在 x.com 开设账户", "已注册 LINUX DO Credit 账户". */
   account: string;
   /** "12.50 LDC", "300 星星". */
   amount: string;
-  pending: boolean;
-  onConfirm: () => void;
+  onResent: () => void;
+  /** Closed after its card went away: put focus somewhere useful. */
+  onGone: () => void;
 }) {
+  const identity = useIdentity();
+  const resend = useResendPayment(
+    identity.user?.id ?? "",
+    identity.csrfToken ?? "",
+    activityId,
+  );
   const [asking, setAsking] = useState(false);
-  return (
-    <>
-      <Button
-        variant="primary"
-        size="sm"
-        aria-disabled={pending || undefined}
-        onClick={() => {
-          if (!pending) setAsking(true);
-        }}
-      >
-        {pending ? "正在重新发送…" : "重新发送"}
-      </Button>
-      <ConfirmDialog
-        open={asking}
-        onClose={() => setAsking(false)}
-        title="确定重新发送？"
-        text={`重新发送仅限一次。请先确认你${account}；若仍未找到你的账户，本次 ${amount} 奖励发放将终止。`}
-        actions={
+  const pending = resend.isPending;
+  const failure = resend.error;
+  const error = failure
+    ? failure instanceof ActivityRequestError
+      ? failure.message
+      : "重新发送没有完成，请稍后再试。"
+    : null;
+  // Refused for good (too late, sent once already, not needed): trying
+  // again cannot change it, and the card under it says so already.
+  const final =
+    failure instanceof ActivityRequestError && failure.status === 409;
+  const close = () => {
+    if (!pending) setAsking(false);
+  };
+  const send = () => {
+    if (pending || !claimId) return;
+    resend.mutate(claimId, {
+      onSuccess: () => {
+        onResent();
+        setAsking(false);
+      },
+    });
+  };
+  const dialog = (
+    <ConfirmDialog
+      open={asking}
+      onClose={close}
+      onClosed={() => {
+        resend.reset();
+        onGone();
+      }}
+      busy={pending}
+      title="确定重新发送？"
+      text={`重新发送仅限一次。请先确认你${account}；若仍未找到你的账户，本次 ${amount} 奖励发放将终止。`}
+      error={error}
+      actions={
+        final ? (
+          <Button onClick={close}>关闭</Button>
+        ) : (
           <>
-            <Button onClick={() => setAsking(false)}>再等等</Button>
+            <Button aria-disabled={pending || undefined} onClick={close}>
+              再等等
+            </Button>
             <Button
               variant="primary"
-              onClick={() => {
-                setAsking(false);
-                onConfirm();
-              }}
+              aria-disabled={pending || undefined}
+              onClick={send}
             >
-              重新发送
+              {pending ? "正在重新发送…" : error ? "再试一次" : "重新发送"}
             </Button>
           </>
-        }
-      />
-    </>
+        )
+      }
+    />
+  );
+  return {
+    ready: Boolean(identity.user && identity.csrfToken && claimId),
+    pending,
+    ask: () => {
+      if (!pending) setAsking(true);
+    },
+    dialog,
+  };
+}
+
+function ResendButton({ resend }: { resend: Resend }) {
+  return (
+    <Button
+      variant="primary"
+      size="sm"
+      aria-haspopup="dialog"
+      aria-disabled={resend.pending || undefined}
+      onClick={resend.ask}
+    >
+      {resend.pending ? "正在重新发送…" : "重新发送"}
+    </Button>
   );
 }
 
@@ -211,32 +281,17 @@ function ResendButton({
  * payments/resend.ts, user's rule); past that it is not paid.
  */
 function NoCreditAccount({
-  activityId,
-  claimId,
   payment,
   amount,
-  onResent,
+  resend,
 }: {
-  activityId: string;
-  claimId: string;
   payment: PaymentView;
   amount: string;
-  onResent: () => void;
+  resend: Resend;
 }) {
-  const identity = useIdentity();
   const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
   const open = useBefore(until);
-  const resend = useResendPayment(
-    identity.user?.id ?? "",
-    identity.csrfToken ?? "",
-    activityId,
-  );
-  if (!open || !identity.user || !identity.csrfToken) return <NotResent />;
-  const error = resend.error
-    ? resend.error instanceof ActivityRequestError
-      ? resend.error.message
-      : "重新发送没有完成，请稍后再试。"
-    : null;
+  if (!open || !resend.ready) return <NotResent />;
   return (
     <Callout
       tone="warning"
@@ -253,21 +308,11 @@ function NoCreditAccount({
           注册 Credit 账户
           <ArrowUpRight aria-hidden="true" />
         </ButtonLink>
-        <ResendButton
-          account="已注册 LINUX DO Credit 账户"
-          amount={`${amount} LDC`}
-          pending={resend.isPending}
-          onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
-        />
+        <ResendButton resend={resend} />
       </div>
       <p className="mt-2 text-xs">
         请在 <ResendCountdown to={until} /> 内重新发送；逾期本次发放将终止。
       </p>
-      {error && (
-        <p role="alert" className="mt-1 text-danger">
-          {error}
-        </p>
-      )}
     </Callout>
   );
 }
@@ -327,32 +372,22 @@ function NoCreditAccountHere({
  * issuer. The issuer's own words, the countdown, and one 重新发送.
  */
 function NoPointsAccount({
-  activityId,
-  claimId,
   payment,
   amount,
   points,
-  onResent,
+  resend,
 }: {
-  activityId: string;
-  claimId: string;
   payment: PaymentView;
   amount: string;
   points: ActivityPoints;
-  onResent: () => void;
+  resend: Resend;
 }) {
-  const identity = useIdentity();
   const detail = usePointsDetail(points.id);
   const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
   const open = useBefore(until);
-  const resend = useResendPayment(
-    identity.user?.id ?? "",
-    identity.csrfToken ?? "",
-    activityId,
-  );
   const words = detail.data?.system.noRecipient;
   const unit = { unit: points.unit, step: points.step };
-  if (!open || !identity.user || !identity.csrfToken)
+  if (!open || !resend.ready)
     return (
       <Callout icon={UserRoundX} title="发放失败" className="w-full text-left">
         {points.host} 未找到你的账户。重新发送仅限被拒后{" "}
@@ -360,11 +395,6 @@ function NoPointsAccount({
         分钟内一次，现已无法重新发送，本次奖励发放已终止。
       </Callout>
     );
-  const error = resend.error
-    ? resend.error instanceof ActivityRequestError
-      ? resend.error.message
-      : "重新发送没有完成，请稍后再试。"
-    : null;
   return (
     <Callout
       tone="warning"
@@ -384,21 +414,11 @@ function NoPointsAccount({
         ) : null}
       </IssuerWords>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <ResendButton
-          account={`已在 ${points.host} 开设账户`}
-          amount={amountText(amount, unit)}
-          pending={resend.isPending}
-          onConfirm={() => resend.mutate(claimId, { onSuccess: onResent })}
-        />
+        <ResendButton resend={resend} />
       </div>
       <p className="mt-2 text-xs">
         请在 <ResendCountdown to={until} /> 内重新发送；逾期本次发放将终止。
       </p>
-      {error && (
-        <p role="alert" className="mt-1 text-danger">
-          {error}
-        </p>
-      )}
     </Callout>
   );
 }
@@ -697,41 +717,97 @@ export function MyResult({
   // Sent again from here: until it lands, the note says so.
   const [resent, setResent] = useState(false);
   const embedded = useEmbedded();
+  const root = useRef<HTMLDivElement>(null);
+  useImperativeHandle(ref, () => root.current as HTMLDivElement, []);
+  const points = activity.points;
+  const resend = useResend({
+    activityId: activity.id,
+    claimId: mine.claimId,
+    account: points
+      ? `已在 ${points.host} 开设账户`
+      : "已注册 LINUX DO Credit 账户",
+    amount: !amount
+      ? ""
+      : points
+        ? amountText(amount, { unit: points.unit, step: points.step })
+        : `${amount} LDC`,
+    onResent: () => setResent(true),
+    onGone: () => {
+      // Its card turned into the payment's line meanwhile: focus comes
+      // back to the result, not to the page's body.
+      const active = document.activeElement;
+      if (!active || active === document.body || active.closest("[inert]"))
+        root.current?.focus({ preventScroll: true });
+    },
+  });
+  const held = payment ? heldForAccount(payment) : false;
+  // 正在开奖… turning into 本次未中奖 or an amount, 发放异常 into 结果核对中
+  // after a resend: the row and the line under it cross-fade to the new
+  // ones and the place eases to their height (05 §11 开奖结果: 页面开着时只淡入
+  // 结果). A payment's state counts only where its chip shows (sweep
+  // 2026-11-21).
+  const phase = [
+    mine.kind === "registered" ? mine.outcome : "claimed",
+    amount && payment && !activity.fish && !mine.self ? payment.status : "",
+    held ? "held" : "",
+  ].join(":");
+  const status =
+    amount && activity.fish ? (
+      <FishStored />
+    ) : amount && mine.self ? (
+      <StatusChip size="md" dot>
+        自领
+      </StatusChip>
+    ) : amount && payment ? (
+      <PaymentStatus state={payment.status} />
+    ) : mine.kind === "registered" && mine.outcome === "waiting" ? (
+      <span className="text-sm text-ink-2">
+        距开奖 <Countdown to={deadlineAt} />
+      </span>
+    ) : mine.kind === "registered" && mine.outcome === "lost" ? (
+      <span className="text-sm text-ink-2">谢谢参与</span>
+    ) : null;
   return (
     <div
-      ref={ref}
+      ref={root}
       tabIndex={-1}
       data-hb-part="result"
       className="mx-auto grid w-full max-w-[36rem] justify-items-center gap-3 px-5 pt-6 text-center outline-none"
     >
-      {amount ? (
-        // 发放失败: grey, not the green of a share on its way (payout-stop §3).
-        <p
-          className={`flex items-baseline gap-2 ${payment?.status === "failed" ? "text-ink-3" : "text-success"}`}
-        >
-          <span className="hb-result-amount text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
-            <CountUp
-              value={amount}
-              play={play}
-              delay={delay}
-              prefix="+"
-              step={activity.unit.step}
-            />
-          </span>
-          <span className="text-xl font-medium">
-            {activity.unit.unit}
-            {activity.fish && <FishMark explained />}
-          </span>
-        </p>
-      ) : (
-        <p className="text-2xl font-semibold text-ink">
-          {mine.kind === "registered" && mine.outcome === "lost"
-            ? "本次未中奖"
-            : mine.kind === "registered" && mine.outcome === "settling"
-              ? "正在开奖…"
-              : "已报名"}
-        </p>
-      )}
+      {/* 已报名 → 正在开奖… → 本次未中奖 morph in place; the words give way
+          to an amount by a cross-fade, and it counts up (sweep 2026-11-21). */}
+      <Swap id={amount ? "amount" : "words"} className="w-full">
+        {amount ? (
+          // 发放失败: grey, not the green of a share on its way (payout-stop §3).
+          <p
+            className={`flex items-baseline justify-center gap-2 transition-colors duration-300 ${payment?.status === "failed" ? "text-ink-3" : "text-success"}`}
+          >
+            <span className="hb-result-amount text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
+              <CountUp
+                value={amount}
+                play={play}
+                delay={delay}
+                prefix="+"
+                step={activity.unit.step}
+              />
+            </span>
+            <span className="text-xl font-medium">
+              {activity.unit.unit}
+              {activity.fish && <FishMark explained />}
+            </span>
+          </p>
+        ) : (
+          <p className="text-2xl font-semibold text-ink">
+            <MorphLabel fit={false}>
+              {mine.kind === "registered" && mine.outcome === "lost"
+                ? "本次未中奖"
+                : mine.kind === "registered" && mine.outcome === "settling"
+                  ? "正在开奖…"
+                  : "已报名"}
+            </MorphLabel>
+          </p>
+        )}
+      </Swap>
 
       {/* 代码判定: the code's reply under the amount, and why the amount
           is not what the code asked (05 §13). */}
@@ -749,102 +825,93 @@ export function MyResult({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {amount && activity.fish ? (
-          <FishStored />
-        ) : amount && mine.self ? (
-          <StatusChip size="md" dot>
-            自领
-          </StatusChip>
-        ) : amount && payment ? (
-          <PaymentStatus state={payment.status} />
-        ) : mine.kind === "registered" && mine.outcome === "waiting" ? (
-          <span className="text-sm text-ink-2">
-            距开奖 <Countdown to={deadlineAt} />
-          </span>
-        ) : mine.kind === "registered" && mine.outcome === "lost" ? (
-          <span className="text-sm text-ink-2">谢谢参与</span>
-        ) : null}
-        {/* Titles share the row with the status, arriving last. The 口令
-            used is in the 口令区, what was typed in 我的提交: not again here. */}
-        {mine.titles.length > 0 && (
-          <motion.span
-            className="inline-flex"
-            initial={play ? { opacity: 0, scale: 0.92 } : false}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2, delay: delay + 0.3 }}
-          >
-            <TitleBadges titles={mine.titles} size="md" />
-          </motion.span>
-        )}
-      </div>
+      <Swap id={phase} className="w-full">
+        <div className="flex flex-col items-center gap-3">
+          {(status || mine.titles.length > 0) && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {status}
+              {/* Titles share the row with the status, arriving last. The
+                  口令 used is in the 口令区, what was typed in 我的提交: not
+                  again here. */}
+              {mine.titles.length > 0 && (
+                <motion.span
+                  className="inline-flex"
+                  initial={play ? { opacity: 0, scale: 0.92 } : false}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2, delay: delay + 0.3 }}
+                >
+                  <TitleBadges titles={mine.titles} size="md" />
+                </motion.span>
+              )}
+            </div>
+          )}
 
-      {/* 自领: where the share is, said to the sender alone
-          (docs/self-claim-design.md). */}
-      {amount && mine.self ? (
-        <p className="text-sm text-ink-2">
-          {activity.fish
-            ? "这份已退回你的🐟额。"
-            : activity.points
-              ? `自领的奖励不发放，仍在你在 ${activity.points.host} 的账户中。`
-              : "自领的奖励不发放，金额仍在你的 LDC 商户中。"}
-        </p>
-      ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
-          1 🐟 it goes to Credit all at once, balance-design §5). */
-      amount && activity.fish ? null : amount && payment && activity.points ? (
-        // Still no account: the one 重新发送 while it lasts, then (also once
-        // it ended 未发出) why it was not paid.
-        (payment.status === "attention" || payment.status === "failed") &&
-        payment.reason === "recipient" &&
-        embedded ? (
-          <NoPointsAccountHere
-            payment={payment}
-            amount={amount}
-            points={activity.points}
-          />
-        ) : (payment.status === "attention" || payment.status === "failed") &&
-          payment.reason === "recipient" &&
-          mine.claimId ? (
-          <NoPointsAccount
-            activityId={activity.id}
-            claimId={mine.claimId}
-            payment={payment}
-            amount={amount}
-            points={activity.points}
-            onResent={() => setResent(true)}
-          />
-        ) : (
-          <PointsPaymentNote
-            payment={payment}
-            points={activity.points}
-            resending={resent && payment.status !== "confirmed"}
-          />
-        )
-      ) : amount && payment ? (
-        // 重新发送 needs this site's session: the mini app leads here.
-        heldForAccount(payment) && embedded ? (
-          <NoCreditAccountHere payment={payment} amount={amount} />
-        ) : heldForAccount(payment) && mine.claimId ? (
-          <NoCreditAccount
-            activityId={activity.id}
-            claimId={mine.claimId}
-            payment={payment}
-            amount={amount}
-            onResent={() => setResent(true)}
-          />
-        ) : (
-          <PaymentNote
-            payment={payment}
-            resending={resent && payment.status !== "confirmed"}
-          />
-        )
-      ) : (
-        mine.kind === "registered" && (
-          <TicketNote mine={mine} deadlineAt={deadlineAt} drawNote={drawNote} />
-        )
-      )}
+          {/* 自领: where the share is, said to the sender alone
+              (docs/self-claim-design.md). */}
+          {amount && mine.self ? (
+            <p className="text-sm text-ink-2">
+              {activity.fish
+                ? "这份已退回你的🐟额。"
+                : points
+                  ? `自领的奖励不发放，仍在你在 ${points.host} 的账户中。`
+                  : "自领的奖励不发放，金额仍在你的 LDC 商户中。"}
+            </p>
+          ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow
+              (under 1 🐟 it goes to Credit all at once, balance-design §5). */
+          amount && activity.fish ? null : amount && payment && points ? (
+            // Still no account: the one 重新发送 while it lasts, then (also
+            // once it ended 未发出) why it was not paid.
+            held && embedded ? (
+              <NoPointsAccountHere
+                payment={payment}
+                amount={amount}
+                points={points}
+              />
+            ) : held && mine.claimId ? (
+              <NoPointsAccount
+                payment={payment}
+                amount={amount}
+                points={points}
+                resend={resend}
+              />
+            ) : (
+              <PointsPaymentNote
+                payment={payment}
+                points={points}
+                resending={resent && payment.status !== "confirmed"}
+              />
+            )
+          ) : amount && payment ? (
+            // 重新发送 needs this site's session: the mini app leads here.
+            held && embedded ? (
+              <NoCreditAccountHere payment={payment} amount={amount} />
+            ) : held && mine.claimId ? (
+              <NoCreditAccount
+                payment={payment}
+                amount={amount}
+                resend={resend}
+              />
+            ) : (
+              <PaymentNote
+                payment={payment}
+                resending={resent && payment.status !== "confirmed"}
+              />
+            )
+          ) : (
+            mine.kind === "registered" && (
+              <TicketNote
+                mine={mine}
+                deadlineAt={deadlineAt}
+                drawNote={drawNote}
+              />
+            )
+          )}
+        </div>
+      </Swap>
+      {/* Outside the cards it is asked from: it outlives them (useResend). */}
+      {amount && payment && mine.claimId && !embedded && resend.dialog}
 
-      {mine.afterClaimInfo && embedded && payment && heldForAccount(payment) ? (
+      {mine.afterClaimInfo && embedded && held ? (
         <AfterClaimNote text={mine.afterClaimInfo} folded />
       ) : mine.afterClaimInfo ? (
         <Squircle radius={16}>

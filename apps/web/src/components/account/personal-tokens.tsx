@@ -5,6 +5,7 @@ import {
 } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, X } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { useId, useRef, useState } from "react";
 import { failureText } from "../../lib/activities";
 import {
@@ -15,6 +16,7 @@ import {
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
 import { EmptyNote, PageSection, Panel } from "../page/page";
+import { ListSkeleton, ResultLoad, resultOf } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -136,14 +138,20 @@ export function PersonalTokensSection({ user }: { user: SessionUser }) {
     <PageSection
       title="个人令牌"
       id="me-personal-tokens"
+      // At the limit the reason is said where the eye is, not in a hover
+      // title a phone never shows (sweep 2026-11-21, R3-TASTE-8).
       description={
-        <>
-          给你自己的脚本或客户端用，代表你的账号，用法见
-          <Link to="/help/token" className="text-accent-ink hover:underline">
-            接口说明
-          </Link>
-          。
-        </>
+        full ? (
+          `最多 ${max} 个有效令牌，停用一个才能再新建。`
+        ) : (
+          <>
+            给你自己的脚本或客户端用，代表你的账号，用法见
+            <Link to="/help/token" className="text-accent-ink hover:underline">
+              接口说明
+            </Link>
+            。
+          </>
+        )
       }
       action={
         <Button
@@ -152,26 +160,35 @@ export function PersonalTokensSection({ user }: { user: SessionUser }) {
           }}
           aria-disabled={full || undefined}
           data-disabled={full || undefined}
-          title={full ? `最多 ${max} 个有效令牌` : undefined}
         >
           新建
         </Button>
       }
     >
-      {active.length === 0 ? (
-        query.isSuccess && (
+      {/* Bars with the sheen while the first read is out, 读取失败 with
+          重试 if it fails, and a fade as the list arrives, as 开放接口密钥
+          (sweep 2026-11-21, R3-TASTE-8). Rows already there when the list
+          appears stay put; one made or stopped later opens or closes. */}
+      <ResultLoad
+        id={active.length > 0 ? "rows" : "empty"}
+        load={resultOf(query)}
+        skeleton={<ListSkeleton rows={2} />}
+      >
+        {active.length === 0 ? (
           <EmptyNote
             title="还没有令牌"
             text="新建一个，交给你的脚本或客户端。"
           />
-        )
-      ) : (
-        <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
-          {active.map((token) => (
-            <TokenRow key={token.id} token={token} onOpen={setOpened} />
-          ))}
-        </Panel>
-      )}
+        ) : (
+          <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
+            <AnimatePresence initial={false}>
+              {active.map((token) => (
+                <TokenRow key={token.id} token={token} onOpen={setOpened} />
+              ))}
+            </AnimatePresence>
+          </Panel>
+        )}
+      </ResultLoad>
       {ended.length > 0 && (
         <Button
           variant="quiet"
