@@ -2,7 +2,6 @@
 // made here and handed straight to Wrangler as a Worker secret; nothing is
 // printed or written down but the SHA-256 of the 红包站's site secret, which
 // the Cap service's configuration keeps to check siteverify calls against.
-import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
@@ -15,9 +14,9 @@ import { join, resolve } from "node:path";
 import {
   environmentFrom,
   parseArguments,
+  putSecret,
   repositoryRoot,
   runMain,
-  wranglerPath,
 } from "./lib/environments";
 
 type Deployed = "staging" | "production";
@@ -48,29 +47,6 @@ export function withSecretHash(config: string, siteKey: string, hash: string) {
   if (!site) throw new Error("CAP_SITE_MISSING");
   site.secretHash = hash;
   return config.replace(match[1], JSON.stringify(JSON.stringify(sites)));
-}
-
-function putSecret(config: string, name: string, value: string) {
-  try {
-    execFileSync(
-      "node",
-      [wranglerPath, "secret", "put", name, "--config", config],
-      {
-        cwd: repositoryRoot,
-        input: value,
-        stdio: ["pipe", "ignore", "pipe"],
-        timeout: 120_000,
-        env: {
-          ...process.env,
-          X_LOCAL_OBSERVABILITY: "false",
-          WRANGLER_WRITE_LOGS: "false",
-          WRANGLER_LOG_SANITIZE: "true",
-        },
-      },
-    );
-  } catch {
-    throw new Error(`WRANGLER_SECRET_PUT_FAILED: ${name}`);
-  }
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   repositoryRoot,
   runMain,
   runWrangler,
+  SLOW_WRANGLER_TIMEOUT_MS,
   target,
   validateEnvironment,
 } from "./lib/environments";
@@ -500,12 +501,15 @@ async function main() {
         );
         mkdirSync(output, { recursive: true });
         console.log(
-          runWrangler([
-            "deploy",
-            "--config",
-            generated,
-            ...(args["--execute"] ? [] : ["--dry-run", "--outdir", output]),
-          ]).trim(),
+          runWrangler(
+            [
+              "deploy",
+              "--config",
+              generated,
+              ...(args["--execute"] ? [] : ["--dry-run", "--outdir", output]),
+            ],
+            { timeout: SLOW_WRANGLER_TIMEOUT_MS },
+          ).trim(),
         );
       }
     }
@@ -544,7 +548,8 @@ async function main() {
       selected.apiPath,
       "--remote",
     ];
-    if (args["--execute"]) console.log(runWrangler(command));
+    if (args["--execute"])
+      console.log(runWrangler(command, { timeout: SLOW_WRANGLER_TIMEOUT_MS }));
     else
       console.log(
         JSON.stringify(

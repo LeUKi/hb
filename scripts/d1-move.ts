@@ -19,10 +19,9 @@ import {
   repositoryRoot,
   runMain,
   runWrangler,
+  SLOW_WRANGLER_TIMEOUT_MS,
   target,
 } from "./lib/environments";
-
-const TRANSFER_TIMEOUT_MS = 600_000;
 
 /** The target must be a new database of this environment, never its own. */
 export function checkTarget(
@@ -343,8 +342,7 @@ function main() {
         "--output",
         path,
       ],
-      repositoryRoot,
-      TRANSFER_TIMEOUT_MS,
+      { timeout: SLOW_WRANGLER_TIMEOUT_MS },
     );
     chmodSync(path, 0o600);
     return readFileSync(path, "utf8");
@@ -368,8 +366,7 @@ function main() {
       file,
       "--yes",
     ],
-    repositoryRoot,
-    TRANSFER_TIMEOUT_MS,
+    { timeout: SLOW_WRANGLER_TIMEOUT_MS },
   );
   // The copy's rows, exported the same way, must match byte for byte.
   const copied = exportPart(copy, "--no-schema", `${base}-rows-target.sql`);

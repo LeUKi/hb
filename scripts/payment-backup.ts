@@ -26,6 +26,7 @@ import {
   repositoryRoot,
   runMain,
   runWrangler,
+  SLOW_WRANGLER_TIMEOUT_MS,
   target,
   validateEnvironment,
 } from "./lib/environments";
@@ -304,16 +305,19 @@ async function remoteBackup(
   const stamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
   const bookmark = readBookmark(selected);
   const output = join(outputDirectory, `payment-${environment}-${stamp}.sql`);
-  runWrangler([
-    "d1",
-    "export",
-    selected.database.database_name,
-    "--config",
-    selected.apiPath,
-    "--remote",
-    "--output",
-    output,
-  ]);
+  runWrangler(
+    [
+      "d1",
+      "export",
+      selected.database.database_name,
+      "--config",
+      selected.apiPath,
+      "--remote",
+      "--output",
+      output,
+    ],
+    { timeout: SLOW_WRANGLER_TIMEOUT_MS },
+  );
   chmodSync(output, 0o600);
   const temporary = mkdtempSync(join(tmpdir(), "hb-remote-d1-restore-"));
   try {
@@ -344,17 +348,20 @@ async function remoteBackup(
         ),
       );
       const response = JSON.parse(
-        runWrangler([
-          "d1",
-          "time-travel",
-          "restore",
-          selected.database.database_name,
-          "--config",
-          selected.apiPath,
-          "--bookmark",
-          bookmark,
-          "--json",
-        ]),
+        runWrangler(
+          [
+            "d1",
+            "time-travel",
+            "restore",
+            selected.database.database_name,
+            "--config",
+            selected.apiPath,
+            "--bookmark",
+            bookmark,
+            "--json",
+          ],
+          { timeout: SLOW_WRANGLER_TIMEOUT_MS },
+        ),
       ) as { bookmark: string; previous_bookmark: string };
       if (
         readD1(environment, `SELECT id FROM queue_probes WHERE id='${id}'`)
@@ -381,16 +388,19 @@ async function remoteBackup(
           throw new Error("REMOTE_RESTORE_BUSINESS_COUNTS_CHANGED");
       }
       const afterSQL = join(temporary, "after-restore.sql");
-      runWrangler([
-        "d1",
-        "export",
-        selected.database.database_name,
-        "--config",
-        selected.apiPath,
-        "--remote",
-        "--output",
-        afterSQL,
-      ]);
+      runWrangler(
+        [
+          "d1",
+          "export",
+          selected.database.database_name,
+          "--config",
+          selected.apiPath,
+          "--remote",
+          "--output",
+          afterSQL,
+        ],
+        { timeout: SLOW_WRANGLER_TIMEOUT_MS },
+      );
       chmodSync(afterSQL, 0o600);
       const afterDatabase = join(temporary, "after-restore.sqlite");
       execFileSync(

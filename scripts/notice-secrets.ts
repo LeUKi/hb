@@ -5,15 +5,14 @@
 // is sent), then handed straight to Wrangler as the API's secrets. On Stage
 // it also asks which LINUX DO ids may get mail. Nothing is printed or
 // written down.
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { connect } from "node:tls";
 import {
   parseArguments,
+  putSecret,
   repositoryRoot,
   runMain,
-  wranglerPath,
 } from "./lib/environments";
 
 type Deployed = "staging" | "production";
@@ -23,29 +22,6 @@ const SMTP_PORT = 465;
 
 const apiConfig = (environment: Deployed) =>
   join(repositoryRoot, `apps/api/wrangler.${environment}.jsonc`);
-
-function putSecret(environment: Deployed, name: string, value: string) {
-  try {
-    execFileSync(
-      "node",
-      [wranglerPath, "secret", "put", name, "--config", apiConfig(environment)],
-      {
-        cwd: repositoryRoot,
-        input: value,
-        stdio: ["pipe", "ignore", "pipe"],
-        timeout: 120_000,
-        env: {
-          ...process.env,
-          X_LOCAL_OBSERVABILITY: "false",
-          WRANGLER_WRITE_LOGS: "false",
-          WRANGLER_LOG_SANITIZE: "true",
-        },
-      },
-    );
-  } catch {
-    throw new Error(`WRANGLER_SECRET_PUT_FAILED: ${environment} ${name}`);
-  }
-}
 
 /** One line from the terminal, shown as it is typed. */
 async function ask(question: string) {
@@ -225,15 +201,15 @@ async function main() {
 
   const done: string[] = [];
   for (const environment of environments) {
-    putSecret(environment, "NOTICE_SMTP_USER", user);
-    putSecret(environment, "NOTICE_SMTP_TOKEN", token);
+    putSecret(apiConfig(environment), "NOTICE_SMTP_USER", user);
+    putSecret(apiConfig(environment), "NOTICE_SMTP_TOKEN", token);
     done.push(
       `${environment}: NOTICE_SMTP_USER`,
       `${environment}: NOTICE_SMTP_TOKEN`,
     );
     if (environment === "staging") {
       putSecret(
-        environment,
+        apiConfig(environment),
         "NOTICE_ALLOWED_LINUX_DO_IDS",
         allowed.replace(/\s/g, ""),
       );

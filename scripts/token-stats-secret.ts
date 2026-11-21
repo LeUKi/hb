@@ -3,14 +3,13 @@
 // analytics. This asks for it in the terminal (not echoed), or reads
 // TOKEN_STATS_API_TOKEN, checks it can read (SELECT 1, no data), then hands it
 // to Wrangler as the API's secret. Nothing is printed or written down.
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   parseArguments,
+  putSecret,
   repositoryRoot,
   runMain,
-  wranglerPath,
 } from "./lib/environments";
 import { askHidden } from "./notice-secrets";
 
@@ -38,36 +37,6 @@ async function canRead(account: string, token: string) {
     },
   );
   return response.ok ? null : `HTTP ${response.status}`;
-}
-
-function putSecret(environment: Deployed, value: string) {
-  try {
-    execFileSync(
-      "node",
-      [
-        wranglerPath,
-        "secret",
-        "put",
-        "TOKEN_STATS_API_TOKEN",
-        "--config",
-        apiConfig(environment),
-      ],
-      {
-        cwd: repositoryRoot,
-        input: value,
-        stdio: ["pipe", "ignore", "pipe"],
-        timeout: 120_000,
-        env: {
-          ...process.env,
-          X_LOCAL_OBSERVABILITY: "false",
-          WRANGLER_WRITE_LOGS: "false",
-          WRANGLER_LOG_SANITIZE: "true",
-        },
-      },
-    );
-  } catch {
-    throw new Error(`WRANGLER_SECRET_PUT_FAILED: ${environment}`);
-  }
 }
 
 function environmentsFrom(value: string | undefined): Deployed[] {
@@ -112,7 +81,7 @@ async function main() {
       throw new Error(`ANALYTICS_READ_FAILED: ${problem}`);
     }
     process.stdout.write("通过\n");
-    putSecret(environment, token);
+    putSecret(apiConfig(environment), "TOKEN_STATS_API_TOKEN", token);
   }
   console.log(JSON.stringify({ done: plan }, null, 2));
 }

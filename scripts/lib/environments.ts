@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { movedHosts } from "../../apps/web/src/lib/site-move";
 
@@ -349,16 +349,42 @@ export function target(
   return { environment, remote, apiPath, api, web, ...resource };
 }
 
+/**
+ * How long wrangler may take to upload or copy a whole Worker or database:
+ * a deploy, migrations, an export or a Time Travel restore, and a secret
+ * (which deploys the Worker too). 120 s cut a slow production deploy off
+ * twice (sweep A1, 2026-11-21); d1-move's transfers already had 600 s.
+ */
+export const SLOW_WRANGLER_TIMEOUT_MS = 600_000;
+
+/**
+ * A wrangler command as its errors name it: the words before the first
+ * option, and the config it ran with (which Worker, Stage or production).
+ * Never an option's value, which can be SQL, a bookmark or a backup's path.
+ */
+export function wranglerLabel(args: string[]) {
+  const firstOption = args.findIndex((arg) => arg.startsWith("-"));
+  const words = firstOption === -1 ? args : args.slice(0, firstOption);
+  const config = args.indexOf("--config");
+  const path = config === -1 ? undefined : args[config + 1];
+  return [
+    ...words,
+    ...(path ? ["--config", relative(repositoryRoot, path)] : []),
+  ].join(" ");
+}
+
 export function runWrangler(
   args: string[],
-  cwd = repositoryRoot,
-  timeout = 120_000,
+  options: { cwd?: string; timeout?: number; input?: string } = {},
 ) {
+  const { cwd = repositoryRoot, timeout = 120_000, input } = options;
   try {
     return execFileSync("node", [wranglerPath, ...args], {
       cwd,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+      // A secret's value goes in on stdin, never in the arguments.
+      input,
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       timeout,
       env: {
         ...process.env,
@@ -367,10 +393,32 @@ export function runWrangler(
         WRANGLER_LOG_SANITIZE: "true",
       },
     });
-  } catch {
-    // Wrangler errors may include upstream URLs or authenticated request diagnostics.
-    throw new Error(`WRANGLER_COMMAND_FAILED: ${args.slice(0, 2).join(" ")}`);
+  } catch (error) {
+    // Wrangler errors may include upstream URLs or authenticated request
+    // diagnostics: only the command is named, never what it printed.
+    const { code, signal } = error as { code?: unknown; signal?: unknown };
+    // Stopped before wrangler said how it went, by our timeout or a kill:
+    // the deploy, migration, restore or secret may have gone through all
+    // the same, so this is not a failure to simply run again (sweep A1).
+    if (code === "ETIMEDOUT" || signal)
+      throw new Error(
+        `WRANGLER_TIMED_OUT: ${wranglerLabel(args)} (outcome unknown, check the dashboard before retrying)`,
+      );
+    throw new Error(`WRANGLER_COMMAND_FAILED: ${wranglerLabel(args)}`);
   }
+}
+
+/**
+ * Puts one Worker secret: the value goes in on stdin, never in the
+ * arguments or anything printed. A secret change deploys the Worker, so it
+ * gets a deploy's time. The one copy for cap-secrets, notice-secrets and
+ * token-stats-secret (sweep A1, 2026-11-21).
+ */
+export function putSecret(config: string, name: string, value: string) {
+  runWrangler(["secret", "put", name, "--config", config], {
+    input: value,
+    timeout: SLOW_WRANGLER_TIMEOUT_MS,
+  });
 }
 
 export function d1Args(environment: Environment, command: string) {
