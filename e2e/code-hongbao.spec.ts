@@ -4176,7 +4176,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
   test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的记录最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({
     page,
   }) => {
-    const { state } = await mockGame(page);
+    const { state, sockets } = await mockGame(page);
     await openApp(page, path);
     const frame = await openGame(page);
     const readsBefore = state.reads.public;
@@ -4251,9 +4251,16 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     ]);
     await expect(record).toContainText("我的记录 · 1 条");
     await expect(record.getByText("正在判定…")).toBeHidden();
-    // The page reads the 红包 again after it, with its own way to read it
-    // (2026-10-29: the frame's bridge, a reader of the same query, had left
-    // it none, and the read failed: 刷新失败).
+    // On the live channel its answer does not read the 红包 again: the push
+    // brings it (sweep 2026-11-21, L3).
+    expect(sockets).toHaveLength(1);
+    expect(state.reads.public).toBe(readsBefore);
+    // A read with the page open still reaches the server, with the page's
+    // own way to read it (2026-10-29: the frame's bridge, a reader of the
+    // same query, had left it none, and the read failed: 刷新失败). Here a
+    // missed push asks for it.
+    sockets[0]?.send(JSON.stringify({ type: "judged", count: 8, seq: 1 }));
+    sockets[0]?.send(JSON.stringify({ type: "judged", count: 8, seq: 3 }));
     await expect.poll(() => state.reads.public).toBeGreaterThan(readsBefore);
     await expect(page.getByText("刷新失败，当前内容已保留。")).toHaveCount(0);
 
