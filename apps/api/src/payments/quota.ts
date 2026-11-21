@@ -1,4 +1,5 @@
 import type { ApiBindings } from "../env";
+import { nextBeijingMidnight } from "../runtime/day";
 
 // A merchant stopped by Credit's daily limit (“已超过每日限额”). The limit is
 // the paying account's, summed over its whole day, so nothing that merchant
@@ -7,10 +8,8 @@ import type { ApiBindings } from "../env";
 //
 // Credit counts the day in its process's time zone; its image sets
 // Asia/Shanghai (linux-do/credit Dockerfile, `ARG TZ=Asia/Shanghai`), which
-// keeps no daylight saving.
+// keeps no daylight saving: the same day as this site's own (runtime/day.ts).
 
-const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
-const DAY_MS = 86_400_000;
 /** After the turn of the day, so the first try lands in the new one. */
 const RESUME_MIN_MS = 5 * 60_000;
 /** Spread over this, so merchants do not all send at the same moment. */
@@ -18,11 +17,7 @@ const RESUME_SPREAD_MS = 25 * 60_000;
 
 /** The next midnight in Shanghai after `now`. */
 export function nextQuotaReset(now: number) {
-  return (
-    Math.floor((now + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS +
-    DAY_MS -
-    SHANGHAI_OFFSET_MS
-  );
+  return nextBeijingMidnight(now);
 }
 
 /** When a merchant stopped by its daily limit sends again: 00:05–00:30. */

@@ -4,6 +4,7 @@
 // dot until seen), self-tests. Read on demand; nothing refreshes by itself.
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
+import { startOfBeijingDay } from "../runtime/day";
 import { pointsEventIfChanged } from "./events";
 import { wakePointsPayment } from "./payments";
 import { listSelfTests } from "./self-test";
@@ -14,16 +15,7 @@ import {
   requireSystem,
 } from "./systems";
 
-const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
 const DAY_MS = 86_400_000;
-
-/** Midnight in Shanghai today: “今天” on the panel. */
-export function startOfToday(now = Date.now()) {
-  return (
-    Math.floor((now + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS -
-    SHANGHAI_OFFSET_MS
-  );
-}
 
 type CallStats = {
   system_id: string;
@@ -34,7 +26,8 @@ type CallStats = {
 };
 
 export async function adminOverview(env: ApiBindings) {
-  const since = startOfToday();
+  // “今天” on the panel starts at midnight in Beijing.
+  const since = startOfBeijingDay();
   const [settings, systems, calls, open, unseen, attention] = await Promise.all(
     [
       readPointsSettings(env),

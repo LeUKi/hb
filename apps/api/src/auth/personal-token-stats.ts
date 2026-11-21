@@ -11,11 +11,10 @@ import type {
   PersonalTokenUsageBucket,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { BEIJING_OFFSET_MS, startOfBeijingDay } from "../runtime/day";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-/** Days counted from Beijing midnight. */
-const SHANGHAI_OFFSET_MS = 8 * HOUR_MS;
 const CACHE_SECONDS = 60;
 const KINDS: PersonalTokenRequestKind[] = [
   "read",
@@ -108,7 +107,8 @@ async function points(
      GROUP BY t, kind, outcome ORDER BY t`,
   );
   return rows.map((row) => ({
-    at: step === "HOUR" ? utc(row.t) : utc(row.t) - SHANGHAI_OFFSET_MS,
+    // Undo the query's `+ INTERVAL '8' HOUR`: days count from Beijing midnight.
+    at: step === "HOUR" ? utc(row.t) : utc(row.t) - BEIJING_OFFSET_MS,
     kind: row.kind,
     outcome: row.outcome,
     n: Number(row.n) || 0,
@@ -160,9 +160,7 @@ export async function tokenUsage(
       points(env, "DAY", userId),
     ]);
     const thisHour = Math.floor(now / HOUR_MS) * HOUR_MS;
-    const today =
-      Math.floor((now + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS -
-      SHANGHAI_OFFSET_MS;
+    const today = startOfBeijingDay(now);
     return {
       available: true,
       hours: buckets(thisHour - 23 * HOUR_MS, 24, HOUR_MS, hours),

@@ -20,9 +20,9 @@ import {
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
 import type { ActivityRow } from "../activities/storage";
-import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
 import { hongbaoForJudge, judgeUnitOf } from "../points/judge";
+import { startOfBeijingDay } from "../runtime/day";
 import { encryptString } from "../security/crypto";
 import {
   codeHongbaoAccess,

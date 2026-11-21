@@ -29,6 +29,7 @@ import {
   type TopupQueryResult,
 } from "../payments/real-protocol";
 import { reachesCredit } from "../runtime/controls";
+import { startOfBeijingDay } from "../runtime/day";
 import { sha256Hex } from "../security/crypto";
 import { amountsOf, type CardWithOwner, tipError } from "./cards";
 
@@ -701,8 +702,7 @@ function sinceOf(range: TipRange) {
   if (range === "all") return 0;
   if (range === "week") return Date.now() - 7 * DAY_MS;
   // Today in Beijing time.
-  const offset = 8 * 3_600_000;
-  return Math.floor((Date.now() + offset) / DAY_MS) * DAY_MS - offset;
+  return startOfBeijingDay();
 }
 
 export function encodeTipCursor(row: { created_at: number; id: string }) {

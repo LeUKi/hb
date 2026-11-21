@@ -32,9 +32,9 @@ import {
 } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
-import { startOfBeijingDay } from "../balance/day";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
+import { startOfBeijingDay } from "../runtime/day";
 import {
   checkParamsInJudge,
   describeJudge,

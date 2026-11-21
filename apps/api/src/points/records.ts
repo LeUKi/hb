@@ -8,7 +8,7 @@
 // DO ID and name with the payout, and a 红包's sender is on its page.
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
-import { startOfToday } from "./admin";
+import { BEIJING_OFFSET_MS, startOfBeijingDay } from "../runtime/day";
 
 const DAY_MS = 86_400_000;
 
@@ -329,7 +329,7 @@ export async function searchPayouts(
 /** Today's and the last 7 days' payouts by state: how many, how much. */
 export async function payoutTotals(env: ApiBindings, systemId: string) {
   const week = Date.now() - 7 * DAY_MS;
-  const today = startOfToday();
+  const today = startOfBeijingDay();
   const rows = await env.DB.prepare(
     `SELECT status,reason,COUNT(*) AS count,SUM(amount_minor) AS amount,
         SUM(CASE WHEN updated_at>=?3 THEN 1 ELSE 0 END) AS today_count,
@@ -445,8 +445,6 @@ export async function listCallRecords(
   };
 }
 
-const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
-
 /**
  * 用量 (§17 第二批): who holds a key for it (and how many of those keys
  * failed), the 红包 sent with it and by how many people, how many got some,
@@ -492,11 +490,11 @@ export async function pointsUsage(env: ApiBindings, systemId: string) {
 }
 
 /**
- * 近 14 天走势 (§17 第二批): each day in Shanghai, payouts ended through or
+ * 近 14 天走势 (§17 第二批): each day in Beijing, payouts ended through or
  * failed, and the issuer's average answer time for 发放 calls.
  */
 export async function pointsTrend(env: ApiBindings, systemId: string) {
-  const today = startOfToday();
+  const today = startOfBeijingDay();
   const from = today - 13 * DAY_MS;
   const [payouts, calls] = await env.DB.batch([
     env.DB.prepare(
@@ -504,16 +502,16 @@ export async function pointsTrend(env: ApiBindings, systemId: string) {
         FROM points_payments WHERE system_id=?1 AND status IN ('confirmed','failed')
           AND updated_at>=?2
         GROUP BY day, status`,
-    ).bind(systemId, from, SHANGHAI_OFFSET_MS),
+    ).bind(systemId, from, BEIJING_OFFSET_MS),
     env.DB.prepare(
       `SELECT CAST((at+?3)/86400000 AS INTEGER) AS day, CAST(AVG(ms) AS INTEGER) AS ms, COUNT(*) AS n
         FROM points_calls WHERE system_id=?1 AND at>=?2 AND kind='transfer'
         GROUP BY day`,
-    ).bind(systemId, from, SHANGHAI_OFFSET_MS),
+    ).bind(systemId, from, BEIJING_OFFSET_MS),
   ]);
-  const firstDay = Math.floor((from + SHANGHAI_OFFSET_MS) / DAY_MS);
+  const firstDay = Math.floor((from + BEIJING_OFFSET_MS) / DAY_MS);
   const days = Array.from({ length: 14 }, (_, index) => ({
-    day: (firstDay + index) * DAY_MS - SHANGHAI_OFFSET_MS,
+    day: (firstDay + index) * DAY_MS - BEIJING_OFFSET_MS,
     confirmed: 0,
     failed: 0,
     averageMs: null as number | null,

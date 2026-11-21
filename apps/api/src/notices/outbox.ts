@@ -14,6 +14,7 @@ import {
 } from "@hb/contracts";
 import { emailAssociatedData } from "../auth/oauth";
 import type { ApiBindings } from "../env";
+import { startOfBeijingDay } from "../runtime/day";
 import { inMaintenanceMode } from "../runtime/maintenance-mode";
 import { decryptString } from "../security/crypto";
 import { type Mail, type SmtpAccount, sendMails } from "./smtp";
@@ -498,12 +499,6 @@ export async function sweepNotices(env: ApiBindings, now = Date.now()) {
   return ids.length;
 }
 
-/** Start of today in Beijing time. */
-function todayStart(now: number) {
-  const offset = 8 * 3_600_000;
-  return Math.floor((now + offset) / 86_400_000) * 86_400_000 - offset;
-}
-
 export async function noticeAdminStats(
   env: ApiBindings,
   now = Date.now(),
@@ -511,7 +506,7 @@ export async function noticeAdminStats(
   const [counts, failures] = await env.DB.batch([
     env.DB.prepare(
       `SELECT status, count(*) AS n FROM notifications WHERE created_at>=? GROUP BY status`,
-    ).bind(todayStart(now)),
+    ).bind(startOfBeijingDay(now)),
     env.DB.prepare(
       `SELECT id,kind,subject,reason,created_at FROM notifications WHERE status='failed' ORDER BY created_at DESC LIMIT 20`,
     ),
