@@ -1,13 +1,15 @@
 import { useAtomValue } from "jotai";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { solveCap } from "../../lib/cap";
 import { CapProblem, capProblemText } from "../../lib/cap-problem";
 import { type HumanCheckRequest, humanCheckAtom } from "../../lib/human-check";
+import { durations, ease } from "../../lib/motion";
 import { currentTheme } from "../../lib/theme";
 import { loadTurnstile } from "../../lib/turnstile";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
-import { Spinner } from "../ui/kbd";
+import { Reveal, RevealInline, Swap } from "../ui/reveal";
 
 /** What went wrong, said to the claimant; Turnstile's code kept for a report. */
 function problemText(code: string) {
@@ -76,33 +78,44 @@ function TurnstileWidget({
     };
   }, [challenge]);
 
+  // While its script loads, the loading sheen in the widget's place, the
+  // widget's height, fading out as it is drawn: not a spinner (sweep
+  // 2026-11-21). Said by the dialog's status line, which stays.
   return (
-    <div className="grid min-h-[65px] place-items-center">
-      {/* Said by the dialog's status line, which stays. */}
-      {!loaded && (
-        <p
-          aria-hidden="true"
-          className="flex items-center gap-2 text-sm text-ink-3"
-        >
-          <Spinner />
-          {TURNSTILE_WAIT}
-        </p>
-      )}
-      <div ref={box} className="w-full empty:hidden" />
+    <div className="relative min-h-[65px]">
+      <div ref={box} className="w-full" />
+      <AnimatePresence initial={false}>
+        {!loaded && (
+          <motion.div
+            key="wait"
+            aria-hidden="true"
+            exit={{ opacity: 0 }}
+            transition={{ duration: durations.fadeOut, ease }}
+            className="loading-sheen absolute inset-0 grid place-items-center rounded-xl bg-fill text-sm text-ink-3"
+          >
+            {TURNSTILE_WAIT}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 /**
  * Cap: the browser works out its puzzles on its own, a second or two; the
- * bar fills as it goes, the loading sheen sweeping it.
+ * bar fills as it goes, the loading sheen sweeping it. Passed, it stays,
+ * full and still sweeping while the claim goes on, and only its line
+ * changes (sweep 2026-11-21).
  */
 function CapWidget({
   request,
   onProblem,
+  done,
 }: {
   request: HumanCheckRequest;
   onProblem: (code: string) => void;
+  /** Passed: what it says while the claim goes on. */
+  done: string | null;
 }) {
   const [progress, setProgress] = useState(0);
   const latest = useRef({ request, onProblem });
@@ -110,6 +123,9 @@ function CapWidget({
   const { challenge } = request;
 
   useEffect(() => {
+    // Asked again, it stays mounted (passed, it waited): the new puzzles
+    // fill the bar from the start.
+    setProgress(0);
     const controller = new AbortController();
     solveCap(challenge.endpoint ?? "", setProgress, controller.signal).then(
       (token) => latest.current.request.resolve(token),
@@ -130,10 +146,14 @@ function CapWidget({
       <div className="loading-sheen h-2 overflow-hidden rounded-full bg-fill">
         <div
           className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
-          style={{ width: `${Math.max(4, progress)}%` }}
+          style={{ width: `${done ? 100 : Math.max(4, progress)}%` }}
         />
       </div>
-      <p className="text-sm text-ink-3">{CAP_WAIT}</p>
+      <Swap id={done ? "done" : "wait"}>
+        <p className={done ? "text-sm text-ink-2" : "text-sm text-ink-3"}>
+          {done ?? CAP_WAIT}
+        </p>
+      </Swap>
     </div>
   );
 }
@@ -169,8 +189,9 @@ export function HumanCheckDialog() {
   // What it is doing, for screen readers, from one line there as long as
   // the dialog is: a status put in with its words is often not read out
   // (sweep 2026-11-21 I8). A problem is said by the dialog's alert.
+  const passedText = `已通过，正在${verb}…`;
   const said = passed
-    ? `已通过，正在${verb}…`
+    ? passedText
     : !shown || problem
       ? ""
       : shown.challenge.method === "cap"
@@ -193,50 +214,67 @@ export function HumanCheckDialog() {
             : problemText(problem)
           : null
       }
+      // The row stays as it is (sweep 2026-11-21): passed, 取消 waits
+      // with the claim, as busy dialogs' buttons do (it could no longer
+      // stop it); 重试 opens beside it.
       actions={
-        passed ? null : (
-          <>
-            <Button onClick={() => request?.resolve(null)}>取消</Button>
-            {problem && (
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setProblem(null);
-                  setRound((value) => value + 1);
-                }}
-              >
-                重试
-              </Button>
-            )}
-          </>
-        )
+        <>
+          <Button
+            aria-disabled={passed || undefined}
+            onClick={() => {
+              if (!passed) request?.resolve(null);
+            }}
+          >
+            取消
+          </Button>
+          <RevealInline show={Boolean(problem) && !passed}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setProblem(null);
+                setRound((value) => value + 1);
+              }}
+            >
+              重试
+            </Button>
+          </RevealInline>
+        </>
       }
     >
-      {shown?.again && !problem && !passed && (
+      <Reveal show={Boolean(shown?.again) && !problem && !passed}>
         <p className="text-sm text-warning">
           上一次验证没有通过，请再验证一次。
         </p>
-      )}
+      </Reveal>
       {/* 重试 draws a fresh widget. Kept while the dialog fades out. */}
-      {shown && !problem && !passed && shown.challenge.method === "cap" && (
-        <CapWidget key={round} request={shown} onProblem={setProblem} />
+      {shown?.challenge.method === "cap" && (
+        <Reveal show={!problem}>
+          <CapWidget
+            key={round}
+            request={shown}
+            onProblem={setProblem}
+            done={passed ? passedText : null}
+          />
+        </Reveal>
       )}
       {shown && shown.challenge.method !== "cap" && (
-        <TurnstileWidget
-          key={round}
-          request={shown}
-          onProblem={setProblem}
-          onLoaded={() => setLoadedRound(round)}
-        />
-      )}
-      {passed && (
-        <p
-          aria-hidden="true"
-          className="flex items-center gap-2 text-sm text-ink-2"
-        >
-          <Spinner />
-          已通过，正在{verb}…
-        </p>
+        <>
+          <TurnstileWidget
+            key={round}
+            request={shown}
+            onProblem={setProblem}
+            onLoaded={() => setLoadedRound(round)}
+          />
+          {/* Under its own tick, the claim's wait, in the sheen. */}
+          <Reveal show={passed}>
+            <p
+              aria-hidden="true"
+              className="loading-sheen w-fit text-sm text-ink-2"
+            >
+              {passedText}
+            </p>
+          </Reveal>
+        </>
       )}
       <p role="status" className="sr-only">
         {said}

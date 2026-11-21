@@ -1,4 +1,5 @@
 import { type ReactNode, useId } from "react";
+import { Reveal } from "../ui/reveal";
 import { WindowDialog } from "./window-dialog";
 
 /**
@@ -47,11 +48,13 @@ export function ConfirmDialog({
           <p className="text-sm text-ink-2">{text}</p>
         </div>
         {children}
-        {error && (
+        {/* The line opens and closes in place: a failed try, and a retry
+            clearing it, no longer jump the dialog (sweep 2026-11-21). */}
+        <Reveal show={Boolean(error)}>
           <p role="alert" className="text-sm text-danger">
             {error}
           </p>
-        )}
+        </Reveal>
         <div className="flex flex-wrap justify-end gap-2">{actions}</div>
       </div>
     </WindowDialog>

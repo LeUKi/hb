@@ -37,7 +37,7 @@ import {
   PageSection,
   Panel,
 } from "../page/page";
-import { PageLoad, queriesLoad } from "../page/page-state";
+import { Bone, PageLoad, queriesLoad, readFailed } from "../page/page-state";
 import { useSignOut } from "../shell/identity-check";
 import { ldc } from "../tips/tip-card";
 import { Avatar } from "../ui/avatar";
@@ -47,7 +47,7 @@ import { CopyButton } from "../ui/copy-button";
 import { Switch } from "../ui/field";
 import { Fish } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
 import { CredentialLine } from "./merchant-credential";
 import { rankSwitchLabel, rankVisibilityNote } from "./rank-view";
@@ -99,7 +99,12 @@ function useProfileRefresh() {
 export function MeView() {
   const user = useSessionUser();
   if (!user) return null;
-  return <Me user={user} />;
+  return (
+    <>
+      {user.balance && <BalanceRead user={user} />}
+      <Me user={user} />
+    </>
+  );
 }
 
 function Me({ user }: { user: SessionUser }) {
@@ -200,12 +205,31 @@ function Me({ user }: { user: SessionUser }) {
                 {
                   label: "发出的红包",
                   value: `${totals?.initiatedCount ?? 0} 个`,
-                  note:
-                    drafts > 0 ? (
-                      <DraftsLink count={drafts} />
-                    ) : (
-                      `草稿 ${drafts} 个`
-                    ),
+                  // Not 草稿 0 个 before the count is read, nor after a
+                  // failed read: a sheen bar, then the count (sweep
+                  // 2026-11-21).
+                  note: (
+                    <Swap
+                      id={
+                        sent.data ? "count" : sent.isError ? "none" : "loading"
+                      }
+                    >
+                      {sent.data ? (
+                        drafts > 0 ? (
+                          <DraftsLink count={drafts} />
+                        ) : (
+                          `草稿 ${drafts} 个`
+                        )
+                      ) : sent.isError ? null : (
+                        <span
+                          aria-hidden="true"
+                          className="flex h-4 items-center"
+                        >
+                          <Bone className="h-3 w-14" />
+                        </span>
+                      )}
+                    </Swap>
+                  ),
                 },
                 {
                   label: "发出的金额",
@@ -462,11 +486,28 @@ function MeTips({ user }: { user: SessionUser }) {
   );
 }
 
+/**
+ * Starts the 🐟额 read as /me opens, beside the page's own reads: inside
+ * the page it waited for them, a whole round trip (sweep 2026-11-21).
+ */
+function BalanceRead({ user }: { user: SessionUser }) {
+  useBalancePages(user.id, "all");
+  return null;
+}
+
 /** 🐟额, for accounts let in: what is kept, and the way to its page. */
 function MeBalance({ user }: { user: SessionUser }) {
   const { leaveTo } = useOmniboxController();
   const query = useBalancePages(user.id, "all");
   const account = query.data?.pages[0]?.account;
+  // Never a 0 that is not one: a sheen bar until the figures are in, and a
+  // failed read says so, with 重试 (sweep 2026-11-21). A retry shows the
+  // bar again.
+  const state = account
+    ? "account"
+    : readFailed(query) && !query.isFetching
+      ? "failed"
+      : "loading";
   return (
     <PageSection
       title="🐟额"
@@ -478,31 +519,65 @@ function MeBalance({ user }: { user: SessionUser }) {
       }
     >
       <Panel className="p-5">
-        <Facts
-          items={[
-            {
-              label: "可用",
-              value: <Fish minor={account?.availableMinor ?? 0} />,
-            },
-            // As on 🐟额: these only when there is some.
-            ...((account?.withdrawingMinor ?? 0) > 0
-              ? [
-                  {
-                    label: "转出中",
-                    value: <Fish minor={account?.withdrawingMinor ?? 0} />,
-                  },
-                ]
-              : []),
-            ...((account?.unclaimedMinor ?? 0) > 0
-              ? [
-                  {
-                    label: "发出未领",
-                    value: <Fish minor={account?.unclaimedMinor ?? 0} />,
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <Swap id={state}>
+          {account ? (
+            <Facts
+              items={[
+                {
+                  label: "可用",
+                  value: <Fish minor={account.availableMinor} />,
+                },
+                // As on 🐟额: these only when there is some.
+                ...(account.withdrawingMinor > 0
+                  ? [
+                      {
+                        label: "转出中",
+                        value: <Fish minor={account.withdrawingMinor} />,
+                      },
+                    ]
+                  : []),
+                ...(account.unclaimedMinor > 0
+                  ? [
+                      {
+                        label: "发出未领",
+                        value: <Fish minor={account.unclaimedMinor} />,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          ) : state === "failed" ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
+              <span role="alert">🐟额读取失败。</span>
+              <Button
+                size="xs"
+                variant="quiet"
+                className="-my-1"
+                onClick={() => void query.refetch()}
+              >
+                <RotateCw aria-hidden="true" />
+                重试
+              </Button>
+            </div>
+          ) : (
+            <Facts
+              items={[
+                {
+                  label: "可用",
+                  value: (
+                    <span
+                      role="status"
+                      aria-label="正在读取"
+                      className="flex h-7 items-center"
+                    >
+                      <Bone className="h-5 w-24" radius={6} />
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </Swap>
       </Panel>
     </PageSection>
   );

@@ -18,6 +18,7 @@ import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { HongbaoIcon } from "../ui/hongbao-icon";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { UseJudgeButton, useJudgeUsable } from "./code-section";
 
@@ -47,32 +48,37 @@ export function PlayAgain({
   // Tried its code without a share: taken part as well.
   const judgments = useMyJudgments(code && user ? user.id : "", activity.id);
   const judged = (judgments.data?.pages[0]?.total ?? 0) > 0;
-  if (embedded || activity.draft) return null;
-  if (!author && !tookPart && !judged && !view.ended) return null;
+  if (embedded) return null;
+  // Taking part, the first judgment's read and the end all come while the
+  // page is open: the section opens in place rather than in one frame
+  // (sweep 2026-11-21).
+  const shown = !activity.draft && (author || tookPart || judged || view.ended);
   return (
-    <section className="grid gap-2" data-hb-part="play-again">
-      <div className="flex min-h-9 items-center">
-        <h2 className="text-sm font-medium text-ink-3">
-          {author ? "再发一个" : "接着玩"}
-        </h2>
-      </div>
-      <ul className="grid gap-1.5">
-        {author ? (
-          <AuthorLine activity={activity} />
-        ) : code ? (
-          <>
-            <CodeLines activity={activity} />
-            <HongbaoSquareLine />
-          </>
-        ) : (
-          <>
-            <SameLine activity={activity} />
-            <SquareLine />
-            <HongbaoSquareLine />
-          </>
-        )}
-      </ul>
-    </section>
+    <Reveal show={shown}>
+      <section className="grid gap-2" data-hb-part="play-again">
+        <div className="flex min-h-9 items-center">
+          <h2 className="text-sm font-medium text-ink-3">
+            {author ? "再发一个" : "接着玩"}
+          </h2>
+        </div>
+        <ul className="grid gap-1.5">
+          {author ? (
+            <AuthorLine activity={activity} />
+          ) : code ? (
+            <>
+              <CodeLines activity={activity} />
+              <HongbaoSquareLine />
+            </>
+          ) : (
+            <>
+              <SameLine activity={activity} />
+              <SquareLine />
+              <HongbaoSquareLine />
+            </>
+          )}
+        </ul>
+      </section>
+    </Reveal>
   );
 }
 

@@ -24,6 +24,7 @@ import { RefreshContext, RefreshNotice } from "../page/page";
 import { LoadError, usePageLoad } from "../page/page-state";
 import { useWindowInfo } from "../shell/window-info";
 import { HongbaoIcon } from "../ui/hongbao-icon";
+import { Reveal } from "../ui/reveal";
 import { MessageView } from "./message-view";
 
 export function HongbaoView({ id }: { id: string }) {
@@ -163,21 +164,27 @@ function HongbaoPage({
         data-morph-children="move"
       >
         <RefreshNotice />
-        {/* 红包状态 and 动态, under the seal's line (judge-page §11.3). */}
-        {activity.judge && !activity.draft && (
-          <JudgeBoard activity={activity} />
+        {/* 红包状态 and 动态, under the seal's line (judge-page §11.3).
+            Mounted for a 草稿 too, closed: when a 定时开放 one opens on
+            screen, its first 红包状态 opens in place (sweep 2026-11-21). */}
+        {activity.judge && (
+          <JudgeBoard activity={activity} draft={activity.draft} />
         )}
         {hongbao.author && (
           <AuthorTools activity={activity} ended={view.ended} />
         )}
-        {view.afterEndInfo && (
-          <InfoNote
-            title="结束说明"
-            text={view.afterEndInfo}
-            activity={activity}
-            part="end-note"
-          />
-        )}
+        {/* Comes with the end, often while people watch: it opens in
+            place, and what is under it slides (sweep 2026-11-21). */}
+        <Reveal show={Boolean(view.afterEndInfo)}>
+          {view.afterEndInfo && (
+            <InfoNote
+              title="结束说明"
+              text={view.afterEndInfo}
+              activity={activity}
+              part="end-note"
+            />
+          )}
+        </Reveal>
         {/* What a claimant typed and what the code said (05 §3); its
             sender's too once they tried it (自领, docs/self-claim-design.md). */}
         {activity.judge && !activity.draft && (

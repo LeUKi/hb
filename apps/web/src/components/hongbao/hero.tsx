@@ -29,7 +29,7 @@ import { useWindowInfo, type WindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { ShortcutKbd } from "../ui/kbd";
 import { MorphLabel, RollingNumber, RollingText } from "../ui/morph-label";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { countdown, useNow } from "./clock";
 import { CoverData } from "./cover-data";
 import { CoverHead } from "./cover-head";
@@ -93,30 +93,44 @@ function OpeningWatch({ activityId }: { activityId: string }) {
   const mine = watch.data?.openingWatch ?? null;
   return (
     <Reveal show={mine !== null}>
+      {/* A column, as the error's Reveal needs. */}
       <div
-        className="grid justify-items-center gap-1"
+        className="flex flex-col items-center gap-1"
         data-hb-part="opening-watch"
       >
-        {mine?.watching ? (
-          <span className="flex items-center gap-1">
-            <span className="inline-flex items-center gap-1.5 text-sm text-ink-2">
-              <BellRing aria-hidden="true" className="size-4 text-gold-ink" />
-              {watchWords.openingOn}
-            </span>
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => save.mutate(false)}
-            >
-              {watchWords.cancel}
-            </Button>
-          </span>
-        ) : (
-          <Button size="sm" variant="quiet" onClick={() => save.mutate(true)}>
-            <Bell aria-hidden="true" />
-            {watchWords.opening}
-          </Button>
-        )}
+        {/* The tap answers in place: the button and the sentence cross-
+            fade, full width so each stays centred (sweep 2026-11-21). */}
+        <Swap id={mine?.watching ? "on" : "off"} className="w-full">
+          <div className="flex justify-center">
+            {mine?.watching ? (
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center gap-1.5 text-sm text-ink-2">
+                  <BellRing
+                    aria-hidden="true"
+                    className="size-4 text-gold-ink"
+                  />
+                  {watchWords.openingOn}
+                </span>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => save.mutate(false)}
+                >
+                  {watchWords.cancel}
+                </Button>
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => save.mutate(true)}
+              >
+                <Bell aria-hidden="true" />
+                {watchWords.opening}
+              </Button>
+            )}
+          </div>
+        </Swap>
         <Reveal show={save.isError}>
           <p role="alert" className="text-sm text-danger">
             {watchWords.failed}

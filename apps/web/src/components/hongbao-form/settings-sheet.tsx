@@ -73,7 +73,10 @@ export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
 /**
  * One setting: its name said once (a switch or a row names itself), then
  * its control. The first setting of a group carries the group's anchor,
- * which the lines on the steps open the panel at.
+ * which the lines on the steps open the panel at. A flex column, not a
+ * grid: what opens and closes in it (Reveal) takes its gap with it, where
+ * a grid kept the gap until the end and the settings below jumped by it
+ * (sweep 2026-11-21).
  */
 function Setting({
   group,
@@ -96,7 +99,7 @@ function Setting({
       <section
         id={anchor}
         tabIndex={anchor ? -1 : undefined}
-        className="grid gap-3 py-4 outline-none first:pt-1"
+        className="flex flex-col gap-3 py-4 outline-none first:pt-1"
       >
         {children}
       </section>
@@ -105,7 +108,7 @@ function Setting({
     <section
       aria-labelledby={anchor}
       aria-label={anchor ? undefined : title}
-      className="grid gap-3 py-4 first:pt-1"
+      className="flex flex-col gap-3 py-4 first:pt-1"
     >
       <div className="flex items-center justify-between gap-2">
         <h3
@@ -634,21 +637,28 @@ export function SettingsSheet({
                   </div>
                 </Reveal>
                 {/* Read from the page's own headers when the field is left:
-                    a page that refuses frames shows nothing here. */}
-                {pageCheck.data?.embeddable === "no" &&
-                  normalizePageUrl(form.page) === checkedPage && (
-                    <p className="text-sm text-warning">
-                      这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。
-                      <a
-                        href="/help/page#embed"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-1 text-accent-ink underline underline-offset-2"
-                      >
-                        怎么让它能嵌入 ↗
-                      </a>
-                    </p>
-                  )}
+                    a page that refuses frames shows nothing here. The
+                    answer comes a moment after leaving the field, so it
+                    opens in place, the settings below sliding down (sweep
+                    2026-11-21). */}
+                <Reveal
+                  show={
+                    pageCheck.data?.embeddable === "no" &&
+                    normalizePageUrl(form.page) === checkedPage
+                  }
+                >
+                  <p className="text-sm text-warning">
+                    这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。
+                    <a
+                      href="/help/page#embed"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-1 text-accent-ink underline underline-offset-2"
+                    >
+                      怎么让它能嵌入 ↗
+                    </a>
+                  </p>
+                </Reveal>
               </Setting>
             )}
             <Setting>

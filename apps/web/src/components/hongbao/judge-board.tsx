@@ -15,7 +15,7 @@ import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { ListItem, Swap } from "../ui/reveal";
+import { ListItem, Reveal, RevealInline, Swap } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
@@ -85,72 +85,89 @@ function AnnouncementRow({ item }: { item: JudgeAnnouncement }) {
 
 /**
  * Under the seal's line: 红包状态 when the code wrote a sentence for it,
- * 动态 when it wrote any line; nothing for a 红包 with neither.
+ * 动态 when it wrote any line; nothing for a 红包 with neither, nor for a
+ * 草稿. Both arrive by push while people watch (the first judgment, a
+ * 定时开放 one opening), so each opens in place: the board stays mounted,
+ * closed, rather than appearing in one frame (sweep 2026-11-21).
  */
-export function JudgeBoard({ activity }: { activity: BoardActivity }) {
+export function JudgeBoard({
+  activity,
+  draft = false,
+}: {
+  activity: BoardActivity;
+  /** Not open yet: nothing to show, but mounted, to open when it opens. */
+  draft?: boolean;
+}) {
   const router = useRouter();
-  const { view, total, lines } = useJudgeBoard(activity);
-  const summary = view?.summary;
-  if (!summary && total === 0) return null;
+  const board = useJudgeBoard(activity);
+  const summary = draft ? undefined : board.view?.summary;
+  const total = draft ? 0 : board.total;
+  const { lines } = board;
   return (
-    <div className="grid gap-6" data-hb-part="judge-board">
-      {summary && (
-        <section aria-labelledby="judge-state-title">
-          <Squircle radius={14}>
-            <div className="grid gap-1 bg-fill-2 px-4 py-3">
+    <Reveal show={Boolean(summary) || total > 0}>
+      {/* A column, as Reveal needs: a grid keeps the gap of a part that
+          closes until it is gone. */}
+      <div className="flex flex-col gap-6" data-hb-part="judge-board">
+        <Reveal show={Boolean(summary)}>
+          {summary && (
+            <section aria-labelledby="judge-state-title">
+              <Squircle radius={14}>
+                <div className="grid gap-1 bg-fill-2 px-4 py-3">
+                  <h2
+                    id="judge-state-title"
+                    className="text-xs font-medium text-ink-3"
+                  >
+                    红包状态
+                  </h2>
+                  <Swap id={summary}>
+                    <p
+                      className="text-base leading-snug break-words text-ink"
+                      aria-live="polite"
+                    >
+                      {summary}
+                    </p>
+                  </Swap>
+                </div>
+              </Squircle>
+            </section>
+          )}
+        </Reveal>
+        <Reveal show={total > 0}>
+          <section className="grid gap-1" aria-labelledby="announcements-title">
+            <div className="flex min-h-9 items-center justify-between gap-3">
               <h2
-                id="judge-state-title"
-                className="text-xs font-medium text-ink-3"
+                id="announcements-title"
+                className="text-sm font-medium text-ink-3"
               >
-                红包状态
+                动态
               </h2>
-              <Swap id={summary}>
-                <p
-                  className="text-base leading-snug break-words text-ink"
-                  aria-live="polite"
+              <RevealInline show={total > ON_PAGE}>
+                <Button
+                  id="announcements-all"
+                  variant="ghost"
+                  size="xs"
+                  aria-haspopup="dialog"
+                  className="-mr-2 gap-0.5 pr-1.5"
+                  onClick={() =>
+                    switchOverlay(router, { panel: "announcements" })
+                  }
                 >
-                  {summary}
-                </p>
-              </Swap>
+                  全部 {total} 条
+                  <ChevronRight aria-hidden="true" />
+                </Button>
+              </RevealInline>
             </div>
-          </Squircle>
-        </section>
-      )}
-      {total > 0 && (
-        <section className="grid gap-1" aria-labelledby="announcements-title">
-          <div className="flex min-h-9 items-center justify-between gap-3">
-            <h2
-              id="announcements-title"
-              className="text-sm font-medium text-ink-3"
-            >
-              动态
-            </h2>
-            {total > ON_PAGE && (
-              <Button
-                id="announcements-all"
-                variant="ghost"
-                size="xs"
-                aria-haspopup="dialog"
-                className="-mr-2 gap-0.5 pr-1.5"
-                onClick={() =>
-                  switchOverlay(router, { panel: "announcements" })
-                }
-              >
-                全部 {total} 条
-                <ChevronRight aria-hidden="true" />
-              </Button>
-            )}
-          </div>
-          <ul className="flex flex-col">
-            <AnimatePresence initial={false}>
-              {lines.slice(0, ON_PAGE).map((item) => (
-                <AnnouncementRow key={item.n} item={item} />
-              ))}
-            </AnimatePresence>
-          </ul>
-        </section>
-      )}
-    </div>
+            <ul className="flex flex-col">
+              <AnimatePresence initial={false}>
+                {lines.slice(0, ON_PAGE).map((item) => (
+                  <AnnouncementRow key={item.n} item={item} />
+                ))}
+              </AnimatePresence>
+            </ul>
+          </section>
+        </Reveal>
+      </div>
+    </Reveal>
   );
 }
 

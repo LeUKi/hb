@@ -1,5 +1,7 @@
 import { Bell, BellRing } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect } from "react";
+import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import {
   useSetSquareWatch,
   useSquareWatch,
@@ -28,7 +30,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { RollingNumber } from "../ui/morph-label";
-import { Reveal } from "../ui/reveal";
+import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius } from "../ui/squircle";
 
 const filters: readonly SquareFilter[] = ["all", "upcoming", "active", "ended"];
@@ -190,40 +192,61 @@ function SquareWatch() {
   const save = useSetSquareWatch();
   const mine = watch.data?.squareWatch ?? null;
   const waiting = watch.data?.waiting ?? 0;
+  const reduced = useReducedMotionPref();
+  // A tap answers in place (sweep 2026-11-21): the button and the sentence
+  // cross-fade, the count (raised by the same tap) grows in and slides to
+  // where the new control ends, and the error opens on its own line, as on
+  // the 红包 page.
   return (
     <Reveal show={mine !== null || waiting > 0}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
-        {mine &&
-          (mine.watching ? (
-            <span className="flex items-center gap-1">
-              <span className="inline-flex items-center gap-1.5 text-sm text-ink">
-                <BellRing aria-hidden="true" className="size-4 text-gold-ink" />
-                {watchWords.squareOn}
-              </span>
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => save.mutate(false)}
-              >
-                {watchWords.cancel}
-              </Button>
-            </span>
-          ) : (
-            <Button size="sm" variant="quiet" onClick={() => save.mutate(true)}>
-              <Bell aria-hidden="true" />
-              {watchWords.square}
-            </Button>
-          ))}
-        {waiting > 0 && (
-          <span className="text-sm text-ink-3 tabular-nums">
-            <RollingNumber value={waiting} /> {watchWords.waiting}
-          </span>
-        )}
-        {save.isError && (
-          <span role="alert" className="text-sm text-danger">
+      <div className="flex flex-col gap-1 px-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {mine && (
+            <Swap id={mine.watching ? "on" : "off"}>
+              {mine.watching ? (
+                <span className="flex items-center gap-1">
+                  <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+                    <BellRing
+                      aria-hidden="true"
+                      className="size-4 text-gold-ink"
+                    />
+                    {watchWords.squareOn}
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => save.mutate(false)}
+                  >
+                    {watchWords.cancel}
+                  </Button>
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => save.mutate(true)}
+                >
+                  <Bell aria-hidden="true" />
+                  {watchWords.square}
+                </Button>
+              )}
+            </Swap>
+          )}
+          <RevealInline show={waiting > 0}>
+            <motion.span
+              layout={reduced ? false : "position"}
+              transition={{ duration: durations.slide, ease }}
+              className="text-sm whitespace-nowrap text-ink-3 tabular-nums"
+            >
+              <RollingNumber value={waiting} /> {watchWords.waiting}
+            </motion.span>
+          </RevealInline>
+        </div>
+        <Reveal show={save.isError}>
+          <p role="alert" className="text-sm text-danger">
             {watchWords.failed}
-          </span>
-        )}
+          </p>
+        </Reveal>
       </div>
     </Reveal>
   );
