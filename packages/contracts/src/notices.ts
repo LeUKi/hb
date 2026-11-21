@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PAYOUT_FUNDS_WAIT_DAYS } from "./payments";
 
 // 私信通知 (docs/notification-design.md): mail to a user's 社区 隐私邮箱,
 // which the 社区 turns into a private message from the 站长's account.
@@ -55,7 +56,7 @@ export const NOTICE_SWITCHES: {
     id: "payout_failed",
     group: "claim",
     title: "领到的奖励发放失败",
-    hint: "你领到的奖励因红包作者的 Credit 余额不足，自动重试 3 天仍未成功，发放已终止。",
+    hint: `你领到的奖励因红包作者的 Credit 余额不足，自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，发放已终止。`,
   },
   {
     id: "payout_stuck",
@@ -67,7 +68,7 @@ export const NOTICE_SWITCHES: {
     id: "payout_stopped",
     group: "send",
     title: "奖励发放已终止",
-    hint: "你的 Credit 余额不足持续 3 天，未发放的奖励终止发放，用这个商户发的进行中红包结束。",
+    hint: `你的 Credit 余额不足持续 ${PAYOUT_FUNDS_WAIT_DAYS} 天，未发放的奖励终止发放，用这个商户发的进行中红包结束。`,
   },
   {
     id: "schedule_failed",

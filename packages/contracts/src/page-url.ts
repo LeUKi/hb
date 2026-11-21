@@ -7,6 +7,14 @@ export const PAGE_URL_MAX_CHARACTERS = 500;
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
+/**
+ * This site's hosts, with their subdomains: hb.lafi.sh, and meme.442224.xyz,
+ * the one it moved from, still on the web Worker to send everyone on here
+ * (apps/web/src/lib/site-move.ts), so a page there is this site's too
+ * (sweep 2026-11-21; scripts/test/site-hosts.test.ts holds the lists to it).
+ */
+const SITE_HOSTS = ["hb.lafi.sh", "meme.442224.xyz"];
+
 /** Why this is not a page a 红包 may carry, or null (empty: none). */
 export function pageUrlProblem(value: string): string | null {
   const text = value.trim();
@@ -30,7 +38,7 @@ export function pageUrlProblem(value: string): string | null {
     return "要写完整的域名（比如 example.com）";
   if (host === "linux.do" || host.endsWith(".linux.do"))
     return "不能用 linux.do 和它的子域名";
-  if (host === "hb.lafi.sh" || host.endsWith(".hb.lafi.sh"))
+  if (SITE_HOSTS.some((site) => host === site || host.endsWith(`.${site}`)))
     return "不能用本站的地址";
   return null;
 }

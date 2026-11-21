@@ -1,14 +1,16 @@
-import type {
-  AccountPaymentDetail,
-  AccountPaymentFilter,
-  AccountPaymentList,
-  MerchantPaymentDetail,
-  PaymentAttemptView,
+import {
+  type AccountPaymentDetail,
+  type AccountPaymentFilter,
+  type AccountPaymentList,
+  type MerchantPaymentDetail,
+  PAYOUT_FUNDS_WAIT_DAYS,
+  type PaymentAttemptView,
 } from "@hb/contracts";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMerchantIdentity } from "./merchants";
 import {
   duplicateProbeActive,
+  failedPaymentNote,
   paymentAttemptOutcome,
   paymentReason,
 } from "./payment-display";
@@ -197,10 +199,8 @@ export function paymentSteps(
       steps.push({
         at: latest,
         title: "发放失败",
-        detail:
-          payment.reason === "funds"
-            ? "商户余额不足，自动重试 3 天仍未成功，发放已终止"
-            : "收款人没有 LINUX DO Credit 账户，重新发送期限已过，发放已终止",
+        // The detail page's words, as a step: no closing mark.
+        detail: failedPaymentNote(payment).replace(/。$/u, ""),
         tone: "stop",
       });
       break;
@@ -219,7 +219,7 @@ export function paymentSteps(
               detail: needsMerchantKey(payment)
                 ? "商户密钥更新、检查通过后自动继续"
                 : payment.reason === "funds"
-                  ? "商户余额不足，补足后自动继续；3 天内仍不足则终止"
+                  ? `商户余额不足，补足后自动继续；${PAYOUT_FUNDS_WAIT_DAYS} 天内仍不足则终止`
                   : "条件满足后自动继续",
               tone: "now",
             },

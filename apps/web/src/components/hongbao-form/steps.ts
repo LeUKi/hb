@@ -48,9 +48,6 @@ export function stepsOf(mode: FormState["mode"], withParams = true) {
   ].filter((step): step is (typeof steps)[number] => step !== undefined);
 }
 
-export const stepIndex = (step: StepId, mode?: FormState["mode"]) =>
-  stepsOf(mode ?? "fixed").findIndex((item) => item.id === step);
-
 /** The 更多设置 panel's groups, in the order they are shown. */
 export type SettingsGroup =
   | "split"

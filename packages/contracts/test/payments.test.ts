@@ -12,6 +12,9 @@ import {
   ldcRewardCount,
   ldcTotalMinor,
   moneySchema,
+  NOTICE_SWITCHES,
+  PAYOUT_FUNDS_WAIT_DAYS,
+  PAYOUT_FUNDS_WAIT_MS,
   paymentLabel,
   type RandomLdcMoney,
   sameLdcMoney,
@@ -55,6 +58,18 @@ describe("payment channel contracts", () => {
     expect(paymentLabel("simulation", "confirmed")).toBe("模拟发放已确认");
     expect(paymentLabel("real", "confirmed")).toBe("已发放");
     expect(paymentLabel("real", "reconciling")).toBe("结果核对中");
+  });
+  // 余额不足终止 (docs/payout-stop-design.md §1): the 私信 switches name the
+  // wait in the days it is counted in, none of their own (sweep 2026-11-21).
+  it("names the funds wait in its own days", () => {
+    expect(PAYOUT_FUNDS_WAIT_MS).toBe(PAYOUT_FUNDS_WAIT_DAYS * 86_400_000);
+    for (const id of ["payout_failed", "payout_stopped"]) {
+      const hint = NOTICE_SWITCHES.find((item) => item.id === id)?.hint ?? "";
+      const days = [...hint.matchAll(/(\d+)\s*天/gu)].map((match) =>
+        Number(match[1]),
+      );
+      expect(days).toEqual([PAYOUT_FUNDS_WAIT_DAYS]);
+    }
   });
 });
 

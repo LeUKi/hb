@@ -349,11 +349,13 @@ export const PAYMENT_LABELS: Record<PaymentState, string> = {
 
 /**
  * A merchant whose Credit balance ran short: its payments are retried this
- * long from the first 余额不足 after its last payment through; then the
- * ones never sent are stopped (failed, reason "funds") and its open 红包
- * end (docs/payout-stop-design.md §1).
+ * many days from its oldest reward not yet paid; then the ones never sent
+ * are stopped (failed, reason "funds") and its open 红包 end
+ * (docs/payout-stop-design.md §1). Every sentence that names the wait reads
+ * its days from here, none writes its own “3 天” (sweep 2026-11-21, A3).
  */
-export const PAYOUT_FUNDS_WAIT_MS = 3 * 86_400_000;
+export const PAYOUT_FUNDS_WAIT_DAYS = 3;
+export const PAYOUT_FUNDS_WAIT_MS = PAYOUT_FUNDS_WAIT_DAYS * 86_400_000;
 
 export function paymentLabel(mode: PaymentMode, status: PaymentState): string {
   if (status === "confirmed") {

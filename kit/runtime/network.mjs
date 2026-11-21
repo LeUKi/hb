@@ -21,8 +21,12 @@ export const NETWORK_LIMITS = Object.freeze({
 
 export const NETWORK_METHODS = Object.freeze(["GET", "POST"]);
 
-/** Hosts no 红包 may ask: LINUX DO's and this site's own. */
-const CLOSED_HOSTS = ["linux.do", "hb.lafi.sh"];
+/**
+ * Hosts no 红包 may ask: LINUX DO's and this site's own, meme.442224.xyz
+ * too, which the site moved from but which still sends every request on to
+ * it.
+ */
+const CLOSED_HOSTS = ["linux.do", "hb.lafi.sh", "meme.442224.xyz"];
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 /** An encoded slash or backslash: decoded by a server, it leaves the prefix. */

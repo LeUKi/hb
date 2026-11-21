@@ -22,7 +22,7 @@ import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import {
-  FUNDS_STOPPED_NOTE,
+  failedPaymentNote,
   fundsWaitNote,
   paymentReason,
   quotaNote,
@@ -83,12 +83,12 @@ function PaymentStatus({ state }: { state: PaymentState }) {
 }
 
 // The claimant's side of a payment that is held up, when the server gives
-// no reason (or one with no words of its own).
+// no reason (or one with no words of its own). 发放失败's are in
+// failedPaymentNote, beside the sender's.
 const paymentReasons: Partial<Record<PaymentState, string>> = {
   reconciling: "发放结果尚未明确，系统正在核对原订单。",
   waiting: "奖励暂未发放，系统将自动重试。",
   attention: "发放已暂停，等待红包作者处理。",
-  failed: "本次发放已终止，奖励没有发出。",
 };
 
 /**
@@ -114,17 +114,17 @@ function PaymentNote({
         : null
       : resending || payment.reason === "resend"
         ? "正在重新发送，稍等十几秒。"
-        : payment.reason === "quota"
-          ? quotaNote(payment.quotaResumeAt)
-          : payment.reason === "funds"
-            ? payment.status === "failed"
-              ? FUNDS_STOPPED_NOTE
-              : payment.fundsStopAt
+        : payment.status === "failed"
+          ? failedPaymentNote(payment, "claimant")
+          : payment.reason === "quota"
+            ? quotaNote(payment.quotaResumeAt)
+            : payment.reason === "funds"
+              ? payment.fundsStopAt
                 ? fundsWaitNote(payment.fundsStopAt)
                 : paymentReason("funds", null)
-            : ((payment.reason && claimantReasons.has(payment.reason)
-                ? paymentReason(payment.reason, null)
-                : null) ?? paymentReasons[payment.status]);
+              : ((payment.reason && claimantReasons.has(payment.reason)
+                  ? paymentReason(payment.reason, null)
+                  : null) ?? paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
 }
 

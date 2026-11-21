@@ -92,15 +92,6 @@ export async function simulateQuery(
   return order && order.visibleAt <= Date.now() ? order : null;
 }
 
-export function matchesOrder(task: PaymentTaskRow, order: SimulationOrder) {
-  return (
-    order.clientId === task.clientId &&
-    order.businessNo === task.businessNo &&
-    order.recipientId === task.recipientId &&
-    order.amountMinor === task.amountMinor
-  );
-}
-
 function evidenceFromOrder(order: SimulationOrder, source: "send" | "query") {
   return {
     source,

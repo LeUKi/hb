@@ -1,7 +1,7 @@
 // What each 私信通知 says (docs/notification-design.md §6): a subject that
 // says it all, a few short lines, one link, and where to turn it off.
 
-import { encodeActivityEmoji } from "@hb/contracts";
+import { encodeActivityEmoji, PAYOUT_FUNDS_WAIT_DAYS } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { bodyOf, nameOf, subjectOf, timeOf } from "./text";
 
@@ -108,7 +108,7 @@ export function payoutStopped(
     subject: subjectOf("奖励发放已终止：Credit 余额不足"),
     body: bodyOf(
       [
-        `你的 Credit 余额不足已持续 3 天，${which}中 ${input.payments} 笔奖励（共 ${input.amount}）的发放已终止，不再重试。用这个商户发的进行中红包已结束。`,
+        `你的 Credit 余额不足已持续 ${PAYOUT_FUNDS_WAIT_DAYS} 天，${which}中 ${input.payments} 笔奖励（共 ${input.amount}）的发放已终止，不再重试。用这个商户发的进行中红包已结束。`,
       ],
       { label: "付款记录", url: `${originOf(env)}/payments` },
       off(env),
@@ -129,7 +129,7 @@ export function payoutFailed(
     subject: subjectOf(`${name}的奖励发放失败`),
     body: bodyOf(
       [
-        `你在${name}领到的 ${input.amount}，因红包作者的 Credit 余额不足，系统自动重试 3 天仍未成功，发放已终止。`,
+        `你在${name}领到的 ${input.amount}，因红包作者的 Credit 余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，发放已终止。`,
       ],
       { label: "查看红包", url: hongbaoUrl(env, input.activityId) },
       off(env),

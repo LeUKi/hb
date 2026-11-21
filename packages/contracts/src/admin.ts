@@ -21,9 +21,6 @@ export type AdminLifecycle = z.infer<typeof adminLifecycleSchema>;
 
 export const adminRewardTypeSchema = z.enum(["all", "ldc"]);
 export type AdminRewardType = z.infer<typeof adminRewardTypeSchema>;
-export const adminActivityRewardTypeSchema = adminRewardTypeSchema.exclude([
-  "all",
-]);
 export const adminPaymentModeSchema = z.enum(["all", "simulation", "real"]);
 export type AdminPaymentMode = z.infer<typeof adminPaymentModeSchema>;
 export const adminPaymentStatusSchema = z.enum([
@@ -69,13 +66,53 @@ export const ADMIN_USER_LEVELS: readonly AdminUserLevel[] = [
   4,
   "unknown",
 ];
-export const adminDrawAnomalySchema = z.enum(["overdue", "unpublished"]);
 export const adminPaymentAnomalySchema = z.enum([
   "unknown",
   "attention",
   "overdue",
   "undelivered",
 ]);
+
+/**
+ * When the 站长's checks count something as late (redesign/07 §10): the
+ * API counts and filters by these, and the pages name them from them
+ * (sweep 2026-11-21: the pages wrote 一小时, 十分钟 and 十五分钟 by hand).
+ */
+export const ADMIN_DIAGNOSTIC_THRESHOLDS = {
+  /** A payment neither confirmed nor failed this long after it was made. */
+  paymentWaitMs: 60 * 60 * 1000,
+  /** A draw still waiting or settling this long after it closed. */
+  drawWaitMs: 10 * 60 * 1000,
+  /** A payment task not delivered this long after it was written. */
+  outboxWaitMs: 10 * 60 * 1000,
+  /** A maintenance job not updated for this long (a failed one at once). */
+  maintenanceStaleMs: 15 * 60 * 1000,
+} as const;
+
+const DIGITS = "零一二三四五六七八九";
+
+/** 1 to 99 as a count in words: 一, 两, 十, 十五, 二十. */
+function countWords(count: number) {
+  if (count === 2) return "两";
+  const tens = Math.floor(count / 10);
+  const ones = count % 10;
+  return `${tens > 1 ? DIGITS.charAt(tens) : ""}${tens > 0 ? "十" : ""}${ones > 0 ? DIGITS.charAt(ones) : ""}`;
+}
+
+/**
+ * A threshold as the 站长's pages write it, in whole hours, else minutes:
+ * 一小时, 十分钟, 十五分钟 (past 99 of them, in figures).
+ */
+export function adminThresholdText(ms: number) {
+  const minutes = Math.round(ms / 60_000);
+  const hours = minutes > 0 && minutes % 60 === 0;
+  const count = hours ? minutes / 60 : minutes;
+  const unit = hours ? "小时" : "分钟";
+  return count >= 1 && count <= 99
+    ? `${countWords(count)}${unit}`
+    : `${count} ${unit}`;
+}
+
 export const adminAuditTypeSchema = z.enum([
   "all",
   "attempt_rate_limits",

@@ -776,6 +776,8 @@ describe("network", () => {
       ["https://localhost/", "要写完整的域名"],
       ["https://connect.linux.do/", "不能请求 linux.do 和它的子域名"],
       ["https://hb.lafi.sh/api/", "不能请求 hb.lafi.sh 和它的子域名"],
+      // The host the site moved from sends every request on to it.
+      ["https://meme.442224.xyz/api/", "不能请求 meme.442224.xyz 和它的子域名"],
       ["https://api.example.com:8443/", "不能带端口"],
       ["https://u:p@api.example.com/", "不能带用户名和密码"],
       ["https://api.example.com/?x=1", "不能带 ? 和 #"],

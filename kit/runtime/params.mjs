@@ -1233,6 +1233,12 @@ export function hongbaoRuleProblems(rules, { count, total, minEach }) {
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
+ * The site's hosts, with their subdomains: hb.lafi.sh, and meme.442224.xyz,
+ * which it moved from but which still sends every request on to it.
+ */
+const SITE_HOSTS = ["hb.lafi.sh", "meme.442224.xyz"];
+
+/**
  * Why `meta.page` is not a page a 红包 may carry (docs/judge-page-design.md
  * §4): the 附带网页's rules, as packages/contracts/src/page-url.ts has them
  * for the form and the API (a test holds the two together).
@@ -1259,7 +1265,7 @@ export function pageProblem(value) {
     return "要写完整的域名（比如 example.com）";
   if (host === "linux.do" || host.endsWith(".linux.do"))
     return "不能用 linux.do 和它的子域名";
-  if (host === "hb.lafi.sh" || host.endsWith(".hb.lafi.sh"))
+  if (SITE_HOSTS.some((site) => host === site || host.endsWith(`.${site}`)))
     return "不能用本站的地址";
   return null;
 }

@@ -35,10 +35,6 @@ export function activityStatusCaseSql(
     ELSE 'active' END`;
 }
 
-export function activityStatusSql(now = Date.now()): SQL<ActivityStatus> {
-  return sql.raw(activityStatusCaseSql(now)) as SQL<ActivityStatus>;
-}
-
 /** An open draw stays in the active list until its results are published. */
 export function activityListStatusCaseSql(
   now = Date.now(),

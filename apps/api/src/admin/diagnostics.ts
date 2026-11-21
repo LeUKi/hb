@@ -1,9 +1,6 @@
-export const ADMIN_DIAGNOSTIC_THRESHOLDS = {
-  paymentWaitMs: 60 * 60 * 1000,
-  drawWaitMs: 10 * 60 * 1000,
-  outboxWaitMs: 10 * 60 * 1000,
-  maintenanceStaleMs: 15 * 60 * 1000,
-} as const;
+// The thresholds are the contracts', so the 站长's pages name the same ones
+// (sweep 2026-11-21).
+import { ADMIN_DIAGNOSTIC_THRESHOLDS } from "@hb/contracts";
 
 export const ADMIN_RUNTIME_BLOCKERS = {
   appEnv: "APP_ENV",

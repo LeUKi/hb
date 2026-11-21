@@ -1,5 +1,6 @@
 import {
   type ActivitySummary,
+  ADMIN_DIAGNOSTIC_THRESHOLDS,
   type AdminActivityDetail,
   type AdminActivityListItem,
   type AdminAuditEntry,
@@ -63,11 +64,7 @@ import {
 } from "../runtime/controls";
 import { adminStopCard, adminTipsOf } from "../tips/cards";
 import { isAdministrator } from "./authorization";
-import {
-  ADMIN_DIAGNOSTIC_THRESHOLDS,
-  ADMIN_RUNTIME_BLOCKERS,
-  isAdminMaintenanceStale,
-} from "./diagnostics";
+import { ADMIN_RUNTIME_BLOCKERS, isAdminMaintenanceStale } from "./diagnostics";
 
 type BindValue = string | number | null;
 type Cursor = { createdAt: number; id: string };

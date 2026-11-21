@@ -1,7 +1,8 @@
-// The help docs' code examples, coloured (ui/code-block.tsx): the same
-// parsers as the 判定器 editor, but no editor — each token gets a tok-…
-// class and styles.css colours them, light and dark. Loaded on demand, so
-// only a page with an example carries it.
+// The help docs' code examples, coloured (Block in
+// components/views/help-api-view.tsx): the same parsers as the 判定器
+// editor, but no editor — each token gets a tok-… class and styles.css
+// colours them, light and dark. Loaded on demand, so only a page with an
+// example carries it.
 import { javascriptLanguage } from "@codemirror/lang-javascript";
 import { jsonLanguage } from "@codemirror/lang-json";
 import { classHighlighter, highlightCode } from "@lezer/highlight";

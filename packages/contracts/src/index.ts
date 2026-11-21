@@ -1185,9 +1185,6 @@ export type ActivityError = {
   humanCheck?: HumanCheckChallenge;
 };
 
-export const DEFAULT_CLAIM_LIMIT = 10;
-export const CLAIM_WINDOW_MS = 60_000;
-
 export const passwordSolveSchema = z.strictObject({
   submissionId: z.uuid(),
   password: passwordSchema,
@@ -1448,11 +1445,6 @@ export type GlobalRedemptionResult = DiscoveryList & {
   selectedActivityId?: string;
   claimResult?: ClaimResult;
 };
-export const globalRedemptionDiscoverySchema = globalRedemptionSchema;
-export type GlobalRedemptionDiscoveryResult = Omit<
-  GlobalRedemptionResult,
-  "claimResult"
->;
 export type AttemptStatisticsRow = {
   password: string;
   attempts: number;

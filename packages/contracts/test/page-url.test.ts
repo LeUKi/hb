@@ -47,11 +47,20 @@ describe("附带网页: the address", () => {
       "不能用 linux.do 和它的子域名",
     );
     expect(pageUrlProblem("https://hb.lafi.sh/🧧/x")).toBe("不能用本站的地址");
+    // The host the site moved from still sends every request on here
+    // (apps/web/src/lib/site-move.ts): its pages are the site's too.
+    expect(pageUrlProblem("https://meme.442224.xyz/☕/x?embed")).toBe(
+      "不能用本站的地址",
+    );
+    expect(pageUrlProblem("https://staging.meme.442224.xyz/")).toBe(
+      "不能用本站的地址",
+    );
     expect(pageUrlProblem(`https://example.com/${"a".repeat(500)}`)).toBe(
       "最多 500 个字",
     );
     // Only those exact sites: a name that merely ends the same way is fine.
     expect(pageUrlProblem("https://notlinux.do/")).toBeNull();
+    expect(pageUrlProblem("https://notmeme.442224.xyz/")).toBeNull();
   });
 
   it("is checked by the activity schema, absent or empty meaning none", () => {
@@ -93,6 +102,9 @@ describe("附带网页: a 判定器's meta.page", () => {
     "https://connect.linux.do",
     "https://hb.lafi.sh/help",
     "https://x.hb.lafi.sh",
+    "https://meme.442224.xyz/☕/x?embed",
+    "https://staging.meme.442224.xyz",
+    "https://notmeme.442224.xyz",
     `https://example.com/${"a".repeat(500)}`,
   ];
 

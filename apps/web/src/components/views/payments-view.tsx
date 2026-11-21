@@ -11,7 +11,7 @@ import { useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { activityPath } from "../../lib/activity-route";
 import { paymentTone } from "../../lib/hongbao-text";
-import { paymentReason, UNSENT_REASON } from "../../lib/payment-display";
+import { failedPaymentNote, paymentReason } from "../../lib/payment-display";
 import { useAccountPaymentPages } from "../../lib/payments";
 import { sentRecordOf } from "../../lib/records";
 import { clockSeconds } from "../../lib/roster-time";
@@ -84,9 +84,7 @@ function PaymentRow({
             </span>
             <span className="truncate text-xs text-ink-3">
               {payment.status === "failed"
-                ? payment.reason === "funds"
-                  ? "商户余额不足，自动重试 3 天仍未成功，本次发放已终止。"
-                  : UNSENT_REASON
+                ? failedPaymentNote(payment)
                 : payment.status !== "confirmed" && payment.reason
                   ? paymentReason(payment.reason)
                   : `${clockSeconds(Date.parse(payment.createdAt))} ${verb}`}

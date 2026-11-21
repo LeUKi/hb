@@ -1,5 +1,7 @@
 import {
+  ADMIN_DIAGNOSTIC_THRESHOLDS,
   type AdminRuntimeFlag,
+  adminThresholdText,
   type AdminOverview as Overview,
   PAYMENT_LABELS,
   type PaymentState,
@@ -56,9 +58,14 @@ type Check = {
   };
 };
 
+/** A threshold in words: 一小时, 十分钟, 十五分钟. */
+const thresholdText = (key: keyof typeof ADMIN_DIAGNOSTIC_THRESHOLDS) =>
+  adminThresholdText(ADMIN_DIAGNOSTIC_THRESHOLDS[key]);
+
 /**
- * The checks, with production's thresholds (the server counts them), and
- * 🐟额's two: 转出 held or slow, 转入 with a flag or a refused key.
+ * The checks, with production's thresholds (the server counts them, the
+ * labels name them from the same numbers), and 🐟额's two: 转出 held or
+ * slow, 转入 with a flag or a refused key.
  */
 function checksOf(overview: Overview): Check[] {
   const { warnings } = overview;
@@ -80,28 +87,28 @@ function checksOf(overview: Overview): Check[] {
     },
     {
       key: "overdue",
-      label: "付款等待超过一小时",
+      label: `付款等待超过${thresholdText("paymentWaitMs")}`,
       count: warnings.stalePayments,
       severe: false,
       link: { to: "/admin/payments", search: { anomaly: "overdue" } },
     },
     {
       key: "draw",
-      label: "开奖等待超过十分钟",
+      label: `开奖等待超过${thresholdText("drawWaitMs")}`,
       count: warnings.drawBacklog,
       severe: false,
       link: { to: "/admin/activities", search: { anomaly: "draw" } },
     },
     {
       key: "undelivered",
-      label: "任务未投递超过十分钟",
+      label: `任务未投递超过${thresholdText("outboxWaitMs")}`,
       count: warnings.undeliveredPaymentTasksOverdue,
       severe: false,
       link: { to: "/admin/payments", search: { anomaly: "undelivered" } },
     },
     {
       key: "maintenance",
-      label: "维护失败或超过十五分钟未更新",
+      label: `维护失败或超过${thresholdText("maintenanceStaleMs")}未更新`,
       count: warnings.staleMaintenance,
       severe: true,
     },
@@ -216,7 +223,7 @@ function Maintenance({ overview }: { overview: Overview }) {
             ? { text: "失败", tone: "text-danger" }
             : run.stale
               ? {
-                  text: `${run.status === "running" ? "运行中" : "已完成"} · 超过十五分钟未更新`,
+                  text: `${run.status === "running" ? "运行中" : "已完成"} · 超过${thresholdText("maintenanceStaleMs")}未更新`,
                   tone: "text-warning",
                 }
               : run.status === "running"

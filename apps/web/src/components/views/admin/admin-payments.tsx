@@ -1,6 +1,8 @@
 import {
+  ADMIN_DIAGNOSTIC_THRESHOLDS,
   type AdminPaymentDetailResponse,
   type AdminPaymentListItem,
+  adminThresholdText,
   normalizeActivityUuid,
   PAYMENT_LABELS,
   type PaymentState,
@@ -50,11 +52,18 @@ type StateFilter = "all" | PaymentState;
 type ModeFilter = "all" | "real" | "simulation";
 
 // The overview's checks that are not a state of their own (异常待处理 is:
-// the state filter above them).
+// the state filter above them), named from the thresholds the server
+// filters by.
 const anomalies = [
   { key: "unknown", label: "结果未知" },
-  { key: "overdue", label: "等待超过一小时" },
-  { key: "undelivered", label: "未投递超过十分钟" },
+  {
+    key: "overdue",
+    label: `等待超过${adminThresholdText(ADMIN_DIAGNOSTIC_THRESHOLDS.paymentWaitMs)}`,
+  },
+  {
+    key: "undelivered",
+    label: `未投递超过${adminThresholdText(ADMIN_DIAGNOSTIC_THRESHOLDS.outboxWaitMs)}`,
+  },
 ] as const;
 
 const states = [

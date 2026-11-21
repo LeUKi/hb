@@ -1,16 +1,35 @@
 import {
   type MerchantPaymentDetail,
   PAYMENT_RESEND_MINUTES,
+  PAYOUT_FUNDS_WAIT_DAYS,
+  type PaymentView,
 } from "@hb/contracts";
 import { openingLabel } from "./roster-time";
 
-/** 发放失败, on a claim's payment: its recipient had no Credit account. */
-export const UNSENT_REASON =
-  "收款人没有 LINUX DO Credit 账户，重新发送期限已过，本次发放已终止。";
-
-/** 发放失败 for funds: three days short (docs/payout-stop-design.md §3). */
-export const FUNDS_STOPPED_NOTE =
-  "红包作者的 LDC 商户余额不足，系统自动重试 3 天仍未成功，本次奖励发放已终止。";
+/**
+ * 发放失败, and why: one sentence for each page that shows it (sweep
+ * 2026-11-21, A3; docs/payout-stop-design.md §3, §4). A claim's payment
+ * ends so in two ways (migration 0070's trigger): its merchant short of
+ * funds through the whole wait, or no Credit account by the end of its
+ * 重新发送. The claimant reads of the 红包作者's merchant and their own
+ * account; the sender and the 站长, of the 商户 and the 收款人.
+ */
+export function failedPaymentNote(
+  payment: Pick<PaymentView, "reason">,
+  reader: "claimant" | "sender" = "sender",
+) {
+  const claimant = reader === "claimant";
+  if (payment.reason === "funds")
+    return claimant
+      ? `红包作者的 LDC 商户余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，本次奖励发放已终止。`
+      : `商户余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，本次发放已终止。`;
+  if (payment.reason === "recipient")
+    return claimant
+      ? "LINUX DO Credit 站未找到你的账户，重新发送期限已过，本次奖励发放已终止。"
+      : "收款人没有 LINUX DO Credit 账户，重新发送期限已过，本次发放已终止。";
+  // Any other reason: that it is over, without guessing why.
+  return "本次发放已终止，奖励没有发出。";
+}
 
 /** 发放暂停 for funds: until when it is retried (payout-stop §3). */
 export function fundsWaitNote(stopAt: string) {

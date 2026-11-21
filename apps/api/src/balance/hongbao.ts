@@ -31,16 +31,10 @@ export async function availableMinor(env: ApiBindings, userId: string) {
   return row?.available_minor ?? 0;
 }
 
-/** May this person choose 🐟额 for a 红包 at all: the switch, and some 🐟. */
-export async function canFundHongbao(env: ApiBindings, userId: string) {
-  const [settings, available] = await Promise.all([
-    readBalanceSettings(env),
-    availableMinor(env, userId),
-  ]);
-  return settings.hongbaoEnabled && available >= 1;
-}
-
-/** Making or switching a draft to 🐟额 needs the same as choosing it. */
+/**
+ * Making or switching a draft to 🐟额 needs the switch on and some 🐟
+ * 可用; the whole amount is checked at opening (balanceOpeningBlocked).
+ */
 export async function requireBalanceFunding(env: ApiBindings, userId: string) {
   const [settings, available] = await Promise.all([
     readBalanceSettings(env),
