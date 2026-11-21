@@ -211,9 +211,6 @@ function PickDialog({
             </Squircle>
           ))
         )}
-        <p className="px-1 text-xs text-ink-3">
-          领到的积分进领取者在那个网站的账户；发出的从你在那边的账户扣，要先填你在那边的密钥。
-        </p>
         {/* For a site that might issue its own (the user, 2026-11-21): the
             issuer's guide, in a new tab so this 红包 stays as it is. */}
         <div className="mt-2 grid gap-1 border-line border-t px-1 pt-3">

@@ -204,13 +204,18 @@ export function ViewerCurve({
           </>
         )}
       </div>
-      <p className="flex justify-between text-xs text-ink-3 tabular-nums">
-        <span>{clockLabel(first)}</span>
-        <span>{live !== null ? "现在" : clockLabel(last)}</span>
-      </p>
-      <p className="min-h-5 text-xs text-ink-2 tabular-nums" aria-hidden="true">
-        {current ? readout(current) : "指向或按住曲线，看那一刻有几人。"}
-      </p>
+      {/* Pointed at, the moment's reading takes the time line's place (no
+          hint line under it: the user, 2026-11-21). */}
+      {current ? (
+        <p className="text-xs text-ink-2 tabular-nums" aria-hidden="true">
+          {readout(current)}
+        </p>
+      ) : (
+        <p className="flex justify-between text-xs text-ink-3 tabular-nums">
+          <span>{clockLabel(first)}</span>
+          <span>{live !== null ? "现在" : clockLabel(last)}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -400,9 +400,6 @@ function CardBody({
           className="loading-sheen h-[7.75rem] overflow-hidden rounded-[10px] bg-fill"
         />
       )}
-      <p className="text-xs text-ink-3">
-        只数登录后开着这一页的人，同一人开几个标签页也只算一个。
-      </p>
     </div>
   );
 }
