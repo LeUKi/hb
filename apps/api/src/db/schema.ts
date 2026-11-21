@@ -3005,6 +3005,15 @@ export const tips = sqliteTable(
       .on(table.transferId)
       .where(sql`${table.transferId} IS NOT NULL`),
     index("tips_card_done_idx").on(table.cardId, table.status, table.doneAt),
+    // A card's numbers and 总榜 read from the index alone (sweep 2026-11-21).
+    index("tips_card_people_idx").on(
+      table.cardId,
+      table.status,
+      table.flag,
+      table.tipperId,
+      table.amountMinor,
+      table.doneAt,
+    ),
     index("tips_owner_time_idx").on(table.ownerId, table.createdAt, table.id),
     index("tips_tipper_time_idx").on(table.tipperId, table.createdAt, table.id),
     index("tips_status_time_idx").on(table.status, table.createdAt),

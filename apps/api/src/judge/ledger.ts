@@ -773,11 +773,13 @@ export async function ledgerJudgmentStatements(
       now,
       activityId,
     ),
+    // 动态: the last line plus one, as activity_announcements_insert_guard
+    // reads it, instead of counting every line (sweep 2026-11-21).
     ...(reading.announce !== undefined
       ? [
           env.DB.prepare(`INSERT INTO activity_announcements
             (activity_id, n, user_id, submission_row_id, text, created_at)
-            VALUES (?1, (SELECT COUNT(*) FROM activity_announcements WHERE activity_id = ?1), ?2, ?3, ?4, ?5)`).bind(
+            VALUES (?1, (SELECT COALESCE(MAX(n) + 1, 0) FROM activity_announcements WHERE activity_id = ?1), ?2, ?3, ?4, ?5)`).bind(
             activityId,
             userId,
             rowId,

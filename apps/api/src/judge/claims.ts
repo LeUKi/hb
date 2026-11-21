@@ -382,8 +382,11 @@ export async function claimByCode(
           username: string;
           level: number | null;
         }>(),
+      // Attempts run 0…N-1 without gaps (the 0055 guard): the next is the
+      // last plus one, one index seek instead of counting every row of one's
+      // own (sweep 2026-11-21).
       env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
+        "SELECT COALESCE(MAX(attempt) + 1, 0) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
       )
         .bind(activityId, userId)
         .first<number>("count"),
@@ -631,12 +634,14 @@ export async function claimByCode(
       submission.now,
       activityId,
     ),
-    // 动态: its line, after the ones before (numbered from 0).
+    // 动态: its line, after the ones before (numbered from 0): the last
+    // plus one, the same expression as activity_announcements_insert_guard,
+    // read from the key instead of counting every line (sweep 2026-11-21).
     ...(reading.announce !== undefined
       ? [
           env.DB.prepare(`INSERT INTO activity_announcements
             (activity_id, n, user_id, submission_row_id, text, created_at)
-            VALUES (?1, (SELECT COUNT(*) FROM activity_announcements WHERE activity_id = ?1), ?2, ?3, ?4, ?5)`).bind(
+            VALUES (?1, (SELECT COALESCE(MAX(n) + 1, 0) FROM activity_announcements WHERE activity_id = ?1), ?2, ?3, ?4, ?5)`).bind(
             activityId,
             userId,
             rowId,

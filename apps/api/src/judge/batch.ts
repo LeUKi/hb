@@ -181,8 +181,11 @@ export async function judgeBatch(
         username: string;
         level: number | null;
       }>(),
-    env.DB.prepare(`SELECT user_id AS userId, COUNT(*) AS count FROM code_judgments
-        WHERE activity_id = ? AND user_id IN (SELECT value FROM json_each(?)) GROUP BY user_id`)
+    // Each one's next attempt: the last plus one (the 0055 guard), one index
+    // seek per person; a GROUP BY read every judgment they made. One with
+    // none comes back as 0, as attemptsOf reads a missing one (sweep 2026-11-21).
+    env.DB.prepare(`SELECT value AS userId, (SELECT COALESCE(MAX(attempt) + 1, 0) FROM code_judgments
+        WHERE activity_id = ?1 AND user_id = value) AS count FROM json_each(?2)`)
       .bind(activityId, JSON.stringify(users))
       .all<{ userId: string; count: number }>(),
     Promise.all(users.map((userId) => ownPart(env, activityId, userId))),

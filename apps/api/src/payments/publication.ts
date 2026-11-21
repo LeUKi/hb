@@ -84,5 +84,5 @@ export const publicationMessages = {
   POINTS_NOT_ONLINE: "这个积分现在没有上线，草稿已保存。",
   POINTS_KEY_NEEDED: "还没填你在那个网站的密钥，草稿已保存。",
   JUDGE_NOT_FOR_POINTS:
-    "三方积分红包要用声明了支持三方积分（meta.points）的判定器，草稿已保存。",
+    "这个判定器不能用在三方积分红包上，换成 LDC 商户或🐟额，或者换一个判定器，草稿已保存。",
 } as const;

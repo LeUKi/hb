@@ -8,8 +8,11 @@
 -- others' moves on one (apps/api/src/judge/mine.ts).
 -- Q4: 🐟额 明细's 红包 lines: shares received, and 发红包/退回 read from the
 -- account's own 🐟额红包 locks (apps/api/src/balance/ledger.ts).
+-- Q3: a 打赏卡's numbers and its 总榜 on every card and embed view, from the
+-- index alone instead of one tips row per tip (apps/api/src/tips/cards.ts).
 CREATE INDEX `activity_registrations_activity_time_idx` ON `activity_registrations` (`activity_id`,`registered_at`,`id`);--> statement-breakpoint
 CREATE INDEX `balance_entries_hongbao_idx` ON `balance_entries` (`user_id`,`created_at`,`id`) WHERE "balance_entries"."kind" = 'hongbao';--> statement-breakpoint
 CREATE INDEX `balance_locks_activity_user_idx` ON `balance_locks` (`user_id`) WHERE "balance_locks"."purpose" = 'activity';--> statement-breakpoint
 CREATE INDEX `code_judgment_moves_others_idx` ON `code_judgment_moves` (`activity_id`,`user_id`,`created_at`,`position`,`submission_row_id`) WHERE "code_judgment_moves"."position" > 0;--> statement-breakpoint
-CREATE INDEX `code_judgments_user_time_idx` ON `code_judgments` (`activity_id`,`user_id`,`judged_at`,`submission_row_id`);
+CREATE INDEX `code_judgments_user_time_idx` ON `code_judgments` (`activity_id`,`user_id`,`judged_at`,`submission_row_id`);--> statement-breakpoint
+CREATE INDEX `tips_card_people_idx` ON `tips` (`card_id`,`status`,`flag`,`tipper_id`,`amount_minor`,`done_at`);

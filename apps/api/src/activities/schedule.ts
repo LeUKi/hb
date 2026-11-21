@@ -40,6 +40,7 @@ import {
   configuration,
   getManagedActivity,
   holdsBalance,
+  judgeNotForPoints,
   openActivity,
   prepareActivityOpening,
 } from "./service";
@@ -189,6 +190,9 @@ async function scheduleBlocked(
   if (row.participationMode === "code") {
     const blocked = await codeOpeningBlocked(env, row);
     if (blocked && blocked !== "CODE_HONGBAO_DAILY_LIMIT") return blocked;
+    // 三方积分 needs a 判定器 that counts in 最小单位 (§10): refused now,
+    // not at its time (sweep 2026-11-21).
+    if (await judgeNotForPoints(env, row)) return "JUDGE_NOT_FOR_POINTS";
   }
   return undefined;
 }

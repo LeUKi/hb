@@ -10463,6 +10463,18 @@
           "columns": ["card_id", "status", "done_at"],
           "isUnique": false
         },
+        "tips_card_people_idx": {
+          "name": "tips_card_people_idx",
+          "columns": [
+            "card_id",
+            "status",
+            "flag",
+            "tipper_id",
+            "amount_minor",
+            "done_at"
+          ],
+          "isUnique": false
+        },
         "tips_owner_time_idx": {
           "name": "tips_owner_time_idx",
           "columns": ["owner_id", "created_at", "id"],
