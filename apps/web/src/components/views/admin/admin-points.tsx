@@ -7,6 +7,7 @@
 // level down with its way back. Read on 刷新; the chosen row is in the
 // address (?id=), the filters too (?status=, ?anomaly=).
 import { type AmountUnit, POINTS_LIMITS } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Clock } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -16,6 +17,7 @@ import {
   type AdminPointsRow,
   failedShare,
   type PayoutQuality,
+  pointsKeys,
   statusWords,
   useAdminPoints,
   useAdminPointsActions,
@@ -31,6 +33,7 @@ import { ConfirmDialog } from "../../shell/confirm-dialog";
 import { useSearchChoice, useSearchStep } from "../../shell/use-search-choice";
 import { Button } from "../../ui/button";
 import { Field, Segmented, Switch, TextInput } from "../../ui/field";
+import { MorphLabel } from "../../ui/morph-label";
 import { PersonName } from "../../ui/person";
 import { PointsCapsule } from "../../ui/points-mark";
 import { radius, Squircle } from "../../ui/squircle";
@@ -39,6 +42,7 @@ import { statusTones } from "../points-view";
 import {
   AdminFrame,
   countLine,
+  DetailRetry,
   DetailRows,
   FilterChip,
   ListDetail,
@@ -121,7 +125,6 @@ const pausedByWords = (row: AdminPointsRow) =>
 export function AdminPoints({ search }: { search: AdminSearch }) {
   const navigate = useNavigate({ from: "/admin/points" });
   const query = useAdminPoints();
-  const actions = useAdminPointsActions();
   const [status, setStatus] = useSearchChoice<StatusFilter>("status", "all", [
     "all",
     "reviewing",
@@ -138,6 +141,8 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
     "online",
   ]);
   const selected = useSearchStep("id");
+  // The open detail's 用量 reads again on 刷新 too (sweep 2026-11-21 ADM-8).
+  const usage = useAdminPointsUsage(selected.value ?? "");
   const anomaly =
     search.anomaly === "payouts" ||
     search.anomaly === "changes" ||
@@ -207,22 +212,11 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
     },
   ];
   return (
-    <PageLoad load={listLoad(query)} area frame>
+    <PageLoad load={listLoad(query, selected.value ? usage : null)} area frame>
       <AdminFrame>
         {data && (
           <Panel className="p-4">
-            <Switch
-              checked={data.settings.enabled}
-              label="三方积分红包"
-              description="关着时不能新建、开放三方积分红包；已经开放的照常领取和发放。"
-              disabled={actions.settings.isPending}
-              onChange={(enabled) =>
-                actions.settings.mutate({
-                  enabled,
-                  version: data.settings.version,
-                })
-              }
-            />
+            <SiteSwitch settings={data.settings} />
           </Panel>
         )}
         <PageSection title="需要留意">
@@ -301,6 +295,73 @@ export function AdminPoints({ search }: { search: AdminSearch }) {
         />
       </AdminFrame>
     </PageLoad>
+  );
+}
+
+type SiteSettings = NonNullable<
+  ReturnType<typeof useAdminPoints>["data"]
+>["settings"];
+
+/**
+ * 三方积分红包, the site's switch, as the other instant switches (私信通知,
+ * 排行榜): the knob moves at once, goes back if the save fails and says so
+ * under it. The saved settings, with their new version, go straight into
+ * the list's read, so a second tap neither waits for the reload nor meets
+ * a 409 over its own first one; a 409 from elsewhere reads the latest
+ * (sweep 2026-11-21 ADM-3).
+ */
+function SiteSwitch({ settings }: { settings: SiteSettings }) {
+  const save = useAdminPointsActions().settings;
+  const queryClient = useQueryClient();
+  const [moving, setMoving] = useState<boolean | null>(null);
+  const [problem, setProblem] = useState<"failed" | "conflict" | null>(null);
+  return (
+    <Switch
+      checked={moving ?? settings.enabled}
+      label="三方积分红包"
+      description={
+        <MorphLabel fit={false}>
+          {problem === "conflict"
+            ? "刚在别处改过，已经按最新的显示，请再看一下。"
+            : problem === "failed"
+              ? "没有保存，请稍后再试。"
+              : "关着时不能新建、开放三方积分红包；已经开放的照常领取和发放。"}
+        </MorphLabel>
+      }
+      onChange={(enabled) => {
+        if (save.isPending) return;
+        setMoving(enabled);
+        setProblem(null);
+        save.mutate(
+          { enabled, version: settings.version },
+          {
+            onSuccess: (reply) => {
+              // PATCH answers { settings } (points/routes.ts).
+              const saved = (reply as { settings?: SiteSettings } | null)
+                ?.settings;
+              if (saved)
+                queryClient.setQueryData<{ settings: SiteSettings }>(
+                  pointsKeys.admin,
+                  (data) => data && { ...data, settings: saved },
+                );
+              setMoving(null);
+            },
+            onError: (failure) => {
+              setMoving(null);
+              const conflict =
+                failure instanceof ActivityRequestError &&
+                failure.status === 409;
+              setProblem(conflict ? "conflict" : "failed");
+              if (conflict)
+                void queryClient.invalidateQueries({
+                  queryKey: pointsKeys.admin,
+                  exact: true,
+                });
+            },
+          },
+        );
+      }}
+    />
   );
 }
 
@@ -566,6 +627,11 @@ function Review({ row }: { row: AdminPointsRow }) {
   const actions = useAdminPointsActions();
   const [note, setNote] = useState("");
   const error = actions.review.error;
+  // Which answer is on its way: only that button says so, not 通过 for a
+  // 退回 (sweep 2026-11-21 ADM-5).
+  const sending = actions.review.isPending
+    ? actions.review.variables?.approve
+    : undefined;
   return (
     // A fill box: the callout's squircle (04 §8; sweep 2026-11-21).
     <Squircle radius={radius.callout}>
@@ -603,7 +669,7 @@ function Review({ row }: { row: AdminPointsRow }) {
               });
             }}
           >
-            {actions.review.isPending ? "正在提交…" : "通过，上线"}
+            {sending === true ? "正在提交…" : "通过，上线"}
           </Button>
           <Button
             size="sm"
@@ -617,7 +683,7 @@ function Review({ row }: { row: AdminPointsRow }) {
               });
             }}
           >
-            退回
+            {sending === false ? "正在退回…" : "退回"}
           </Button>
         </div>
       </div>
@@ -696,7 +762,14 @@ function Actions({ row }: { row: AdminPointsRow }) {
         }
         actions={
           <>
-            <Button onClick={() => setPausing(false)}>返回</Button>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setPausing(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="primary"
               aria-disabled={busy || undefined}
@@ -742,7 +815,14 @@ function Actions({ row }: { row: AdminPointsRow }) {
         }
         actions={
           <>
-            <Button onClick={() => setResuming(false)}>返回</Button>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setResuming(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="primary"
               aria-disabled={busy || undefined}
@@ -774,7 +854,14 @@ function Actions({ row }: { row: AdminPointsRow }) {
         }
         actions={
           <>
-            <Button onClick={() => setRetiring(false)}>返回</Button>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setRetiring(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="danger"
               aria-disabled={busy || undefined}
@@ -802,8 +889,8 @@ function Actions({ row }: { row: AdminPointsRow }) {
 function Usage({ id, unit }: { id: string; unit: AmountUnit }) {
   const query = useAdminPointsUsage(id);
   const data = query.data;
-  if (query.isError)
-    return <p className="text-sm text-ink-3">用量没有读到，刷新再试。</p>;
+  // 用量读取失败。 with 重试 (07 §1; sweep 2026-11-21 ADM-8).
+  if (query.isError && !data) return <DetailRetry query={query} what="用量" />;
   if (!data)
     return <p className="loading-sheen text-sm text-ink-3">正在读用量和走势</p>;
   const { usage, trend } = data;
@@ -878,7 +965,14 @@ function RateValue({ row }: { row: AdminPointsRow }) {
         }
         actions={
           <>
-            <Button onClick={() => setOpen(false)}>返回</Button>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setOpen(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="primary"
               aria-disabled={busy || !valid || rate === row.rate || undefined}

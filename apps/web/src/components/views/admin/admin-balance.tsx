@@ -1,8 +1,12 @@
-import { BALANCE_LIMITS, type WithdrawalWait } from "@hb/contracts";
+import {
+  BALANCE_LIMITS,
+  type BalanceAdjustmentInput,
+  type WithdrawalWait,
+} from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import {
   type AdminTopupItem,
   type AdminTransferList,
@@ -20,15 +24,26 @@ import {
   useAdminWithdrawals,
   useBalanceAdmin,
   useBalanceOverview,
+  useRereadShownBalance,
 } from "../../../lib/admin-balance";
-import { useInviteePreview } from "../../../lib/balance";
+import {
+  useInviteePreview,
+  useOnceRequest,
+  writeFailureText,
+} from "../../../lib/balance";
+import { cn } from "../../../lib/cn";
 import { clockLabel, clockSeconds } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
 import type { AdminSearch } from "../../../router";
 import { transferStatusText } from "../../balance/transfer";
 import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import { Callout, EmptyNote, Facts, Panel } from "../../page/page";
-import { PageLoad, ResultLoad, resultOf } from "../../page/page-state";
+import {
+  type Loadable,
+  PageLoad,
+  ResultLoad,
+  resultOf,
+} from "../../page/page-state";
 import { ConfirmDialog } from "../../shell/confirm-dialog";
 import { WindowDialog } from "../../shell/window-dialog";
 import { Avatar } from "../../ui/avatar";
@@ -186,8 +201,17 @@ function WithdrawalRowBody({ item }: { item: AdminWithdrawalItem }) {
   );
 }
 
-/** One 转出: only to read; the payment queue does the rest. */
-function WithdrawalDetail({ id }: { id: string }) {
+/**
+ * One 转出: only to read; the payment queue does the rest. `paymentLink`:
+ * the way to its payment, left out where that payment is already open.
+ */
+function WithdrawalDetail({
+  id,
+  paymentLink = true,
+}: {
+  id: string;
+  paymentLink?: boolean;
+}) {
   const detail = useAdminWithdrawal(id);
   const navigate = useNavigate();
   return (
@@ -309,7 +333,7 @@ function WithdrawalDetail({ id }: { id: string }) {
                 </ul>
               )}
             </section>
-            {data.payment && (
+            {paymentLink && data.payment && (
               <div>
                 <MoreLink
                   href={`/admin/payments?q=${data.payment.id}`}
@@ -328,6 +352,63 @@ function WithdrawalDetail({ id }: { id: string }) {
         );
       }}
     </DetailPart>
+  );
+}
+
+/**
+ * “看这笔转出 ›”: one 转出 in a dialog over where the 站长 is (a payment's
+ * detail, a 转账 to Credit), stacked over a detail shown as a dialog, in
+ * place of a jump to the 转出 list to look for it there (sweep 2026-11-21
+ * ADM-6).
+ */
+export function WithdrawalButton({
+  id,
+  fromPayment = false,
+  className,
+}: {
+  id: string;
+  /** Opened from its payment: no way back to that payment inside. */
+  fromPayment?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const titleId = useId();
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="xs"
+        aria-haspopup="dialog"
+        className={cn("shrink-0 gap-0.5 pr-1.5", className)}
+        onClick={() => setOpen(true)}
+      >
+        看这笔转出
+        <ChevronRight aria-hidden="true" />
+      </Button>
+      <WindowDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy={titleId}
+      >
+        <div className="grid gap-4 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id={titleId} className="text-lg font-semibold text-ink">
+              转出详情
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="关闭"
+              className="-mr-2 shrink-0"
+              onClick={() => setOpen(false)}
+            >
+              <X />
+            </Button>
+          </div>
+          <WithdrawalDetail id={id} paymentLink={!fromPayment} />
+        </div>
+      </WindowDialog>
+    </>
   );
 }
 
@@ -521,7 +602,14 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
             error={error}
             actions={
               <>
-                <Button onClick={() => setConfirming(false)}>返回</Button>
+                <Button
+                  aria-disabled={busy === "confirm" || undefined}
+                  onClick={() => {
+                    if (busy !== "confirm") setConfirming(false);
+                  }}
+                >
+                  返回
+                </Button>
                 <Button
                   variant="primary"
                   aria-disabled={!reason.trim() || busy !== null || undefined}
@@ -538,7 +626,7 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
             <Field
               label="原因"
               htmlFor={reasonId}
-              hint="记在这笔转入上，管理员都能看到。"
+              hint="记在这笔转入的详情里，只有站长能看到。"
             >
               <TextInput
                 id={reasonId}
@@ -916,9 +1004,12 @@ function TransferDetail({ item }: { item: AdminTransferItem }) {
                     </StatusChip>
                     <span className="text-xs text-ink-3">
                       {item.status === "not_sent"
-                        ? "转出失败，🐟 已退回。原因见“转出”里的这一笔。"
-                        : "和转出一样排队发放，经过在“转出”里的这一笔。"}
+                        ? `转出失败，🐟 已退回。原因${item.withdrawalId ? "在这笔转出里" : "见“转出”里的这一笔"}。`
+                        : `和转出一样排队发放，经过${item.withdrawalId ? "在这笔转出里" : "在“转出”里的这一笔"}。`}
                     </span>
+                    {item.withdrawalId && (
+                      <WithdrawalButton id={item.withdrawalId} />
+                    )}
                   </span>
                 ),
               },
@@ -1000,9 +1091,20 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
   const navigate = useNavigate({ from: "/admin/balance" });
   const view = viewOf(search.status);
   const overview = useBalanceOverview();
+  const rereadShown = useRereadShownBalance();
   const [invitesOpen, setInvitesOpen] = useState(false);
+  // 刷新 reads the overview and the list and detail on screen, not the
+  // overview alone under an “已刷新” (sweep 2026-11-21 ADM-2).
+  const base = listLoad(overview);
+  const load: Loadable = {
+    ...base,
+    refetch: async () => {
+      const [ok] = await Promise.all([base.refetch(), rereadShown()]);
+      return ok;
+    },
+  };
   return (
-    <PageLoad load={listLoad(overview)} area frame>
+    <PageLoad load={load} area frame>
       <AdminFrame>
         <Overview />
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1549,7 +1651,14 @@ function InviteLinks({
         error={stopError}
         actions={
           <>
-            <Button onClick={() => setStopOpen(false)}>返回</Button>
+            <Button
+              aria-disabled={stopBusy || undefined}
+              onClick={() => {
+                if (!stopBusy) setStopOpen(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="danger"
               onClick={() => void stop()}
@@ -1650,7 +1759,10 @@ export function UserBalance({ userId }: { userId: string }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestId = useRef(crypto.randomUUID());
+  // One request per adjustment, kept across a close while its outcome is
+  // unknown: the same one again is the very same request, never a second
+  // 补加 or 扣回 (lib/balance.ts; sweep 2026-11-21 ADM-4).
+  const once = useOnceRequest<BalanceAdjustmentInput>();
   const ids = { amount: useId(), reason: useId(), stopReason: useId() };
   const [stopping, setStopping] = useState<{ id: string; name: string } | null>(
     null,
@@ -1677,21 +1789,22 @@ export function UserBalance({ userId }: { userId: string }) {
     /^\d{1,7}(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0;
   const ok = amountOk && reason.trim().length > 0;
   const self = identity.user?.id === userId;
+  const ask = { direction, amount: amount.trim(), reason: reason.trim() };
   const submit = async () => {
     if (!ok || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await actions.adjust(userId, {
-        requestId: requestId.current,
-        direction,
-        amount: amount.trim(),
-        reason: reason.trim(),
-      });
+      await actions.adjust(userId, once.input(ask, {}));
+      once.settle();
       setOpen(false);
     } catch (failure) {
+      once.settle(failure);
       setError(
-        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+        writeFailureText(
+          failure,
+          "没有收到结果，这笔调整可能已经记上了。看一下上面的🐟额和明细，或者再按一次，不会重复记。",
+        ),
       );
     } finally {
       setBusy(false);
@@ -1863,7 +1976,14 @@ export function UserBalance({ userId }: { userId: string }) {
         error={stopError}
         actions={
           <>
-            <Button onClick={() => setStopping(null)}>返回</Button>
+            <Button
+              aria-disabled={stopBusy || undefined}
+              onClick={() => {
+                if (!stopBusy) setStopping(null);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant="danger"
               aria-disabled={!stopReason.trim() || stopBusy || undefined}
@@ -1887,11 +2007,14 @@ export function UserBalance({ userId }: { userId: string }) {
         open={open}
         onClose={() => setOpen(false)}
         onClosed={() => {
+          // One whose outcome is unknown stays as it was, with what was
+          // said about it: opened again, it shows, and goes as the same
+          // request. Anything else starts afresh (sweep 2026-11-21 ADM-4).
+          if (once.unsure(ask)) return;
           setDirection("add");
           setAmount("");
           setReason("");
           setError(null);
-          requestId.current = crypto.randomUUID();
         }}
         busy={busy}
         title="调整🐟额"
@@ -1899,7 +2022,14 @@ export function UserBalance({ userId }: { userId: string }) {
         error={error}
         actions={
           <>
-            <Button onClick={() => setOpen(false)}>返回</Button>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setOpen(false);
+              }}
+            >
+              返回
+            </Button>
             <Button
               variant={direction === "deduct" ? "danger" : "primary"}
               aria-disabled={!ok || busy || undefined}

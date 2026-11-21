@@ -117,9 +117,33 @@ const key = (identity: string, ...rest: unknown[]) =>
 
 export function useBalanceOverview() {
   const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: key(identity, "overview"),
-    queryFn: ({ signal }) => read<BalanceOverview>("overview", signal),
+    queryFn: async ({ signal }) => {
+      const before = queryClient.getQueryData<BalanceOverview>(
+        key(identity, "overview"),
+      );
+      const data = await read<BalanceOverview>("overview", signal);
+      // 待处理's count moved on a poll: the lists it counts read again too
+      // (the one on screen now, the rest when shown), so the count and the
+      // rows under it agree, with no second poll (sweep 2026-11-21 ADM-2).
+      if (
+        before &&
+        (before.attention.topups !== data.attention.topups ||
+          before.attention.withdrawals !== data.attention.withdrawals)
+      ) {
+        void queryClient.invalidateQueries(
+          { queryKey: key(identity, "attention") },
+          { cancelRefetch: false },
+        );
+        void queryClient.invalidateQueries(
+          { queryKey: key(identity, "topups", "attention") },
+          { cancelRefetch: false },
+        );
+      }
+      return data;
+    },
     retry: false,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -189,14 +213,53 @@ export function useAdminWithdrawals() {
 /** One 转出: read again every 10 s while 发放中. */
 export function useAdminWithdrawal(id: string) {
   const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: key(identity, "withdrawal", id),
-    queryFn: ({ signal }) =>
-      read<AdminWithdrawalDetail>(`withdrawals/${id}`, signal),
+    queryFn: async ({ signal }) => {
+      const before = queryClient.getQueryData<AdminWithdrawalDetail>(
+        key(identity, "withdrawal", id),
+      );
+      const data = await read<AdminWithdrawalDetail>(
+        `withdrawals/${id}`,
+        signal,
+      );
+      // It moved on (已发放, 转出失败): the lists that show its row, and the
+      // counts, read again, so the row beside this detail says the same
+      // (sweep 2026-11-21 ADM-2).
+      if (before && before.withdrawal.status !== data.withdrawal.status)
+        for (const part of [
+          "withdrawals",
+          "attention",
+          "transfers",
+          "overview",
+        ])
+          void queryClient.invalidateQueries(
+            { queryKey: key(identity, part) },
+            { cancelRefetch: false },
+          );
+      return data;
+    },
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.withdrawal.status === "sending" ? 10_000 : false,
   });
+}
+
+/**
+ * 刷新 on the 🐟额 tab reads, besides the overview, whatever else of it is
+ * on screen: the list shown (every batch loaded so far, 07 §1) and an open
+ * detail. Hidden lists cost nothing (sweep 2026-11-21 ADM-2).
+ */
+export function useRereadShownBalance() {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  return () =>
+    queryClient.refetchQueries({
+      queryKey: key(identity),
+      type: "active",
+      predicate: (query) => query.queryKey[3] !== "overview",
+    });
 }
 
 /** 受邀的人: everyone who may 转入, read when the modal shows them. */
@@ -338,17 +401,28 @@ export function useBalanceAdmin(csrfToken: string) {
       return result;
     },
     adjust: async (userId: string, input: BalanceAdjustmentInput) => {
-      const result = await write<{ adjustment: unknown }>(
-        "POST",
-        `users/${userId}/adjustments`,
-        csrfToken,
-        input,
-      );
-      await Promise.all([
-        refresh("user", userId),
-        refresh("adjustments"),
-        refresh("overview"),
-      ]);
+      const reread = () =>
+        Promise.all([
+          refresh("user", userId),
+          refresh("adjustments"),
+          refresh("overview"),
+        ]);
+      let result: { adjustment: unknown };
+      try {
+        result = await write<{ adjustment: unknown }>(
+          "POST",
+          `users/${userId}/adjustments`,
+          csrfToken,
+          input,
+        );
+      } catch (error) {
+        // Also after a failure: one with no answer may have been written
+        // all the same, and 可用 and 明细 then show it (sweep 2026-11-21
+        // ADM-4). Not waited for: the error shows at once.
+        void reread();
+        throw error;
+      }
+      await reread();
       return result;
     },
     createInviteLink: async (input: CreateInviteLinkInput) => {

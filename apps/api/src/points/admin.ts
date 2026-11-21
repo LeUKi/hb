@@ -343,7 +343,8 @@ export async function requeryPayout(
     throw new ActivityError(
       409,
       "POINTS_PAYOUT_MOVED",
-      "这一笔已经变了，请刷新",
+      // A sentence that says what to do (07 §1; sweep 2026-11-21 ADM-1).
+      "这笔发放的状态刚刚变了，刷新后再看。",
     );
   await wakePointsPayment(env, id);
 }
@@ -378,6 +379,7 @@ export async function failPayout(
     throw new ActivityError(
       409,
       "POINTS_PAYOUT_MOVED",
-      "这一笔已经变了，请刷新",
+      // A sentence that says what to do (07 §1; sweep 2026-11-21 ADM-1).
+      "这笔发放的状态刚刚变了，刷新后再看。",
     );
 }

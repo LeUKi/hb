@@ -404,10 +404,12 @@ function NoticeStats() {
           <Panel className="grid gap-4 p-5">
             <Facts
               items={[
+                // 私信's words, as 我的 · 私信通知 says them: 发放 is for
+                // rewards (payout-stop-design §5; sweep 2026-11-21 ADM-10).
                 { label: "发出", value: stats.today.sent },
-                { label: "正在发", value: stats.today.queued },
+                { label: "发送中", value: stats.today.queued },
                 { label: "跳过", value: stats.today.skipped },
-                { label: "发放失败", value: stats.today.failed },
+                { label: "发送失败", value: stats.today.failed },
               ]}
             />
             {stats.failures.length > 0 && (

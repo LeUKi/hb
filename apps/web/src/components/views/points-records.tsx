@@ -47,6 +47,7 @@ import {
   queryLoad,
   ResultError,
 } from "../page/page-state";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { useSearchChoice, useSearchStep } from "../shell/use-search-choice";
 import { Button } from "../ui/button";
 import { PersonName } from "../ui/person";
@@ -676,44 +677,100 @@ function PayoutRow({
         {payout.tradeNo ? ` · 对方单号 ${payout.tradeNo}` : ""}
         {payout.attempts > 1 ? ` · 调用了 ${payout.attempts} 次` : ""}
       </span>
-      {admin && payout.status === "unknown" && <SettleButtons id={payout.id} />}
+      {admin && payout.status === "unknown" && (
+        <SettleButtons payout={payout} unit={unit} />
+      )}
     </li>
   );
 }
 
-/** The 站长's two answers to a payout with no known result. */
-function SettleButtons({ id }: { id: string }) {
+/**
+ * The 站长's two answers to a payout with no known result. 标为发放失败
+ * cannot be undone (nothing queries or resends it after, and the claimant
+ * never gets it), so it asks first, saying which payout; each button says
+ * what it is doing while it runs (sweep 2026-11-21 ADM-1).
+ */
+function SettleButtons({
+  payout,
+  unit,
+}: {
+  payout: PayoutRecord;
+  unit: AmountUnit;
+}) {
   const actions = useAdminPointsActions();
-  const error = actions.payout.error;
+  const [failing, setFailing] = useState(false);
   const busy = actions.payout.isPending;
+  // Which of the two is on its way: only that one says so.
+  const running = busy ? actions.payout.variables?.action : undefined;
+  const error = actions.payout.error;
+  const errorText = error
+    ? error instanceof ActivityRequestError
+      ? error.message
+      : "没有完成，请稍后再试。"
+    : null;
   return (
     <span className="flex flex-wrap items-center gap-2 pt-1">
       <Button
         size="xs"
         aria-disabled={busy || undefined}
         onClick={() => {
-          if (!busy) actions.payout.mutate({ id, action: "requery" });
+          if (!busy)
+            actions.payout.mutate({ id: payout.id, action: "requery" });
         }}
       >
-        再查一次
+        {running === "requery" ? "正在查单…" : "再查一次"}
       </Button>
       <Button
         size="xs"
         variant="quiet"
+        aria-haspopup="dialog"
         aria-disabled={busy || undefined}
         onClick={() => {
-          if (!busy) actions.payout.mutate({ id, action: "fail" });
+          if (busy) return;
+          actions.payout.reset();
+          setFailing(true);
         }}
       >
         标为发放失败
       </Button>
-      {error && (
+      {errorText && !failing && (
         <span role="alert" className="text-xs text-danger">
-          {error instanceof ActivityRequestError
-            ? error.message
-            : "没有完成，请稍后再试。"}
+          {errorText}
         </span>
       )}
+      <ConfirmDialog
+        open={failing}
+        onClose={() => setFailing(false)}
+        busy={busy}
+        title="标为发放失败？"
+        text={`${amountText(payout.amountMinor, unit)} 给 @${payout.recipientUsername}（本站单号 ${payout.outTradeNo}）。标了以后不再查单，也不会重发，领取者拿不到这份；发放记录里写“站长标为发放失败”。不能撤回。`}
+        error={failing ? errorText : null}
+        actions={
+          <>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) setFailing(false);
+              }}
+            >
+              返回
+            </Button>
+            <Button
+              variant="danger"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                actions.payout.mutate(
+                  { id: payout.id, action: "fail" },
+                  { onSuccess: () => setFailing(false) },
+                );
+              }}
+            >
+              {running === "fail" ? "正在标记…" : "标为发放失败"}
+            </Button>
+          </>
+        }
+      />
     </span>
   );
 }

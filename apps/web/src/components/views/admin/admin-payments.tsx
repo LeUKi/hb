@@ -35,6 +35,7 @@ import { CopyButton } from "../../ui/copy-button";
 import { Segmented } from "../../ui/field";
 import { StatusChip } from "../../ui/status-chip";
 import { Attempts, StateNote, Timeline } from "../payment-view";
+import { WithdrawalButton } from "./admin-balance";
 import {
   AdminFrame,
   countLine,
@@ -45,6 +46,7 @@ import {
   listLoad,
   SearchBox,
   ToggleChip,
+  useOpenSearched,
   useSettled,
 } from "./admin-frame";
 
@@ -169,18 +171,28 @@ function DetailBody({
               平台应用把🐟额转回这个人自己的 Credit
               账户。发放中、已发放或转出失败，以🐟额里的这笔转出为准。
             </span>
-            <MoreLink
-              className="-my-1"
-              href="/admin/balance?status=withdrawals"
-              onGo={() =>
-                void navigate({
-                  to: "/admin/balance",
-                  search: { status: "withdrawals" },
-                })
-              }
-            >
-              在🐟额里看
-            </MoreLink>
+            {/* That 转出 itself, over this detail; the list only when the
+                payment does not name it (sweep 2026-11-21 ADM-6). */}
+            {payment.withdrawalId ? (
+              <WithdrawalButton
+                id={payment.withdrawalId}
+                fromPayment
+                className="-my-1"
+              />
+            ) : (
+              <MoreLink
+                className="-my-1"
+                href="/admin/balance?status=withdrawals"
+                onGo={() =>
+                  void navigate({
+                    to: "/admin/balance",
+                    search: { status: "withdrawals" },
+                  })
+                }
+              >
+                在🐟额里看
+              </MoreLink>
+            )}
           </span>
         </Callout>
       ) : !view ? (
@@ -412,6 +424,15 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
   const payments = pages
     .flatMap((page) => page.items)
     .filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+  // A payment named in the address (在付款里看 from a 转出) opens its
+  // detail once the list has it, as 红包 and 用户 do (sweep 2026-11-21
+  // ADM-6).
+  useOpenSearched(
+    search.q,
+    q,
+    listQuery.data && !busy ? payments : undefined,
+    setSelected,
+  );
   // The filters' names: from the rows when they have them, otherwise read
   // (or cached from the page the filter came from).
   const listed = listQuery.data !== undefined && !busy;

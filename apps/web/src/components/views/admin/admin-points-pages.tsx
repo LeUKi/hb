@@ -27,7 +27,13 @@ import {
   PageSection,
   Panel,
 } from "../../page/page";
-import { PageLoad, queryLoad } from "../../page/page-state";
+import {
+  type Loadable,
+  PageLoad,
+  queryLoad,
+  ResultLoad,
+  resultOf,
+} from "../../page/page-state";
 import { Button } from "../../ui/button";
 import { NoteMarkdown } from "../../ui/markdown";
 import { PointsCapsule } from "../../ui/points-mark";
@@ -61,16 +67,34 @@ function SystemPage({
   title,
   description,
   actions,
+  also = [],
   children,
 }: {
   id: string;
   title: string;
   description?: ReactNode;
   actions?: (detail: AdminPointsDetail) => ReactNode;
+  /**
+   * The page's own reads besides the system (操作记录's list): 刷新 reads
+   * them again with it, though the page shows without waiting for them
+   * (sweep 2026-11-21 ADM-8).
+   */
+  also?: { refetch: () => Promise<unknown> }[];
   children: (detail: AdminPointsDetail) => ReactNode;
 }) {
   const query = useAdminPointsDetail(id);
   const detail = query.data;
+  const base = queryLoad(query);
+  const load: Loadable = {
+    ...base,
+    refetch: async () => {
+      const [ok] = await Promise.all([
+        base.refetch(),
+        ...also.map((read) => read.refetch()),
+      ]);
+      return ok;
+    },
+  };
   if (query.error instanceof ActivityRequestError && query.error.status === 404)
     return (
       <MessageView
@@ -79,7 +103,7 @@ function SystemPage({
       />
     );
   return (
-    <PageLoad load={queryLoad(query)}>
+    <PageLoad load={load}>
       {detail && (
         <Page>
           <PageHeader
@@ -325,38 +349,47 @@ export function AdminPointsEvents({ id }: { id: string }) {
       id={id}
       title="操作记录"
       description="谁在什么时候做了什么：审核、暂停和恢复（带原因）、下架、改设置、熔断、接口测试，以及站长对发放的处理。2026-11-16 以前只记得第一次上线、当时的暂停和下架。"
+      also={[query]}
     >
-      {() =>
-        query.isPending ? (
-          <Panel className="loading-sheen p-4 text-sm text-ink-3">
-            正在读操作记录
-          </Panel>
-        ) : events.length === 0 ? (
-          <EmptyNote title="还没有记录" text="以后的每一步都会记在这里。" />
-        ) : (
-          <div className="grid gap-2">
-            <Panel className="grid px-4">
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className="grid gap-0.5 border-line border-b py-3 text-sm last:border-b-0"
-                >
-                  <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                    <span className="text-ink">
-                      {pointsEventLine(event.action, event.note)}
-                    </span>
-                    <span className="ml-auto text-xs text-ink-3">
-                      {clockLabel(event.at)}
-                    </span>
-                  </span>
-                  <span className="text-xs text-ink-3">{actorOf(event)}</span>
-                </div>
-              ))}
+      {() => (
+        // A failed read says so, with 重试, not 还没有记录 (sweep
+        // 2026-11-21 ADM-8).
+        <ResultLoad
+          id={events.length ? "rows" : "empty"}
+          load={resultOf(query)}
+          skeleton={
+            <Panel className="loading-sheen p-4 text-sm text-ink-3">
+              正在读操作记录
             </Panel>
-            <LazyListEnd list={list} done={`共 ${events.length} 条`} />
-          </div>
-        )
-      }
+          }
+        >
+          {events.length === 0 ? (
+            <EmptyNote title="还没有记录" text="以后的每一步都会记在这里。" />
+          ) : (
+            <div className="grid gap-2">
+              <Panel className="grid px-4">
+                {events.map((event) => (
+                  <div
+                    key={event.id}
+                    className="grid gap-0.5 border-line border-b py-3 text-sm last:border-b-0"
+                  >
+                    <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                      <span className="text-ink">
+                        {pointsEventLine(event.action, event.note)}
+                      </span>
+                      <span className="ml-auto text-xs text-ink-3">
+                        {clockLabel(event.at)}
+                      </span>
+                    </span>
+                    <span className="text-xs text-ink-3">{actorOf(event)}</span>
+                  </div>
+                ))}
+              </Panel>
+              <LazyListEnd list={list} done={`共 ${events.length} 条`} />
+            </div>
+          )}
+        </ResultLoad>
+      )}
     </SystemPage>
   );
 }

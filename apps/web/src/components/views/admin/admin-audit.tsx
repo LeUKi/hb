@@ -29,7 +29,8 @@ const balanceLabels: Record<
   tipEnabled: ["打赏", (value) => (value ? "开" : "关")],
   tipPasswordFreeEnabled: ["免密打赏", (value) => (value ? "开" : "关")],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
-  withdrawFeePercent: ["转出费率", (value) => `${value}%`],
+  // Named as in 网站设置 (sweep 2026-11-21 ADM-10).
+  withdrawFeePercent: ["分发费率", (value) => `${value}%`],
   withdrawMaxMinor: [
     "单笔转出上限",
     (value) => `${(Number(value) / 100).toFixed(2)} 🐟`,
