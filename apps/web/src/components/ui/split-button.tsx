@@ -40,6 +40,7 @@ export function SplitButton({
   paused = false,
   menuLabel,
   items,
+  href,
 }: {
   variant?: "primary" | "secondary";
   size?: Exclude<ButtonSize, `icon${string}`>;
@@ -53,6 +54,11 @@ export function SplitButton({
   /** The arrow's name for screen readers. */
   menuLabel: string;
   items: SplitItem[];
+  /**
+   * The action goes somewhere: the action's half is a real link, so a
+   * modified click opens a new tab; a plain one is `onClick`.
+   */
+  href?: string;
 }) {
   const r = buttonRadius[size];
   const shape = useButtonShape(r, buttonHeight[size]);
@@ -73,16 +79,38 @@ export function SplitButton({
         data-disabled={disabled || undefined}
       >
         <SquircleFill radius={r} />
-        <button
-          type="button"
-          className="split-half h-full pr-3 pl-4.5"
-          aria-disabled={off || undefined}
-          onClick={() => {
-            if (!off) onClick();
-          }}
-        >
-          <MorphLabel>{children}</MorphLabel>
-        </button>
+        {href ? (
+          <a
+            href={href}
+            className="split-half h-full pr-3 pl-4.5"
+            aria-disabled={off || undefined}
+            onClick={(event) => {
+              if (
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey ||
+                event.button !== 0
+              )
+                return;
+              event.preventDefault();
+              if (!off) onClick();
+            }}
+          >
+            <MorphLabel>{children}</MorphLabel>
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="split-half h-full pr-3 pl-4.5"
+            aria-disabled={off || undefined}
+            onClick={() => {
+              if (!off) onClick();
+            }}
+          >
+            <MorphLabel>{children}</MorphLabel>
+          </button>
+        )}
         <span aria-hidden="true" className="split-line" />
         <button
           ref={arrow}

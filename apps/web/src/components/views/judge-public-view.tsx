@@ -24,6 +24,7 @@ import {
   writtenAddress,
 } from "../judges/judge-bits";
 import { JudgeNoticeCallout } from "../judges/judge-notice";
+import { SendWithJudge } from "../judges/send-with-judge";
 import { waitingWords } from "../judges/square-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
@@ -476,21 +477,12 @@ export function PublicJudgePage({
               {/* Waiting for its author (§17 在更新, a 旧判定器). */}
               {version && waiting && !judge.own ? (
                 <span className="text-sm text-ink-3">{waiting}</span>
-              ) : version && viewerId ? (
-                <ButtonLink
-                  variant="primary"
-                  href={`/new?judge=${encodeURIComponent(judge.id)}`}
-                  onGo={() =>
-                    void navigate({ to: "/new", search: { judge: judge.id } })
-                  }
-                >
-                  用它发红包
-                </ButtonLink>
               ) : (
                 version && (
-                  <Button variant="primary" size="sm" onClick={openAccount}>
-                    用它发红包
-                  </Button>
+                  <SendWithJudge
+                    judgeId={judge.id}
+                    signedIn={Boolean(viewerId)}
+                  />
                 )
               )}
               {version && viewerId ? (

@@ -1,10 +1,10 @@
 import type { SquareJudge } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { radius, Squircle } from "../ui/squircle";
 import { JudgeMark, JudgeSource, JudgeTags, statsLine } from "./judge-bits";
+import { SendWithJudge } from "./send-with-judge";
 
 /**
  * A 判定器 in the 广场 (§8 卡片): what it is, whose, its numbers and tags;
@@ -24,7 +24,6 @@ export function SquareJudgeCard({
   busy?: boolean;
 }) {
   const navigate = useNavigate();
-  const { openAccount } = useOmniboxController();
   const waiting = waitingWords(judge);
   return (
     <Squircle radius={radius.card}>
@@ -64,20 +63,8 @@ export function SquareJudgeCard({
                 查看 ↗
               </ButtonLink>
             </>
-          ) : signedIn ? (
-            <ButtonLink
-              variant="primary"
-              href={`/new?judge=${encodeURIComponent(judge.id)}`}
-              onGo={() =>
-                void navigate({ to: "/new", search: { judge: judge.id } })
-              }
-            >
-              用它发红包
-            </ButtonLink>
           ) : (
-            <Button variant="primary" size="sm" onClick={openAccount}>
-              用它发红包
-            </Button>
+            <SendWithJudge judgeId={judge.id} signedIn={signedIn} />
           )}
           {onPick && waiting && (
             <ButtonLink href={`/judges/${encodeURIComponent(judge.id)}`}>
