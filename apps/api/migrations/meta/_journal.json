@@ -526,6 +526,13 @@
       "when": 1795279365618,
       "tag": "0074_sweep_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795281626921,
+      "tag": "0075_sweep_read_indexes",
+      "breakpoints": true
     }
   ]
 }

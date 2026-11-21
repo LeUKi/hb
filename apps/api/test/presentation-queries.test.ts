@@ -1546,6 +1546,68 @@ describe("D1 reads that would grow with the data (06 §12)", () => {
     expect(everyone).toEqual([]);
   }, 60_000);
 
+  it("reads a draw's five faces and 报名名单 a page at a time, and its winners' users only for the five (sweep 2026-11-21)", async () => {
+    // Every read and live push of an open draw sorted all its sign-ups to
+    // show five (Q1); a drawn one looked up a user for every winner (Q9).
+    const timed = await create(ldc({ ...draw, count: 2 }));
+    const entrants = await Promise.all(Array.from({ length: 21 }, actor));
+    for (const user of entrants) await register(timed.id, user);
+    const plans = async (statements: { sql: string; params: unknown[] }[]) =>
+      Promise.all(
+        statements.map(async ({ sql, params }) => ({
+          sql,
+          plan: (
+            await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+              .bind(...params)
+              .all<{ id: number; parent: number; detail: string }>()
+          ).results,
+        })),
+      );
+    const open = await statementsDuring(async () => {
+      await data(`/activities/${timed.id}`);
+      const first = await data<PublicRegistrationList>(
+        `/activities/${timed.id}/registrations`,
+      );
+      await data(
+        `/activities/${timed.id}/registrations?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+      );
+      await data(`/me/activities/${timed.id}/registrations`, owner);
+    });
+    const byTime = await plans(
+      open.filter(({ sql }) =>
+        /order by "activity_registrations"\."registered_at"/.test(sql),
+      ),
+    );
+    // The five faces, both public pages and the sender's.
+    expect(byTime).toHaveLength(4);
+    for (const { sql, plan } of byTime) {
+      const details = plan.map((row) => row.detail).join(" | ");
+      expect(details, sql).toMatch(/activity_registrations_activity_time_idx/);
+      expect(details, sql).not.toMatch(/TEMP B-TREE/);
+    }
+
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse(timed.deadlineAt ?? "") + 10000,
+    );
+    await env.DB.prepare("UPDATE activities SET ended_at=deadline WHERE id=?")
+      .bind(timed.id)
+      .run();
+    expect(await refreshTimedDraw(bindings, timed.id)).toBe(true);
+    const drawn = await statementsDuring(() => data(`/activities/${timed.id}`));
+    const [preview] = await plans(
+      drawn.filter(({ sql }) => /\) "top" inner join "users"/.test(sql)),
+    );
+    // Users are joined to the five picked, outside the sort of every winner.
+    const coroutine = preview?.plan.find((row) =>
+      /^CO-ROUTINE top\b/.test(row.detail),
+    );
+    const userSearch = preview?.plan.find((row) =>
+      /^SEARCH users\b/.test(row.detail),
+    );
+    expect(coroutine).toBeDefined();
+    expect(userSearch?.parent).not.toBe(coroutine?.id);
+  }, 60_000);
+
   it("finds 红包 due for the lifecycle sweep without reading every submission", async () => {
     await paid();
     // The four 红包 themselves; not their 32 claims' submissions (it read 39).

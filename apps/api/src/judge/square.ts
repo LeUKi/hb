@@ -257,17 +257,24 @@ export async function listSquareJudges(
   const cursor = readCursor(query.cursor, query.sort);
   const order =
     query.sort === "used"
-      ? "s.hongbao DESC, s.last_opened_at DESC, j.id DESC"
-      : "s.last_opened_at DESC, j.id DESC";
+      ? "s.hongbao DESC, s.last_opened_at DESC, s.judge_id DESC"
+      : "s.last_opened_at DESC, s.judge_id DESC";
   const after = !cursor
     ? ""
     : query.sort === "used"
       ? `AND (s.hongbao < ?1 OR (s.hongbao = ?1 AND (s.last_opened_at < ?2
-          OR (s.last_opened_at = ?2 AND j.id < ?3))))`
-      : "AND (s.last_opened_at < ?2 OR (s.last_opened_at = ?2 AND j.id < ?3))";
-  // With 联网 switched off, none that goes online (§15.3).
+          OR (s.last_opened_at = ?2 AND s.judge_id < ?3))))`
+      : "AND (s.last_opened_at < ?2 OR (s.last_opened_at = ?2 AND s.judge_id < ?3))";
+  // From the numbers, in the page's order: only 判定器 that opened a 红包
+  // have them (s.public_n), and CROSS JOIN pins that order so the stats'
+  // indexes feed the LIMIT. From judges, every 判定器 on the site was read,
+  // private ones too, and each listed one's 在更新 worked out before the
+  // sort (sweep 2026-11-21). With 联网 switched off, none that goes online
+  // (§15.3).
   const statement =
-    env.DB.prepare(`SELECT ${CARD("s.public_n")} FROM judges j ${CARD_JOINS}
+    env.DB.prepare(`SELECT ${CARD("s.public_n")} FROM judge_stats s
+      CROSS JOIN judges j ON j.id = s.judge_id JOIN users u ON u.id = j.author_id
+      LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
       WHERE ${IN_SQUARE} AND s.public_n IS NOT NULL ${after}
         ${networkEnabled ? "" : "AND NOT EXISTS(SELECT 1 FROM judge_versions nv WHERE nv.judge_id = j.id AND nv.n = s.public_n AND nv.network IS NOT NULL)"}
       ORDER BY ${order} LIMIT ${PAGE_SIZE + 1}`);

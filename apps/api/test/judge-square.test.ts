@@ -5,7 +5,7 @@ import type {
   MyJudgeDetail,
   SquareJudgeList,
 } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import {
   createActivity,
@@ -272,6 +272,48 @@ describe("判定器广场", () => {
       ["最近", 1],
       ["常用", 1],
     ]);
+  });
+
+  it("reads 大家做的 from the numbers in the page's order, not every 判定器 on the site", async () => {
+    // From judges, the page read every 判定器, private ones too, and worked
+    // out each listed one's 在更新 before sorting (sweep 2026-11-21).
+    const shown = await made("在广场");
+    await made("没公开");
+    await listed(shown.id);
+    await opened(shown);
+    await refreshJudgeStats(bindings);
+    for (const sort of ["recent", "used"]) {
+      const seen: { sql: string; params: unknown[] }[] = [];
+      const prepare = env.DB.prepare.bind(env.DB);
+      const spy = vi
+        .spyOn(env.DB, "prepare")
+        .mockImplementation((sql: string) => {
+          const entry = { sql, params: [] as unknown[] };
+          seen.push(entry);
+          const statement = prepare(sql);
+          const bind = statement.bind.bind(statement);
+          statement.bind = (...values: unknown[]) => {
+            entry.params = values;
+            return bind(...values);
+          };
+          return statement;
+        });
+      const page = await get<SquareJudgeList>(
+        `/judges?tab=all&sort=${sort}`,
+      ).finally(() => spy.mockRestore());
+      expect(page.body.items.map((item) => item.id)).toContain(shown.id);
+      const list = seen.find(({ sql }) => /\bFROM judge_stats s\b/.test(sql));
+      expect(list).toBeDefined();
+      const plan = (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${list?.sql}`)
+          .bind(...(list?.params ?? []))
+          .all<{ detail: string }>()
+      ).results.map((row) => row.detail);
+      expect(plan[0]).toMatch(
+        sort === "used" ? /judge_stats_used_idx/ : /judge_stats_recent_idx/,
+      );
+      expect(plan.filter((detail) => /^SCAN j\b/.test(detail))).toEqual([]);
+    }
   });
 
   it("is in it only with its code public and not taken down (the database's own rule)", async () => {

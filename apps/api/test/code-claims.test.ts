@@ -406,6 +406,76 @@ describe("代码判定红包: claims", () => {
     ).toBe(401);
   });
 
+  it("pages 我的记录 off its own indexes, judgments of the same millisecond each once across pages (sweep 2026-11-21)", async () => {
+    const opened = await open();
+    const claimant = await actor();
+    const statements: { sql: string; params: unknown[] }[] = [];
+    const read = async (cursor?: string) => {
+      const prepare = env.DB.prepare.bind(env.DB);
+      const spy = vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+        const entry = { sql, params: [] as unknown[] };
+        statements.push(entry);
+        const statement = prepare(sql);
+        const bind = statement.bind.bind(statement);
+        statement.bind = (...values: unknown[]) => {
+          entry.params = values;
+          return bind(...values);
+        };
+        return statement;
+      });
+      try {
+        const response = await app.request(
+          `${origin}/api/activities/${opened.id}/judgments${cursor ? `?cursor=${cursor}` : ""}`,
+          { headers: { Cookie: claimant.cookie } },
+          bindings,
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as MyJudgmentList;
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    // Three judged at one instant, where the first page ends.
+    const at = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(at);
+    for (let index = 0; index < 3; index += 1)
+      await submit(opened.id, claimant, `tie ${index}`);
+    clock.mockRestore();
+    // Twenty a second is all one 红包 takes.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    for (let index = 0; index < 19; index += 1)
+      await submit(opened.id, claimant, `later ${index}`);
+    const first = await read();
+    expect(first).toMatchObject({ total: 22, attempts: 22 });
+    expect(first.nextCursor).toMatch(new RegExp(`^${at}-0-`));
+    const rest = await read(first.nextCursor ?? "");
+    expect(rest.nextCursor).toBeNull();
+    const items = [...first.items, ...rest.items];
+    expect(items.map((item) => item.attempt).slice(0, 19)).toEqual(
+      Array.from({ length: 19 }, (_, index) => 22 - index),
+    );
+    expect(
+      items
+        .slice(19)
+        .map((item) => item.attempt)
+        .sort(),
+    ).toEqual([1, 2, 3]);
+    expect(new Set(items.slice(19).map((item) => item.at))).toEqual(
+      new Set([new Date(at).toISOString()]),
+    );
+    // Each half of the page reads off its own index (migration 0075).
+    const page = statements.find(({ sql }) => /UNION ALL/.test(sql));
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${page?.sql}`)
+        .bind(...(page?.params ?? []))
+        .all<{ detail: string }>()
+    ).results
+      .map((row) => row.detail)
+      .join(" | ");
+    expect(plan).toMatch(/code_judgments_user_time_idx/);
+    expect(plan).toMatch(/code_judgment_moves_others_idx/);
+  });
+
   it("lists everyone the code judged for 参与名单's 挑战, the latest first, public, without what they typed", async () => {
     const opened = await open();
     const first = await actor();

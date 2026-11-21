@@ -513,14 +513,20 @@ export async function recentOf(
   );
 }
 
-async function topOf(env: ApiBindings, cardId: string) {
+/**
+ * 总榜's first `limit`: tips summed per person first, then only the people
+ * shown looked up. Joining users before grouping looked one up for every
+ * tip the card ever got, on every embed view (sweep 2026-11-21).
+ */
+async function topOf(env: ApiBindings, cardId: string, limit: number) {
   const { results } = await env.DB.prepare(
-    `SELECT u.username,u.display_name,u.avatar_url,SUM(t.amount_minor) AS total
-    FROM tips t JOIN users u ON u.id=t.tipper_id
-    WHERE t.card_id=? AND t.status='done' AND t.flag IS NULL AND t.tipper_id IS NOT NULL
-    GROUP BY t.tipper_id ORDER BY total DESC,MIN(t.done_at) ASC LIMIT ?`,
+    `SELECT u.username,u.display_name,u.avatar_url,g.total
+    FROM (SELECT tipper_id,SUM(amount_minor) AS total,MIN(done_at) AS first FROM tips
+      WHERE card_id=? AND status='done' AND flag IS NULL AND tipper_id IS NOT NULL
+      GROUP BY tipper_id ORDER BY total DESC,first ASC LIMIT ?) g
+    JOIN users u ON u.id=g.tipper_id ORDER BY g.total DESC,g.first ASC`,
   )
-    .bind(cardId, TIP_LIMITS.topMax)
+    .bind(cardId, limit)
     .all<{
       username: string;
       display_name: string;
@@ -545,7 +551,9 @@ export async function publicCard(
   const [numbers, recent, top] = await Promise.all([
     cardNumbers(env, row),
     row.show_recent === 1 ? recentOf(env, row.id, rows) : Promise.resolve(null),
-    row.show_top === 1 ? topOf(env, row.id) : Promise.resolve(null),
+    row.show_top === 1
+      ? topOf(env, row.id, Math.min(rows, TIP_LIMITS.topMax))
+      : Promise.resolve(null),
   ]);
   return {
     code: row.code,
@@ -569,7 +577,7 @@ export async function publicCard(
         : { amountMinor: row.goal_minor, reachedMinor: numbers?.reached ?? 0 },
     tipperCount: numbers?.tippers ?? 0,
     recent,
-    top: top ? top.slice(0, rows) : null,
+    top,
   };
 }
 

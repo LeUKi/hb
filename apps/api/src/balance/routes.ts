@@ -139,8 +139,11 @@ export const balanceRoutes = new Hono<ApiContext>()
         // The page's 还没到账 note: only those still payable at Credit (its
         // order lasts 5 minutes, 去 Credit 站确认 10). Past that it would
         // stay for good; the rest are in 明细 as 未完成 (balance-design §8).
+        // `+status` keeps SQLite on this person's own 转入: without stats it
+        // took the status index and read every 转入 left pending on the
+        // whole site, which only grows (sweep 2026-11-21).
         c.env.DB.prepare(
-          "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND status='pending' AND COALESCE(submitted_at,created_at)>?",
+          "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND +status='pending' AND COALESCE(submitted_at,created_at)>?",
         )
           .bind(session.user.id, Date.now() - TOPUP_PAYABLE_MS)
           .first<{ count: number }>(),

@@ -10,6 +10,7 @@ import { type ActivityInput, emptyActivityInput } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
+import { type BalanceRecordFilter, listRecords } from "../src/balance/ledger";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
@@ -539,6 +540,97 @@ describe("转账 to 🐟额", () => {
         transferredMinor: before.transferredMinor + 200,
       },
     });
+  });
+
+  it("pages 明细 newest first, each line once, reading a page and not every 转账 (sweep 2026-11-21)", async () => {
+    const { sender, friend } = await openTransfers();
+    await member(friend);
+    const { token } = await newKey(sender);
+    const { token: friendToken } = await newKey(friend);
+    const send = async (prefix: string, count: number) => {
+      const sent = await open("POST", "/balance/transfers/batch", token, {
+        transfers: Array.from({ length: count }, (_, index) => ({
+          outTransferNo: `${prefix}-${index}`,
+          ...to(friend),
+          amount: "0.10",
+        })),
+      });
+      expect(sent.status).toBe(200);
+    };
+    // What 明细's own queries read, and how many it asks.
+    const reading = async (filter: BalanceRecordFilter) => {
+      let rows = 0;
+      const asked: number[] = [];
+      const batch = env.DB.batch.bind(env.DB);
+      const spy = vi
+        .spyOn(env.DB, "batch")
+        .mockImplementation(async (statements) => {
+          asked.push(statements.length);
+          const results = await batch(statements);
+          for (const result of results) rows += result.meta.rows_read ?? 0;
+          return results;
+        });
+      try {
+        await listRecords(bindings(), sender.id, filter);
+      } finally {
+        spy.mockRestore();
+      }
+      return { rows, asked };
+    };
+    await send("seed", 2);
+    for (const no of ["back-1", "back-2"])
+      await open("POST", "/balance/transfers", friendToken, {
+        outTransferNo: no,
+        ...to(sender),
+        amount: "0.05",
+      });
+    await send("a", 30);
+    const transfers = await reading("transfer");
+    const hongbao = await reading("hongbao");
+    // Only what the filter shows is asked.
+    expect(transfers.asked).toEqual([1]);
+    expect((await reading("topup")).asked).toEqual([1]);
+    // Thirty more 转账: the same rows read for a page of them, and none for
+    // 红包 lines among them (one sorted read took them all, twice).
+    await send("b", 30);
+    expect(await reading("transfer")).toEqual(transfers);
+    expect(await reading("hongbao")).toEqual(hongbao);
+
+    // Every line once, newest first, page after page: as one sorted read
+    // of its 转账 (and the 站长's 补加) has them.
+    const ids = async (adjustments: boolean) =>
+      (
+        await env.DB.prepare(
+          `SELECT id FROM (SELECT id,created_at FROM balance_transfers WHERE from_user_id=?1 OR (to_user_id=?1 AND destination='balance')
+            UNION ALL SELECT id,created_at FROM balance_adjustments WHERE user_id=?1 AND ?2)
+          ORDER BY created_at DESC,id DESC`,
+        )
+          .bind(sender.id, adjustments ? 1 : 0)
+          .all<{ id: string }>()
+      ).results.map((row) => row.id);
+    const expected = { all: await ids(true), transfer: await ids(false) };
+    expect(expected.all).toHaveLength(2 + 30 + 30 + 2 + 1);
+    for (const filter of ["all", "transfer"] as const) {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const query = new URLSearchParams({ filter });
+        if (cursor) query.set("cursor", cursor);
+        const page = (await call("GET", `/me/balance?${query}`, sender))
+          .json as {
+          items: {
+            type: string;
+            transfer?: { id: string };
+            adjustment?: { id: string };
+          }[];
+          nextCursor: string | null;
+        };
+        for (const item of page.items)
+          seen.push(item.transfer?.id ?? item.adjustment?.id ?? item.type);
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(seen).toEqual(expected[filter]);
+    }
   });
 });
 

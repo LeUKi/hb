@@ -48,27 +48,35 @@ export async function myJudgments(
   )
     activityNotFound();
   // Their own judgments and others' moves on them (protocol 5), by time.
+  // Each half takes its own page off its own index (migration 0075) and
+  // the two are merged, so a page reads about 2 × 21 rows, not all the
+  // player's judgments and moves sorted; it is read again after every
+  // judgment (sweep 2026-11-21). The halves never share a row (position 0,
+  // or above it); `judged_at <= ?3` only repeats what the cursor implies,
+  // so the index can seek to it.
   const [found, total] = await Promise.all([
     env.DB.prepare(`SELECT * FROM (
-        SELECT j.submission_row_id AS rowId, 0 AS position, j.judged_at AS at, j.attempt,
+        SELECT * FROM (SELECT j.submission_row_id AS rowId, 0 AS position, j.judged_at AS at, j.attempt,
           NULL AS byName, j.paid_minor AS paid, j.note, j.message, e.ciphertext,
           j.fetches_ciphertext AS fetchesCiphertext,
           m.before_minor AS moveBefore, m.after_minor AS moveAfter, m.settles AS moveSettles
         FROM code_judgments j JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
         LEFT JOIN code_judgment_moves m ON m.submission_row_id = j.submission_row_id AND m.position = 0
-        WHERE j.activity_id = ? AND j.user_id = ?
+        WHERE j.activity_id = ?1 AND j.user_id = ?2
+          AND j.judged_at <= ?3 AND (j.judged_at, 0, j.submission_row_id) < (?3, ?4, ?5)
+        ORDER BY j.judged_at DESC, j.submission_row_id DESC LIMIT ?6)
         UNION ALL
-        SELECT m.submission_row_id, m.position, m.created_at, j.attempt,
+        SELECT * FROM (SELECT m.submission_row_id, m.position, m.created_at, j.attempt,
           COALESCE(NULLIF(u.display_name, ''), j.username), NULL, NULL, m.message, NULL, NULL,
           m.before_minor, m.after_minor, m.settles
         FROM code_judgment_moves m JOIN code_judgments j ON j.submission_row_id = m.submission_row_id
         LEFT JOIN users u ON u.id = j.user_id
-        WHERE m.activity_id = ? AND m.user_id = ? AND m.position > 0
-      ) WHERE (at, position, rowId) < (?, ?, ?)
-      ORDER BY at DESC, position DESC, rowId DESC LIMIT ?`)
+        WHERE m.activity_id = ?1 AND m.user_id = ?2 AND m.position > 0
+          AND (m.created_at, m.position, m.submission_row_id) < (?3, ?4, ?5)
+        ORDER BY m.created_at DESC, m.position DESC, m.submission_row_id DESC LIMIT ?6)
+      ) WHERE (at, position, rowId) < (?3, ?4, ?5)
+      ORDER BY at DESC, position DESC, rowId DESC LIMIT ?6`)
       .bind(
-        activityId,
-        userId,
         activityId,
         userId,
         before?.at ?? Number.MAX_SAFE_INTEGER,
@@ -91,11 +99,15 @@ export async function myJudgments(
         moveAfter: number | null;
         moveSettles: number | null;
       }>(),
+    // Attempts run 0, 1, 2… with none removed (code_judgments_insert_guard,
+    // code_judgments_no_delete), so the last one plus one is their count:
+    // one index entry read, not one per judgment. Others' moves are counted
+    // off their own partial index (migration 0075).
     env.DB.prepare(
-      `SELECT (SELECT COUNT(*) FROM code_judgments WHERE activity_id = ? AND user_id = ?) AS attempts,
-        (SELECT COUNT(*) FROM code_judgment_moves WHERE activity_id = ? AND user_id = ? AND position > 0) AS moves`,
+      `SELECT (SELECT COALESCE(MAX(attempt) + 1, 0) FROM code_judgments WHERE activity_id = ?1 AND user_id = ?2) AS attempts,
+        (SELECT COUNT(*) FROM code_judgment_moves WHERE activity_id = ?1 AND user_id = ?2 AND position > 0) AS moves`,
     )
-      .bind(activityId, userId, activityId, userId)
+      .bind(activityId, userId)
       .first<{ attempts: number; moves: number }>(),
   ]);
   const rows = found.results.slice(0, MY_JUDGMENTS_PAGE);

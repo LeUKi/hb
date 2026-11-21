@@ -142,6 +142,8 @@ export async function listRecords(
   cursor?: string,
 ) {
   const before = decodeRecordCursor(cursor);
+  const wants = (kind: Exclude<BalanceRecordFilter, "all">) =>
+    filter === "all" || filter === kind;
   // A 转账 to a Credit account is its sender's 转出 too: it reads as the 转账.
   const page = (table: "topups" | "withdrawals" | "adjustments") =>
     env.DB.prepare(
@@ -157,85 +159,123 @@ export async function listRecords(
       before?.id ?? "",
       PAGE_SIZE + 1,
     );
-  const [topups, withdrawals, adjustments, hongbao, transfers] =
-    await env.DB.batch<Record<string, unknown>>([
-      page("topups"),
-      page("withdrawals"),
-      page("adjustments"),
-      env.DB.prepare(
-        `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title,
+  // The two queries below are each a few pages merged by time, every one
+  // read newest first off its own index up to a page (sweep 2026-11-21).
+  // They take the cursor as a row value so each part seeks to it; with none
+  // they start from the top (no line is that late).
+  const at = before?.time ?? Number.MAX_SAFE_INTEGER;
+  const atId = before?.id ?? "";
+  const pageOf = (select: string, where: string, order: string) =>
+    `SELECT * FROM (${select} WHERE ${where} ORDER BY ${order} LIMIT ?4)`;
+  // 🐟额红包 lines: shares received off their own partial index, 发红包 and
+  // its 退回 from the account's own 🐟额红包 locks (both in migration 0075).
+  // Read off all of the account's entries, a page walked every 转账, 转出
+  // and claim's deduct to find them. A lock's lock and unlock entries are
+  // its owner's (balance_entries_lock_guard), so the parts hold the same
+  // rows the one query did; CROSS JOIN keeps SQLite starting from the
+  // locks, not from the account's entries.
+  const hongbaoPart = (from: string, where: string) =>
+    pageOf(
+      `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title,
         (e.kind='unlock' AND (a.opened_at IS NULL OR e.created_at<a.opened_at)) AS untimed
-      FROM balance_entries e JOIN balance_locks l ON l.id=e.lock_id JOIN activities a ON a.id=l.activity_id
-      WHERE e.user_id=? AND l.purpose='activity' AND e.kind IN ('lock','unlock','hongbao')
-        AND (?=0 OR e.created_at<? OR (e.created_at=? AND e.id<?))
-      ORDER BY e.created_at DESC,e.id DESC LIMIT ?`,
-      ).bind(
-        userId,
-        before ? 1 : 0,
-        before?.time ?? 0,
-        before?.time ?? 0,
-        before?.id ?? "",
-        PAGE_SIZE + 1,
-      ),
-      // 转账 out (either way), and in (to 🐟额; a Credit one never passes it).
+      FROM ${from} JOIN activities a ON a.id=l.activity_id`,
+      `${where} AND (e.created_at,e.id)<(?2,?3)`,
+      "e.created_at DESC,e.id DESC",
+    );
+  // 转账 out (either way), and in (to 🐟额; a Credit one never passes it),
+  // not every 转账 of the account sorted. No 转账 is to oneself
+  // (balance_transfers_valid), so no row is in both.
+  const transferPart = (where: string) =>
+    pageOf(
+      "SELECT * FROM balance_transfers",
+      `${where} AND (created_at,id)<(?2,?3)`,
+      "created_at DESC,id DESC",
+    );
+  // Only what the filter shows is read.
+  type Part =
+    | "topups"
+    | "withdrawals"
+    | "adjustments"
+    | "hongbao"
+    | "transfers";
+  const parts: [Part, D1PreparedStatement][] = [];
+  if (wants("topup")) parts.push(["topups", page("topups")]);
+  if (wants("withdrawal")) parts.push(["withdrawals", page("withdrawals")]);
+  if (wants("adjustment")) parts.push(["adjustments", page("adjustments")]);
+  if (wants("hongbao"))
+    parts.push([
+      "hongbao",
       env.DB.prepare(
-        `SELECT * FROM balance_transfers WHERE (from_user_id=?1 OR (to_user_id=?1 AND destination='balance'))
-        AND (?2=0 OR created_at<?3 OR (created_at=?3 AND id<?4))
-      ORDER BY created_at DESC,id DESC LIMIT ?5`,
-      ).bind(
-        userId,
-        before ? 1 : 0,
-        before?.time ?? 0,
-        before?.id ?? "",
-        PAGE_SIZE + 1,
-      ),
+        `SELECT * FROM (${hongbaoPart(
+          "balance_entries e JOIN balance_locks l ON l.id=e.lock_id",
+          "e.user_id=?1 AND e.kind='hongbao' AND l.purpose='activity'",
+        )}
+        UNION ALL ${hongbaoPart(
+          "balance_locks l CROSS JOIN balance_entries e",
+          "l.user_id=?1 AND l.purpose='activity' AND e.lock_id=l.id AND e.kind='lock' AND e.user_id=?1",
+        )}
+        UNION ALL ${hongbaoPart(
+          "balance_locks l CROSS JOIN balance_entries e",
+          "l.user_id=?1 AND l.purpose='activity' AND e.lock_id=l.id AND e.kind='unlock' AND e.user_id=?1",
+        )}
+      ) ORDER BY created_at DESC,id DESC LIMIT ?4`,
+      ).bind(userId, at, atId, PAGE_SIZE + 1),
     ]);
+  if (wants("transfer"))
+    parts.push([
+      "transfers",
+      env.DB.prepare(
+        `SELECT * FROM (${transferPart("from_user_id=?1")}
+        UNION ALL ${transferPart("to_user_id=?1 AND destination='balance'")}
+      ) ORDER BY created_at DESC,id DESC LIMIT ?4`,
+      ).bind(userId, at, atId, PAGE_SIZE + 1),
+    ]);
+  const results = await env.DB.batch<Record<string, unknown>>(
+    parts.map(([, statement]) => statement),
+  );
+  const rowsOf = (part: Part) =>
+    results[parts.findIndex(([name]) => name === part)]?.results ?? [];
   const records: BalanceRecord[] = [];
-  if (filter === "all" || filter === "topup")
-    for (const row of (topups?.results ?? []) as unknown as TopupRow[])
-      records.push({
-        type: "topup",
-        createdAt: row.created_at,
-        topup: topupView(row),
-      });
-  if (filter === "all" || filter === "withdrawal")
-    for (const row of (withdrawals?.results ??
-      []) as unknown as WithdrawalRow[])
-      records.push({
-        type: "withdrawal",
-        createdAt: row.created_at,
-        withdrawal: withdrawalView(row),
-      });
-  if (filter === "all" || filter === "adjustment")
-    for (const row of (adjustments?.results ?? []) as Record<string, unknown>[])
-      records.push({
-        type: "adjustment",
+  for (const row of rowsOf("topups") as unknown as TopupRow[])
+    records.push({
+      type: "topup",
+      createdAt: row.created_at,
+      topup: topupView(row),
+    });
+  for (const row of rowsOf("withdrawals") as unknown as WithdrawalRow[])
+    records.push({
+      type: "withdrawal",
+      createdAt: row.created_at,
+      withdrawal: withdrawalView(row),
+    });
+  for (const row of rowsOf("adjustments"))
+    records.push({
+      type: "adjustment",
+      createdAt: Number(row.created_at),
+      adjustment: adjustmentView(row),
+    });
+  for (const row of rowsOf("hongbao"))
+    records.push({
+      type: "hongbao",
+      createdAt: Number(row.created_at),
+      hongbao: {
+        id: String(row.id),
+        kind:
+          row.kind === "lock"
+            ? "sent"
+            : row.kind === "unlock"
+              ? Number(row.untimed) === 1
+                ? "untimed"
+                : "refund"
+              : "received",
+        amountMinor: Number(row.available_delta_minor),
+        activityId: String(row.activity_id),
+        title: String(row.title),
         createdAt: Number(row.created_at),
-        adjustment: adjustmentView(row),
-      });
-  if (filter === "all" || filter === "hongbao")
-    for (const row of (hongbao?.results ?? []) as Record<string, unknown>[])
-      records.push({
-        type: "hongbao",
-        createdAt: Number(row.created_at),
-        hongbao: {
-          id: String(row.id),
-          kind:
-            row.kind === "lock"
-              ? "sent"
-              : row.kind === "unlock"
-                ? Number(row.untimed) === 1
-                  ? "untimed"
-                  : "refund"
-                : "received",
-          amountMinor: Number(row.available_delta_minor),
-          activityId: String(row.activity_id),
-          title: String(row.title),
-          createdAt: Number(row.created_at),
-        },
-      });
-  if (filter === "all" || filter === "transfer") {
-    const rows = (transfers?.results ?? []) as unknown as TransferRow[];
+      },
+    });
+  if (wants("transfer")) {
+    const rows = rowsOf("transfers") as unknown as TransferRow[];
     for (const transfer of await transferViews(env, rows, userId))
       records.push({
         type: "transfer",

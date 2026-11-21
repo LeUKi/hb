@@ -1268,6 +1268,74 @@ describe("author attempt statistics", () => {
     ).toBe(200);
   });
 
+  it("counts each 口令's claims in one pass over the 红包's, not once per 口令", async () => {
+    // Counted per 口令, every claim of the 红包 was read once for each
+    // 口令, every 15 s while the sender looks (sweep 2026-11-21).
+    const keys = [
+      "alpha123",
+      "bravo123",
+      "charlie1",
+      "delta123",
+      "echo1234",
+      "foxtrot1",
+    ];
+    const activity = await create({
+      passwords: keys,
+      money: { mode: "fixed", totalAmount: "12.00", count: 12 },
+    });
+    const people = await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        actor(`statistics_${index}_${crypto.randomUUID().slice(0, 8)}`),
+      ),
+    );
+    for (const [index, person] of people.entries())
+      expect((await claim(activity.id, keys[index % 4], person)).status).toBe(
+        200,
+      );
+    const seen: { sql: string; params: unknown[] }[] = [];
+    const prepare = env.DB.prepare.bind(env.DB);
+    const spy = vi
+      .spyOn(env.DB, "prepare")
+      .mockImplementation((sql: string) => {
+        const entry = { sql, params: [] as unknown[] };
+        seen.push(entry);
+        const statement = prepare(sql);
+        const bind = statement.bind.bind(statement);
+        statement.bind = (...values: unknown[]) => {
+          entry.params = values;
+          return bind(...values);
+        };
+        return statement;
+      });
+    let response: Response;
+    try {
+      response = await request(
+        `/api/me/activities/${activity.id}/statistics`,
+        owner,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    const stats = (await response.json()) as ActivityStatistics;
+    expect(stats.validPasswords).toEqual(
+      keys.map((password, index) => ({
+        password,
+        successfulClaims: index < 4 ? 3 : 0,
+        registrations: 0,
+      })),
+    );
+    const counted = seen.find(({ sql }) =>
+      /\bFROM activity_passwords p\b/.test(sql),
+    );
+    expect(counted).toBeDefined();
+    const read = await env.DB.prepare(counted?.sql ?? "")
+      .bind(...(counted?.params ?? []))
+      .all();
+    // Once over the 12 claims, with the 6 口令 and the counts' own small
+    // tables: about 60. Once per 口令 it was over 80.
+    expect(read.meta.rows_read).toBeLessThan(keys.length * people.length);
+  });
+
   it("paginates distinct attempt values without returning per-user trajectories", async () => {
     const activity = await create({ forceDedicated: true, joinSquare: true });
     const people = [alice, bob];

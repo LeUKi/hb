@@ -502,6 +502,85 @@ describe("打赏卡", () => {
     expect(asOwner.viewer.own).toBe(true);
   });
 
+  it("rank 总榜 by each person's sum, the earlier first on a tie, flagged and unfinished tips left out", async () => {
+    // The sums are made before anyone is looked up, and only the card's
+    // rows are (sweep 2026-11-21); the order is as it was.
+    const { owner } = await open();
+    const card = await newCard(owner);
+    const { id: cardId } = (await env.DB.prepare(
+      "SELECT id FROM tip_cards WHERE code=?",
+    )
+      .bind(card.code)
+      .first<{ id: string }>()) as { id: string };
+    const fans = await Promise.all(
+      ["a", "b", "c", "d", "e", "f"].map((name) => actor(`top${name}`)),
+    );
+    const [a, b, c, d, e, f] = fans as [
+      Actor,
+      Actor,
+      Actor,
+      Actor,
+      Actor,
+      Actor,
+    ];
+    const add = (
+      who: Actor,
+      amountMinor: number,
+      doneAt: number | null,
+      flag: string | null = null,
+    ) =>
+      env.DB.prepare(
+        `INSERT INTO tips (id,card_id,card_version,owner_id,tipper_id,amount_minor,method,status,via,
+          request_id,request_digest,flag,created_at,done_at,updated_at)
+        VALUES (?,?,?,?,?,?,'merchant',?,'web',?,'test',?,1,?,1)`,
+      )
+        .bind(
+          crypto.randomUUID(),
+          cardId,
+          card.version,
+          owner.id,
+          who.id,
+          amountMinor,
+          doneAt === null ? "sending" : "done",
+          crypto.randomUUID(),
+          flag,
+          doneAt,
+        )
+        .run();
+    await add(a, 500, 10);
+    await add(a, 500, 20);
+    await add(b, 1000, 5);
+    await add(c, 300, 1);
+    await add(d, 200, 2);
+    await add(d, 5000, 3, "mismatch");
+    await add(e, 800, null);
+    await add(e, 100, 3);
+    await add(f, 600, 4);
+    const shown = (await call("GET", `/tip/${card.code}`)).json as {
+      card: {
+        tipperCount: number;
+        top: {
+          rank: number;
+          person: { username: string };
+          amountMinor: number;
+        }[];
+      };
+    };
+    expect(shown.card.tipperCount).toBe(6);
+    expect(
+      shown.card.top.map((row) => [
+        row.rank,
+        row.person.username,
+        row.amountMinor,
+      ]),
+    ).toEqual([
+      [1, b.username, 1000],
+      [2, a.username, 1000],
+      [3, f.username, 600],
+      [4, c.username, 300],
+    ]);
+  });
+
   it("are served with their palette's colours; the form gets the palettes and may only pick one", async () => {
     const { owner } = await open();
     const card = await newCard(owner, { palette: "jade" });

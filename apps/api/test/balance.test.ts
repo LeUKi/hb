@@ -550,9 +550,42 @@ describe("转入", () => {
       amount: "100",
     });
     const { topup } = started.json as TopupJson;
-    expect((await call("GET", "/me/balance", tester)).json).toMatchObject({
-      openTopups: 1,
-    });
+    // Counted from this person's own 转入: a plan on status alone read every
+    // 转入 left pending on the whole site (sweep 2026-11-21).
+    const seen: { sql: string; params: unknown[] }[] = [];
+    const prepare = env.DB.prepare.bind(env.DB);
+    const spy = vi
+      .spyOn(env.DB, "prepare")
+      .mockImplementation((sql: string) => {
+        const entry = { sql, params: [] as unknown[] };
+        seen.push(entry);
+        const statement = prepare(sql);
+        const bind = statement.bind.bind(statement);
+        statement.bind = (...values: unknown[]) => {
+          entry.params = values;
+          return bind(...values);
+        };
+        return statement;
+      });
+    const page = await call("GET", "/me/balance", tester).finally(() =>
+      spy.mockRestore(),
+    );
+    expect(page.json).toMatchObject({ openTopups: 1 });
+    const wide: string[] = [];
+    for (const { sql, params } of seen) {
+      if (!/^\s*select/i.test(sql) || !/\bbalance_topups\b/.test(sql)) continue;
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...params)
+        .all<{ detail: string }>();
+      for (const { detail } of plan.results)
+        if (
+          /^SCAN balance_topups\b/.test(detail) ||
+          /^SEARCH balance_topups .*\(status=\?\)$/.test(detail)
+        )
+          wide.push(`${detail} in ${sql.replace(/\s+/g, " ").slice(0, 90)}`);
+    }
+    expect(seen.some(({ sql }) => /\bbalance_topups\b/.test(sql))).toBe(true);
+    expect(wide).toEqual([]);
     // Ten minutes from its order, 去 Credit 站确认 is gone: no more note,
     // and it is still in 明细 as it was.
     const later = Date.now() + 10 * 60_000;

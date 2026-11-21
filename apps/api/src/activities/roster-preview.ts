@@ -29,6 +29,8 @@ export async function rosterPreview(
     displayName: users.displayName,
     avatarUrl: users.avatarUrl,
   };
+  // Read newest first off (activity_id, registered_at, id), migration 0075:
+  // five rows, not every sign-up sorted (sweep 2026-11-21).
   if (activity.drawState && activity.drawState !== "completed")
     return db
       .select({ id: activityRegistrations.id, ...person })
@@ -40,11 +42,19 @@ export async function rosterPreview(
         desc(activityRegistrations.id),
       )
       .limit(size);
-  if (activity.drawState === "completed")
-    return db
-      .select({ id: claims.id, ...person })
+  if (activity.drawState === "completed") {
+    // The prize decides the order, so every winner is sorted; the five are
+    // picked first and only they look up a user, not all of up to 1,000
+    // winners (sweep 2026-11-21). Every claim has its user (a foreign key),
+    // so the join drops none; it keeps no order, hence the outer ORDER BY.
+    const top = db
+      .select({
+        id: claims.id,
+        userId: claims.userId,
+        amount: rewardInventory.amountMinor,
+        at: claims.claimedAt,
+      })
       .from(claims)
-      .innerJoin(users, eq(users.id, claims.userId))
       .leftJoin(
         rewardInventory,
         and(
@@ -58,7 +68,14 @@ export async function rosterPreview(
         asc(claims.claimedAt),
         asc(claims.id),
       )
-      .limit(size);
+      .limit(size)
+      .as("top");
+    return db
+      .select({ id: top.id, ...person })
+      .from(top)
+      .innerJoin(users, eq(users.id, top.userId))
+      .orderBy(desc(top.amount), asc(top.at), asc(top.id));
+  }
   return db
     .select({ id: claims.id, ...person })
     .from(claims)

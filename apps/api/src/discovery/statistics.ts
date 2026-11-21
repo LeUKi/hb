@@ -82,10 +82,20 @@ export async function getStatistics(
       after?.attempts ?? null,
       after?.digest ?? "",
     ),
+    // Each 口令's claims and sign-ups counted in one pass over the 红包's
+    // own: no index has password_id, so counting per 口令 read all of them
+    // once for every 口令, every 15 s while the sender looks (sweep
+    // 2026-11-21). With no 口令 the counts are never worked out.
     env.DB.prepare(`SELECT p.id, p.ciphertext,
-      (SELECT COUNT(*) FROM claims c WHERE c.activity_id = p.activity_id AND c.password_id = p.id) AS successfulClaims,
-      (SELECT COUNT(*) FROM activity_registrations r WHERE r.activity_id = p.activity_id AND r.password_id = p.id) AS registrations
-      FROM activity_passwords p WHERE p.activity_id = ? ORDER BY p.position`).bind(
+      COALESCE(c.n, 0) AS successfulClaims, COALESCE(r.n, 0) AS registrations
+      FROM activity_passwords p
+      LEFT JOIN (SELECT password_id, COUNT(*) AS n FROM claims
+        WHERE activity_id = ? AND password_id IS NOT NULL GROUP BY password_id) c ON c.password_id = p.id
+      LEFT JOIN (SELECT password_id, COUNT(*) AS n FROM activity_registrations
+        WHERE activity_id = ? AND password_id IS NOT NULL GROUP BY password_id) r ON r.password_id = p.id
+      WHERE p.activity_id = ? ORDER BY p.position`).bind(
+      activityId,
+      activityId,
       activityId,
     ),
   ]);
