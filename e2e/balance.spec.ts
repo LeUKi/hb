@@ -910,6 +910,261 @@ test.describe("🐟额", () => {
     expect(new Set(sent.map(({ requestId }) => requestId)).size).toBe(1);
   });
 
+  // Closing the dialog after an unknown outcome no longer forgets the
+  // request: opened again, the same ask is back and said to be unknown,
+  // and goes as the very same request (sweep 2026-11-21 E1, the gap left
+  // at close).
+  test("转出：没收到结果后关掉再打开，还是那一笔并说清楚，再按一次是同一个请求", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page, { withdraw: true });
+    const asked: { requestId: string }[] = [];
+    await page.route("**/api/me/balance/withdrawals", (route) => {
+      asked.push(route.request().postDataJSON());
+      if (asked.length === 1)
+        return route.fulfill({ status: 502, body: "Bad Gateway" });
+      return route.fulfill({ json: { withdrawal: withdrawal() } });
+    });
+    await page.route(`**/api/me/balance/withdrawals/${withdrawalId}`, (route) =>
+      route.fulfill({ json: { withdrawal: withdrawal() } }),
+    );
+    await openApp(page, "/balance");
+    const opener = page
+      .locator("header")
+      .getByRole("button", { name: "转出", exact: true });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "转出🐟额" });
+    const amount = dialog.getByLabel("转出数量");
+    const send = dialog.getByRole("button", { name: "转出", exact: true });
+    await amount.fill("10");
+    await send.click();
+    const unsure =
+      "没有收到结果，这笔转出可能已经申请好了。再按一次转出会告诉你结果，不会重复转出。";
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toBeHidden();
+    await opener.click();
+    await expect(amount).toHaveValue("10");
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    // Another amount is another ask; back to the same one, it is said again.
+    await amount.fill("11");
+    await expect(dialog.getByText(unsure)).toBeHidden();
+    await amount.fill("10");
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await send.click();
+    await expectPath(page, `/balance/out/${withdrawalId}`);
+    expect(asked).toHaveLength(2);
+    expect(new Set(asked.map(({ requestId }) => requestId)).size).toBe(1);
+  });
+
+  test("转入：没收到结果后关掉再打开，还是那一笔并说清楚，再按一次是同一个订单", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page);
+    const asked: { requestId: string; by: string; amount: string }[] = [];
+    await page.route("**/api/me/balance/topups", (route) => {
+      asked.push(route.request().postDataJSON());
+      if (asked.length === 1)
+        return route.fulfill({ status: 503, body: "Service Unavailable" });
+      return route.fulfill({ json: { topup: topup(), cashierUrl: null } });
+    });
+    await openApp(page, "/balance");
+    const opener = page
+      .locator("header")
+      .getByRole("button", { name: "转入", exact: true });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "转入🐟额" });
+    const send = dialog.getByRole("button", { name: "去 Credit 站确认" });
+    await dialog.getByLabel("Credit 扣除").fill("100");
+    await send.click();
+    const unsure =
+      "没有收到结果，这笔转入可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。";
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toBeHidden();
+    await opener.click();
+    // The box it was asked by, as typed; the other worked out again.
+    await expect(dialog.getByLabel("Credit 扣除")).toHaveValue("100");
+    await expect(dialog.getByLabel("到账")).toHaveValue("88.00");
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await send.click();
+    await expectPath(page, `/balance/${topupId}`);
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toEqual(asked[0]);
+    expect(asked[0]).toEqual(
+      expect.objectContaining({ by: "debit", amount: "100" }),
+    );
+  });
+
+  test("转账：没收到结果后关掉再打开，还是那一笔并说清楚，再确认是同一个请求，不会转两次", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page, { withdraw: true });
+    await page.route("**/api/me/balance/recipients?**", (route) =>
+      route.fulfill({
+        json: {
+          user: {
+            userId: "12345",
+            username: "Friend",
+            displayName: "新朋友",
+            avatarUrl: null,
+          },
+          self: false,
+          owner: false,
+        },
+      }),
+    );
+    const sent: { requestId: string }[] = [];
+    await page.route("**/api/me/balance/transfers", (route) => {
+      sent.push(route.request().postDataJSON());
+      if (sent.length === 1)
+        return route.fulfill({
+          status: 500,
+          json: {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Unexpected API error",
+            },
+          },
+        });
+      return route.fulfill({
+        json: {
+          transfer: {
+            id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+            direction: "out",
+            destination: "balance",
+            amountMinor: 1200,
+            remark: "午饭钱",
+            counterpart: {
+              userId: "12345",
+              username: "Friend",
+              displayName: "新朋友",
+              avatarUrl: null,
+            },
+            apiKeyName: null,
+            outTransferNo: null,
+            status: "sent",
+            withdrawal: null,
+            createdAt: Date.now(),
+          },
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    const opener = page
+      .locator("header")
+      .getByRole("button", { name: "转账", exact: true });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "转账" });
+    await dialog.getByLabel("收款人").fill("friend");
+    await expect(dialog.getByText("新朋友 @Friend")).toBeVisible();
+    await dialog.getByLabel("数量").fill("12");
+    await dialog.getByLabel("备注").fill("午饭钱");
+    await dialog.getByRole("button", { name: "转账", exact: true }).click();
+    const confirm = page.getByRole("dialog", {
+      name: "转给 @Friend 12.00 🐟？",
+    });
+    await confirm.getByRole("button", { name: "确认转账" }).click();
+    const unsure =
+      "没有收到结果，这笔可能已经转给对方了。再按一次确认转账会告诉你结果，不会重复转。";
+    await expect(confirm.getByText(unsure)).toBeVisible();
+    await confirm.getByRole("button", { name: "返回" }).click();
+    await expect(confirm).toBeHidden();
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toBeHidden();
+    await opener.click();
+    await expect(dialog.getByLabel("收款人")).toHaveValue("Friend");
+    await expect(dialog.getByLabel("数量")).toHaveValue("12");
+    await expect(dialog.getByLabel("备注")).toHaveValue("午饭钱");
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await dialog.getByRole("button", { name: "转账", exact: true }).click();
+    await confirm.getByRole("button", { name: "确认转账" }).click();
+    await expect(dialog.getByText("已转给 @Friend 12.00 🐟。")).toBeVisible();
+    expect(sent).toHaveLength(2);
+    expect(new Set(sent.map(({ requestId }) => requestId)).size).toBe(1);
+  });
+
+  test("转账走对方的收银台：没收到结果后关掉再打开，还是那一笔，再去 Credit 站确认是同一个订单", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page, { withdraw: true });
+    const friend = {
+      userId: "12345",
+      username: "Friend",
+      displayName: "新朋友",
+      avatarUrl: null,
+    };
+    await page.route("**/api/me/balance/recipients?**", (route) =>
+      route.fulfill({
+        json: { user: friend, self: false, owner: false, checkoutBlock: null },
+      }),
+    );
+    const sent: { requestId: string }[] = [];
+    await page.route("**/api/me/balance/checkouts", (route) => {
+      sent.push(route.request().postDataJSON());
+      if (sent.length === 1)
+        return route.fulfill({ status: 502, body: "Bad Gateway" });
+      return route.fulfill({
+        json: {
+          checkout: {
+            id: "99999999-8888-4777-8666-555555555555",
+            direction: "out",
+            counterpart: friend,
+            amountMinor: 10_000,
+            remark: null,
+            status: "pending",
+            mismatch: false,
+            businessNo: "hb.lafi.sh_tr_0123456789abcdef0123456789abcdef",
+            externalOrderId: null,
+            createdAt: Date.now(),
+            payableUntil: Date.now() + 600_000,
+            paidAt: null,
+            lastCheckedAt: null,
+          },
+          cashierUrl: "https://credit.linux.do/paying?order_no=sealed-1",
+        },
+      });
+    });
+    await page.route("https://credit.linux.do/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<p>Credit 站收银台</p>",
+      }),
+    );
+    await openApp(page, "/balance");
+    const opener = page
+      .locator("header")
+      .getByRole("button", { name: "转账", exact: true });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "转账" });
+    const checkoutCard = dialog.getByRole("button", { name: /对方的收银台/ });
+    await dialog.getByLabel("收款人").fill("friend");
+    await expect(checkoutCard).toContainText(
+      "在 Credit 站付款，进对方的 LDC 商户",
+    );
+    await checkoutCard.click();
+    await dialog.getByLabel("付多少").fill("100");
+    const send = dialog.getByRole("button", { name: "去 Credit 站确认" });
+    await send.click();
+    const unsure =
+      "没有收到结果，这笔付款可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。";
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toBeHidden();
+    await opener.click();
+    // Back on 对方的收银台, with what it was asked for.
+    await expect(dialog.getByLabel("付多少")).toHaveValue("100");
+    await expect(dialog.getByText(unsure)).toBeVisible();
+    await send.click();
+    await page.waitForURL(/credit\.linux\.do\/paying/);
+    expect(sent).toHaveLength(2);
+    expect(new Set(sent.map(({ requestId }) => requestId)).size).toBe(1);
+  });
+
   test("转账走对方的收银台：对方有可用的商户才能选，只填付多少，列出各等级实收，直接去 Credit 站确认", async ({
     page,
   }) => {

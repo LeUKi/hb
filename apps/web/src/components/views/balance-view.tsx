@@ -29,7 +29,6 @@ import {
   useInviteActions,
   useInviteePreview,
   useMyInvites,
-  useOnceRequest,
   useOwnerAdjustment,
   useTopupActions,
   useWithdrawalActions,
@@ -44,6 +43,7 @@ import {
   TransferDetailDialog,
   TransferDialog,
   TransferRow,
+  useKeptOnceRequest,
 } from "../balance/transfer";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
@@ -583,6 +583,12 @@ function Balance({ user }: { user: SessionUser }) {
   );
 }
 
+/** No answer, or 500 and up: whether it went is not known. */
+const topupUnsureText =
+  "没有收到结果，这笔转入可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。";
+const withdrawUnsureText =
+  "没有收到结果，这笔转出可能已经申请好了。再按一次转出会告诉你结果，不会重复转出。";
+
 /** Cents from what was typed, or null while it is not an amount yet. */
 function typedMinor(value: string) {
   if (!/^\d{1,7}(\.\d{0,2})?$/.test(value.trim())) return null;
@@ -610,11 +616,19 @@ function TopupDialog({
   settings: BalancePage["settings"];
 }) {
   const ids = { debit: useId(), credit: useId() };
+  const once = useKeptOnceRequest<CreateTopupInput>("topup", user.id);
+  // A blank form, or the 转入 whose outcome is unknown as it was: the same
+  // press is the same order (sweep 2026-11-21 E1).
+  const keptTyped = () => {
+    const kept = once.kept();
+    return kept
+      ? { by: kept.by, value: kept.amount }
+      : { by: "credit" as const, value: "" };
+  };
   const [typed, setTyped] = useState<{ by: "debit" | "credit"; value: string }>(
-    { by: "credit", value: "" },
+    keptTyped,
   );
   const [error, setError] = useState<string | null>(null);
-  const once = useOnceRequest<CreateTopupInput>();
   const { create } = useTopupActions(user.id);
   const navigate = useNavigate();
   const minor = typedMinor(typed.value);
@@ -636,15 +650,13 @@ function TopupDialog({
         ? fishText(box === "debit" ? quote.debitMinor : quote.creditMinor)
         : "";
   const busy = create.isPending;
+  const ask = { by: typed.by, amount: typed.value.trim().replace(/\.$/, "") };
   const submit = async () => {
     if (!quote || !inRange || busy) return;
     setError(null);
     try {
       const { topup, cashierUrl } = await create.mutateAsync(
-        once.input(
-          { by: typed.by, amount: typed.value.trim().replace(/\.$/, "") },
-          { settingsVersion: settings.version },
-        ),
+        once.input(ask, { settingsVersion: settings.version }),
       );
       once.settle();
       if (cashierUrl) goToCashier(cashierUrl);
@@ -660,12 +672,7 @@ function TopupDialog({
       // again; the boxes stay): a new request next time. No answer: the
       // same order again (sweep 2026-11-21 E1).
       once.settle(failure);
-      setError(
-        writeFailureText(
-          failure,
-          "没有收到结果，这笔转入可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。",
-        ),
-      );
+      setError(writeFailureText(failure, topupUnsureText));
     }
   };
   return (
@@ -673,9 +680,8 @@ function TopupDialog({
       open={open}
       onClose={onClose}
       onClosed={() => {
-        setTyped({ by: "credit", value: "" });
+        setTyped(keptTyped());
         setError(null);
-        once.forget();
       }}
       busy={busy}
       title={
@@ -685,7 +691,8 @@ function TopupDialog({
         </span>
       }
       text="在 Credit 站收银台确认，需要登录 Credit 站并输入安全密码。流转费由 Credit 站收取，本站不另外收费。"
-      error={error}
+      // Opened again on the one whose outcome is unknown: said again.
+      error={error ?? (!busy && once.unsure(ask) ? topupUnsureText : null)}
       actions={
         <>
           <Button onClick={onClose} aria-disabled={busy || undefined}>
@@ -772,9 +779,11 @@ function WithdrawDialog({
   availableMinor: number;
 }) {
   const inputId = useId();
-  const [typed, setTyped] = useState("");
+  const once = useKeptOnceRequest<CreateWithdrawalInput>("withdraw", user.id);
+  // A blank box, or the 转出 whose outcome is unknown as it was: the same
+  // press is the same request (sweep 2026-11-21 E1).
+  const [typed, setTyped] = useState(() => once.kept()?.amount ?? "");
   const [error, setError] = useState<string | null>(null);
-  const once = useOnceRequest<CreateWithdrawalInput>();
   const { create } = useWithdrawalActions(user.id);
   const navigate = useNavigate();
   const minor = typedMinor(typed);
@@ -817,12 +826,7 @@ function WithdrawDialog({
       // again; the box stays): a new request next time. No answer, or 500
       // and up: the same one, so it cannot go twice (sweep 2026-11-21 E1).
       once.settle(failure);
-      setError(
-        writeFailureText(
-          failure,
-          "没有收到结果，这笔转出可能已经申请好了。再按一次转出会告诉你结果，不会重复转出。",
-        ),
-      );
+      setError(writeFailureText(failure, withdrawUnsureText));
     }
   };
   return (
@@ -830,14 +834,14 @@ function WithdrawDialog({
       open={open}
       onClose={onClose}
       onClosed={() => {
-        setTyped("");
+        setTyped(once.kept()?.amount ?? "");
         setError(null);
-        once.forget();
       }}
       busy={busy}
       title="转出🐟额"
       text={`发到你的 Credit 账户 @${user.username}，Credit 站可能会收取分发费。`}
-      error={error}
+      // Opened again on the one whose outcome is unknown: said again.
+      error={error ?? (!busy && once.unsure(ask) ? withdrawUnsureText : null)}
       actions={
         <>
           <Button onClick={onClose} aria-disabled={busy || undefined}>
@@ -897,12 +901,25 @@ function OwnerAdjustDialog({
   availableMinor: number;
 }) {
   const inputId = useId();
-  const [typed, setTyped] = useState("");
+  // Each way keeps its own: a 补加 whose outcome is unknown comes back
+  // when 补加 is pressed again, and goes as the same request (sweep
+  // 2026-11-21 E1).
+  const once = useKeptOnceRequest<OwnerAdjustmentInput>(
+    `owner-${direction}`,
+    user.id,
+  );
+  const [typed, setTyped] = useState(() => once.kept()?.amount ?? "");
   const [error, setError] = useState<string | null>(null);
-  const once = useOnceRequest<OwnerAdjustmentInput>();
+  // The way changes (a press while it is closed): that way's box.
+  const [way, setWay] = useState(direction);
+  if (way !== direction) {
+    setWay(direction);
+    setTyped(once.kept()?.amount ?? "");
+  }
   const adjust = useOwnerAdjustment(user.id);
   const add = direction === "add";
   const verb = add ? "补加" : "扣回";
+  const unsureText = `没有收到结果，这次${verb}可能已经完成了。再按一次${verb}会告诉你结果，不会重复${verb}。`;
   const minor = typedMinor(typed);
   const ask = { direction, amount: typed.trim().replace(/\.$/, "") };
   // A 扣回 is held by 可用 before the cap: that is the bound it meets. Not
@@ -927,12 +944,7 @@ function OwnerAdjustDialog({
       onClose();
     } catch (failure) {
       once.settle(failure);
-      setError(
-        writeFailureText(
-          failure,
-          `没有收到结果，这次${verb}可能已经完成了。再按一次${verb}会告诉你结果，不会重复${verb}。`,
-        ),
-      );
+      setError(writeFailureText(failure, unsureText));
     }
   };
   return (
@@ -940,9 +952,8 @@ function OwnerAdjustDialog({
       open={open}
       onClose={onClose}
       onClosed={() => {
-        setTyped("");
+        setTyped(once.kept()?.amount ?? "");
         setError(null);
-        once.forget();
       }}
       busy={busy}
       title={add ? "补加🐟额" : "扣回🐟额"}
@@ -951,7 +962,8 @@ function OwnerAdjustDialog({
           ? "不付款，只在账上给你记🐟。大家领了你的🐟额红包、再转出时，才从平台应用付出去，所以平台应用里要留够 LDC。"
           : "扣掉不用的🐟，代存合计跟着变少。发出未领的要等红包结束退回可用后才能扣。"
       }
-      error={error}
+      // Opened again on the one whose outcome is unknown: said again.
+      error={error ?? (!busy && once.unsure(ask) ? unsureText : null)}
       actions={
         <>
           <Button onClick={onClose} aria-disabled={busy || undefined}>

@@ -11,13 +11,19 @@ import {
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRightLeft, ChevronRight, Store, Wallet } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import {
   type BalancePage,
   goToCashier,
   useCheckoutActions,
-  useOnceRequest,
   useRecipient,
   useTransfer,
   useTransferActions,
@@ -231,6 +237,67 @@ function typedMinor(value: string) {
   }
 }
 
+/**
+ * The request whose outcome is unknown, per dialog and person: kept past
+ * the dialog's close and the 🐟额 page left and come back to (not a
+ * reload), until a definite answer.
+ */
+const unsureRequests = new Map<
+  string,
+  { ask: string; input: { requestId: string } }
+>();
+
+/**
+ * useOnceRequest (lib/balance.ts) for the 🐟额 page's dialogs (转账,
+ * 对方的收银台, 转入, 转出, 补加/扣回), with the request kept outside the
+ * dialog: closing it after a lost answer, a network error or a 5xx no
+ * longer forgets it, so the same ask, opened again, goes as the very same
+ * request and cannot move 🐟 twice. A new id only after a definite answer,
+ * or once the ask changes. `kept` is that request, to put its ask back in
+ * the form (sweep 2026-11-21 E1, the gap left at close).
+ */
+export function useKeptOnceRequest<I extends { requestId: string }>(
+  dialog: string,
+  userId: string,
+) {
+  const key = `${dialog}:${userId}`;
+  return useMemo(
+    () => ({
+      input<A extends Partial<Omit<I, "requestId">>>(
+        ask: A,
+        rest: Omit<I, "requestId" | keyof A>,
+      ): I {
+        const json = JSON.stringify(ask);
+        const pending = unsureRequests.get(key);
+        if (pending?.ask === json) return pending.input as I;
+        const input = {
+          ...rest,
+          ...ask,
+          requestId: crypto.randomUUID(),
+        } as unknown as I;
+        unsureRequests.set(key, { ask: json, input });
+        return input;
+      },
+      /** Whether `ask` went and how it ended is not known yet. */
+      unsure: (ask: object) =>
+        unsureRequests.get(key)?.ask === JSON.stringify(ask),
+      /** Done, or turned down: the next ask is a new request. */
+      settle(failure?: unknown) {
+        if (failure === undefined || refused(failure))
+          unsureRequests.delete(key);
+      },
+      kept: () => unsureRequests.get(key)?.input as I | undefined,
+    }),
+    [key],
+  );
+}
+
+/** No answer, or 500 and up: whether it went is not known. */
+const transferUnsureText =
+  "没有收到结果，这笔可能已经转给对方了。再按一次确认转账会告诉你结果，不会重复转。";
+const checkoutUnsureText =
+  "没有收到结果，这笔付款可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。";
+
 const creditBlockText = {
   WITHDRAW_DISABLED: "转出暂停中",
   TRANSFER_CREDIT_UNAVAILABLE: "现在发不了 Credit",
@@ -256,19 +323,41 @@ export function TransferDialog({
   availableMinor: number;
 }) {
   const ids = { name: useId(), amount: useId(), remark: useId() };
-  const [username, setUsername] = useState("");
-  const [source, setSource] = useState<"balance" | "checkout">("balance");
-  const [destination, setDestination] =
-    useState<TransferDestination>("balance");
-  const [typed, setTyped] = useState("");
-  const [remark, setRemark] = useState("");
+  const transferOnce = useKeptOnceRequest<CreateTransferInput>(
+    "transfer",
+    user.id,
+  );
+  const checkoutOnce = useKeptOnceRequest<CreateCheckoutInput>(
+    "checkout",
+    user.id,
+  );
+  // A blank form, or the ask whose outcome is unknown as it was (a 转账
+  // first: that one moves 🐟), so the same press is the same request.
+  const keptForm = () => {
+    const transfer = transferOnce.kept();
+    const checkout = checkoutOnce.kept();
+    const kept = transfer ?? checkout;
+    return {
+      username: kept?.toUsername ?? "",
+      source: transfer || !checkout ? "balance" : "checkout",
+      destination: transfer?.destination ?? "balance",
+      typed: kept?.amount ?? "",
+      remark: kept?.remark ?? "",
+    } as const;
+  };
+  const [start] = useState(keptForm);
+  const [username, setUsername] = useState(start.username);
+  const [source, setSource] = useState<"balance" | "checkout">(start.source);
+  const [destination, setDestination] = useState<TransferDestination>(
+    start.destination,
+  );
+  const [typed, setTyped] = useState(start.typed);
+  const [remark, setRemark] = useState(start.remark);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<BalanceTransfer | null>(null);
   // The 已转给 line, focused once the confirmation has gone (below).
   const result = useRef<HTMLParagraphElement>(null);
-  const transferOnce = useOnceRequest<CreateTransferInput>();
-  const checkoutOnce = useOnceRequest<CreateCheckoutInput>();
   // Looked up once typing pauses (0.3 s), not on every key.
   const settledName = useSettled(username);
   const preview = useRecipient(user.id, settledName);
@@ -348,18 +437,28 @@ export function TransferDialog({
     !remarkTooLong;
   const busy = create.isPending || checkoutActions.create.isPending;
   const amountText = minor === null ? "" : fishText(minor);
+  // Closed, or 再转一笔: a blank form, unless an ask's outcome is unknown,
+  // which comes back as it was and goes as the same request, never a
+  // second one (sweep 2026-11-21 E1).
   const reset = () => {
-    setUsername("");
-    setSource("balance");
-    setDestination("balance");
-    setTyped("");
-    setRemark("");
+    const form = keptForm();
+    setUsername(form.username);
+    setSource(form.source);
+    setDestination(form.destination);
+    setTyped(form.typed);
+    setRemark(form.remark);
     setConfirming(false);
     setError(null);
     setDone(null);
-    transferOnce.forget();
-    checkoutOnce.forget();
   };
+  // The ask on screen is the one whose outcome is unknown: said again
+  // (opened again, or back from the confirmation), until it is sent.
+  const unsureNote =
+    !retrying || busy
+      ? null
+      : checkout
+        ? checkoutUnsureText
+        : transferUnsureText;
   const send = async () => {
     if (!ready || busy || !transferAsk) return;
     setError(null);
@@ -375,12 +474,7 @@ export function TransferDialog({
       // the same one, so pressing again cannot send it twice (sweep
       // 2026-11-21 E1).
       transferOnce.settle(failure);
-      setError(
-        writeFailureText(
-          failure,
-          "没有收到结果，这笔可能已经转给对方了。再按一次确认转账会告诉你结果，不会重复转。",
-        ),
-      );
+      setError(writeFailureText(failure, transferUnsureText));
     }
   };
   // 对方的收银台: the order is made here, then Credit 站 takes over. The
@@ -397,12 +491,7 @@ export function TransferDialog({
       else setError("Credit 站暂时没有回应，请稍后再试。");
     } catch (failure) {
       checkoutOnce.settle(failure);
-      setError(
-        writeFailureText(
-          failure,
-          "没有收到结果，这笔付款可能已经下单。再按一次去 Credit 站确认，会接着用这一笔，不会重复下单。",
-        ),
-      );
+      setError(writeFailureText(failure, checkoutUnsureText));
     }
   };
   return (
@@ -418,7 +507,7 @@ export function TransferDialog({
         </span>
       }
       text="收款人要来过本站。"
-      error={checkout && !confirming ? error : null}
+      error={confirming ? null : ((checkout ? error : null) ?? unsureNote)}
       actions={
         done ? (
           <>
@@ -629,7 +718,7 @@ export function TransferDialog({
             : `转给 @${recipient?.username ?? name} ${amountText} 🐟？`
         }
         text="转出去不能撤回。"
-        error={error}
+        error={error ?? unsureNote}
         actions={
           <>
             <Button
