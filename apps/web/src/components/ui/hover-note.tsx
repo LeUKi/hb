@@ -1,7 +1,17 @@
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useId, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { radius, Squircle, SquirclePlate } from "./squircle";
+
+/** The note's least gap to the window's edge. */
+const EDGE = 8;
 
 /**
  * A short note that hangs under something small (a status tag): shown on
@@ -27,8 +37,51 @@ export function HoverNote({
   const [focus, setFocus] = useState(false);
   const [pinned, setPinned] = useState(false);
   const open = hover || focus || pinned;
+  const wrap = useRef<HTMLSpanElement>(null);
+  const bubble = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0);
+
+  // Kept 8px inside the window, as TagHint's bubble is: on a phone the
+  // edit page's tag wraps to the left of its row, and a note lined up with
+  // its right edge reached far past the window's left edge, cut off there
+  // (sweep 2026-11-21). Measured before paint, so it never shows out of
+  // place; it stays in the page, so it scrolls with the tag. Its width is
+  // capped in CSS (a phone's window is the screen), so what is measured
+  // here is what shows.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const at = wrap.current?.getBoundingClientRect();
+    // offsetWidth leaves out the entry's scale.
+    const width = bubble.current?.offsetWidth;
+    if (!at || width === undefined) return;
+    const box = (
+      wrap.current?.closest("[data-window-layer]") ?? document.documentElement
+    ).getBoundingClientRect();
+    const natural = align === "end" ? at.right - width : at.left;
+    const left = Math.min(
+      Math.max(natural, box.left + EDGE),
+      box.right - EDGE - width,
+    );
+    setShift(left - natural);
+  }, [open, align]);
+
+  // A tap doesn't focus a button on iPhone Safari, so no blur unpins the
+  // note: a tap anywhere else does (sweep 2026-11-21).
+  useEffect(() => {
+    if (!pinned) return;
+    const outside = (event: PointerEvent) => {
+      if (
+        !(event.target instanceof Node && wrap.current?.contains(event.target))
+      )
+        setPinned(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [pinned]);
+
   return (
     <span
+      ref={wrap}
       className="relative inline-flex"
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setHover(true);
@@ -67,8 +120,9 @@ export function HoverNote({
         {open && (
           <motion.span
             key="note"
+            ref={bubble}
             aria-hidden="true"
-            className={`pointer-events-none absolute top-full z-30 mt-2 w-max max-w-64 ${
+            className={`pointer-events-none absolute top-full z-30 mt-2 w-max max-w-[min(16rem,calc(100vw-1rem))] ${
               align === "end"
                 ? "right-0 origin-top-right"
                 : "left-0 origin-top-left"
@@ -81,6 +135,7 @@ export function HoverNote({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, transition: { duration: reduced ? 0 : 0.1 } }}
             transition={{ duration: reduced ? 0 : 0.14, ease }}
+            style={{ x: shift }}
           >
             <SquirclePlate className="pop-plate" radius={radius.row} />
             <Squircle radius={radius.row}>

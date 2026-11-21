@@ -160,10 +160,14 @@ function BackLink({ back }: { back: PageBack }) {
     else void router.navigate({ href: back.href });
   };
   return (
+    // On a phone (the 社区 App above all) this is the only way up
+    // (judge-square-design §17.5), so it gets the 32px a link to another
+    // page has (04 §4): padding into the page's top space and the gap above
+    // the title, taken back by margins, so nothing moves (sweep 2026-11-21).
     <a
       href={back.href}
       onClick={onClick}
-      className="w-fit text-sm text-ink-3 transition-colors hover:text-ink"
+      className="-mx-2 -mt-1.5 -mb-1 w-fit px-2 pt-1.5 pb-1 text-sm text-ink-3 transition-colors hover:text-ink"
     >
       ‹ {back.label}
     </a>

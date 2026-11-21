@@ -30,8 +30,16 @@ import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { addressLabel, ParamTags } from "../judges/judge-bits";
 import { Button } from "../ui/button";
-import { Field, Segmented, Switch, TextArea, TextInput } from "../ui/field";
+import {
+  Field,
+  SecretInput,
+  Segmented,
+  Switch,
+  TextArea,
+  TextInput,
+} from "../ui/field";
 import { Reveal } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 
 // 判定器的参数 (docs/judge-square-design.md §3, §14.4): the form its code
 // declares, drawn by the site. Values are kept as the code gets them —
@@ -530,11 +538,8 @@ function KeyField({
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-2">
-            <TextInput
+            <SecretInput
               id={id}
-              type="password"
-              autoComplete="new-password"
-              spellCheck={false}
               placeholder="填你自己的密钥"
               className="min-w-0 flex-1"
               value={typed ?? ""}
@@ -783,16 +788,20 @@ export function ParamsFields({
         </AnimatePresence>
       </div>
       <Reveal show={summary.length > 0}>
-        <div
-          className={cn(
-            "rounded-lg bg-fill px-3 py-2 text-sm text-ink-2",
-            explaining && "loading-sheen",
-          )}
-        >
-          {summary.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
+        {/* A fill box: the squircle every surface has (04), the callout's
+            radius (sweep 2026-11-21). */}
+        <Squircle radius={radius.callout}>
+          <div
+            className={cn(
+              "bg-fill px-3 py-2 text-sm text-ink-2",
+              explaining && "loading-sheen",
+            )}
+          >
+            {summary.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        </Squircle>
       </Reveal>
     </div>
   );

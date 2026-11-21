@@ -178,6 +178,29 @@ export function TextInput({
 }
 
 /**
+ * A key pasted from elsewhere (a Credit 商户密钥, a 判定器's key param):
+ * masked, yet never a password for this site, which has none (sign-in is
+ * LINUX DO). Not autocomplete "new-password": on that Safari fills in and
+ * keeps a generated strong password, and Chrome and Firefox offer one.
+ * "off" plus the password managers' ignore marks, as the omnibox has; a
+ * browser may still offer to save it (sweep 2026-11-21).
+ */
+export function SecretInput(props: Omit<InputProps, "type">) {
+  return (
+    <TextInput
+      autoComplete="off"
+      autoCapitalize="off"
+      autoCorrect="off"
+      spellCheck={false}
+      data-1p-ignore=""
+      data-lpignore="true"
+      {...props}
+      type="password"
+    />
+  );
+}
+
+/**
  * A TextInput whose text wraps instead of scrolling (a long 口令): it grows
  * line by line up to `maxLines`, then scrolls inside. Enter submits the
  * form as an input's does, and line breaks never get in.
@@ -225,6 +248,13 @@ export function WrapInput({
           ref={ref}
           rows={1}
           enterKeyHint="next"
+          // A 口令 is matched exactly, case and all (business-spec-v1 二.2),
+          // and a textarea starts each sentence with a capital on phone
+          // keyboards: off by default, as the omnibox's own field has it
+          // (sweep 2026-11-21).
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           className="block min-w-0 flex-1 resize-none bg-transparent text-base text-ink outline-none [overflow-wrap:anywhere] placeholder:text-ink-3"
           aria-invalid={invalid || undefined}
           aria-describedby={note}

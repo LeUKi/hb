@@ -10,7 +10,7 @@ import {
 import { useIdentity } from "../../lib/session";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
-import { Field, TextInput } from "../ui/field";
+import { Field, SecretInput, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import {
   ChangeDialog,
@@ -202,11 +202,9 @@ export function MerchantDialog({
           htmlFor={ids.secret}
           hint="保存后自动检查；密钥不会显示出来。"
         >
-          <TextInput
+          <SecretInput
             id={ids.secret}
-            type="password"
             value={secret}
-            autoComplete="new-password"
             onChange={(event) => setSecret(event.target.value)}
           />
         </Field>

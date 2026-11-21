@@ -124,7 +124,13 @@ export function TryJudge({
                   placeholder={prompt || "输入"}
                   aria-label="试一试的输入"
                   disabled={disabled}
+                  // What a claimer types into the omnibox, which keeps case
+                  // as typed (programmable-hongbao-design 输入): no capital
+                  // or correction here either (sweep 2026-11-21).
                   autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
                     if (!isPlainEnter(event)) return;

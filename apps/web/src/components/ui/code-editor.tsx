@@ -11,6 +11,12 @@ import { radius, Squircle } from "./squircle";
 const LINE = 20;
 /** The box's padding above and below its lines. */
 const PAD = 24;
+/**
+ * Editable code on iPhone Safari is 16px, so focusing it doesn't zoom the
+ * page (lib/code-mirror.ts has the same rule); lines stay LINE tall
+ * (sweep 2026-11-21).
+ */
+const IOS_EDIT_TEXT = "supports-[-webkit-touch-callout:none]:text-[16px]";
 
 /**
  * 代码判定红包's code in a lacquer box with line numbers and the colours of
@@ -130,6 +136,8 @@ export function CodeEditor({
             aria-hidden="true"
             className={cn(
               "overflow-hidden px-3.5 py-3 font-mono text-[13px] leading-5 whitespace-pre",
+              // The size the editor will have, so nothing jumps as it loads.
+              !readOnly && !disabled && IOS_EDIT_TEXT,
               !value && "text-[rgb(240_212_154/0.42)]",
             )}
             style={{
@@ -163,7 +171,10 @@ export function CodeEditor({
               aria-describedby={describedBy}
               aria-invalid={invalid || undefined}
               onChange={(event) => onChange?.(event.target.value)}
-              className="block w-full resize-y bg-transparent px-3.5 py-3 font-mono text-[13px] leading-5 outline-none"
+              className={cn(
+                "block w-full resize-y bg-transparent px-3.5 py-3 font-mono text-[13px] leading-5 outline-none",
+                !disabled && IOS_EDIT_TEXT,
+              )}
             />
           ))}
       </div>

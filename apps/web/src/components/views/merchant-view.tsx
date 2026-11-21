@@ -37,7 +37,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
-import { Field, TextInput } from "../ui/field";
+import { Field, SecretInput, TextInput } from "../ui/field";
 import { fishText } from "../ui/fish";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -317,11 +317,9 @@ function MerchantForm({
           }
           live
         >
-          <TextInput
+          <SecretInput
             id={ids.secret}
-            type="password"
             value={secret}
-            autoComplete="new-password"
             placeholder="留空保留现有密钥"
             invalid={missingSecret}
             onChange={(event) => setSecret(event.target.value)}
@@ -653,11 +651,9 @@ function CreateMerchant({
             htmlFor={ids.secret}
             hint="保存后自动检查；密钥不会显示出来。"
           >
-            <TextInput
+            <SecretInput
               id={ids.secret}
-              type="password"
               value={secret}
-              autoComplete="new-password"
               onChange={(event) => setSecret(event.target.value)}
             />
           </Field>

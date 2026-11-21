@@ -54,7 +54,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
-import { Field, TextInput } from "../ui/field";
+import { Field, SecretInput, TextInput } from "../ui/field";
 import { PersonName } from "../ui/person";
 import { Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -352,10 +352,8 @@ function RepairCredential({
             htmlFor={ids.secret}
             hint="在 Credit 站的这个应用里查看现在的密钥。保存后自动检查，密钥不会显示出来。"
           >
-            <TextInput
+            <SecretInput
               id={ids.secret}
-              type="password"
-              autoComplete="new-password"
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
             />

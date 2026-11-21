@@ -537,7 +537,10 @@ function Rank({
           {holdOwnRow && ownEntry && (
             <motion.div
               key="own"
-              className="sticky bottom-3 z-10"
+              // Clear of the home bar where the window fills the screen
+              // (02 §11), as the 发红包 action bar's max() does; 12px on a
+              // floating window (sweep 2026-11-21).
+              className="sticky bottom-[max(0.75rem,var(--safe-bottom))] z-10"
               initial={{ opacity: 0, y: reduced ? 0 : 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: reduced ? 0 : 8 }}

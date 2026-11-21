@@ -88,6 +88,14 @@ const lacquerTheme = EditorView.theme(
     // A line 部署 named: its number in red.
     ".cm-gutterElement.hb-code-problem": { color: "var(--color-danger)" },
     ".cm-placeholder": { color: "rgb(240 212 154 / 0.42)" },
+    // iPhone Safari zooms the page into any editable text under 16px, and
+    // the zoom stays after the focus leaves. Only there, and only while it
+    // can be edited: Android doesn't zoom, and 16px costs a phone about a
+    // fifth of its columns. The lines stay 20px (.cm-scroller), so
+    // code-editor.tsx's LINE holds (sweep 2026-11-21).
+    "@supports (-webkit-touch-callout: none)": {
+      ".cm-content[contenteditable=true]": { fontSize: "16px" },
+    },
   },
   { dark: true },
 );
