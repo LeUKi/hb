@@ -286,8 +286,21 @@ function EditorForm({
   const busy = actions.create.isPending || actions.update.isPending;
   const changed = JSON.stringify(form) !== JSON.stringify(start);
   const closed = !card && !enabled;
-  const changedHeight =
-    card && tipCardHeight(previewOf(card, owner)) !== height;
+  // Which embed codes saving changes: the 社区's is 389 for every card
+  // (its frame's least, tip-design §7, 2026-11-05), so a new height mostly
+  // changes only the one for pages outside it. Worked out from the codes
+  // themselves, so it stays right if those heights change (sweep
+  // 2026-11-21, TIP-HEIGHT-WARNING).
+  const codeChanged = (place: "forum" | "outside") =>
+    card !== undefined &&
+    tipEmbedCode(
+      card.code,
+      user.displayName,
+      tipCardHeight(previewOf(card, owner)),
+      place,
+    ) !== tipEmbedCode(card.code, user.displayName, height, place);
+  const forumChanged = codeChanged("forum");
+  const outsideChanged = codeChanged("outside");
   return (
     <Page>
       <LeaveGuard
@@ -594,9 +607,13 @@ function EditorForm({
                 {tipEmbedCode(card.code, user.displayName, height, "outside")}
               </code>
             </Squircle>
-            {changedHeight && (
+            {(forumChanged || outsideChanged) && (
               <span className="text-warning">
-                高度变了：保存以后，嵌着的地方要换上新的嵌入代码。
+                {forumChanged && outsideChanged
+                  ? "高度变了：保存以后，嵌着的地方要换上新的嵌入代码。"
+                  : forumChanged
+                    ? "高度变了：保存以后，社区里嵌着的要换上新的嵌入代码，社区外的不用换。"
+                    : "高度变了：保存以后，社区外网页里嵌着的要换上新的嵌入代码，社区里的不用换。"}
               </span>
             )}
             <div className="flex flex-wrap items-center gap-2">

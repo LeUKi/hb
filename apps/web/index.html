@@ -291,6 +291,39 @@
         overflow: auto;
         background: transparent;
       }
+      /* Its root as tall as the card, so anything past the frame's height
+         (a scrollbar under a narrow card) scrolls instead of being cut off
+         (sweep 2026-11-21, EMBED-BLANK-FAILURE). */
+      html[data-embed] #root {
+        height: auto;
+        overflow: visible;
+      }
+      /* 深色 (?theme=dark, or auto on a dark system): the shared dark tokens
+         turn the words light, so the secondary buttons (查一下, 再打开,
+         再打赏) take the dark glass, and words on gold the dark gold ink, as
+         in the 社区's mini app (apps/mini/src/mini.css). The site's own are
+         under data-site-dark, which an embed never has. Unlayered, so they
+         win over styles.css's @layer components (sweep 2026-11-21,
+         EMBED-DARK-BUTTONS). */
+      html[data-embed][data-mode="dark"] .btn-secondary {
+        --btn-top: rgb(255 255 255 / 0.08);
+        --btn-bottom: rgb(255 255 255 / 0.08);
+        --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
+        --btn-drop: 0 2px 6px -2px rgb(0 0 0 / 0.5);
+      }
+      html[data-embed][data-mode="dark"] .btn-secondary:hover {
+        --btn-top: rgb(255 255 255 / 0.13);
+        --btn-bottom: rgb(255 255 255 / 0.13);
+      }
+      html[data-embed][data-mode="dark"]
+        .btn-secondary:active:not(:disabled, [data-disabled]) {
+        --btn-inset: inset 0 1px 3px rgb(0 0 0 / 0.35);
+        --btn-drop: 0 1px 2px -1px rgb(0 0 0 / 0.3);
+      }
+      html[data-embed][data-mode="dark"]
+        :is(.avatar-ring, .chip-gold, .title-badge[data-title="highest"]) {
+        color: #6a4510;
+      }
     </style>
   </head>
   <body>
@@ -321,9 +354,84 @@
         const boot = document.getElementById("boot");
         const appRoot = document.getElementById("root");
         if (!boot || !appRoot) return;
+        // Right after a release the page and its bundle can come from two
+        // versions for a few seconds: the bundle is missing, or comes back
+        // as the page. One quiet reload a moment later gets a matching
+        // pair; failing again within a minute is a failed load.
+        const retryKey = "hb:boot-retry";
+        let retrying = false;
+        const retryOnce = () => {
+          if (retrying) return true;
+          try {
+            const last = Number(sessionStorage.getItem(retryKey) || 0);
+            if (Date.now() - last < 60000) return false;
+            sessionStorage.setItem(retryKey, String(Date.now()));
+          } catch {
+            return false;
+          }
+          retrying = true;
+          setTimeout(() => location.reload(), 1500);
+          return true;
+        };
+        // Only the site's own scripts count: a third-party one refused by
+        // the browser (an ad blocker stopping Cloudflare's analytics
+        // beacon, which Cloudflare adds to the page) is not a failed load.
+        const ownScript = (event) => {
+          const script = event.target;
+          return (
+            script instanceof HTMLScriptElement &&
+            new URL(script.src || location.href, location.href).origin ===
+              location.origin
+          );
+        };
         if (document.documentElement.dataset.embed) {
           boot.remove();
           appRoot.removeAttribute("inert");
+          // No loader around the card to say it did not load: a bundle
+          // that failed, after its one quiet reload, or nothing drawn after
+          // 20 seconds, or the card stopped by an error (main.tsx), leaves
+          // one line and 重新加载 in its place, not an empty hole in the
+          // host's page. Inline styles in a grey that reads on light and
+          // dark pages: the app's CSS may be missing too (sweep 2026-11-21,
+          // EMBED-BLANK-FAILURE).
+          let stopped = false;
+          const fail = () => {
+            if (stopped) return;
+            stopped = true;
+            const box = document.createElement("div");
+            box.setAttribute("role", "alert");
+            box.style.cssText =
+              "display:grid;justify-items:center;align-content:center;gap:6px;min-height:76px;padding:8px 16px;box-sizing:border-box;font:14px/1.5 system-ui,-apple-system,sans-serif;color:#8a8a8a;text-align:center";
+            const text = document.createElement("span");
+            text.textContent = "打赏卡没有加载出来。";
+            const reload = document.createElement("button");
+            reload.type = "button";
+            reload.textContent = "重新加载";
+            reload.style.cssText =
+              "font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px;padding:2px 12px;cursor:pointer";
+            reload.addEventListener("click", () => location.reload());
+            box.append(text, reload);
+            appRoot.replaceChildren(box);
+          };
+          window.hbEmbedFail = fail;
+          // Once the card is drawn, the app's own: a script failing later
+          // (Cap's helpers) is not a failed load.
+          addEventListener(
+            "error",
+            (event) => {
+              if (
+                ownScript(event) &&
+                !stopped &&
+                !appRoot.hasChildNodes() &&
+                !retryOnce()
+              )
+                fail();
+            },
+            true,
+          );
+          setTimeout(() => {
+            if (!appRoot.hasChildNodes()) fail();
+          }, 20000);
           return;
         }
         // figma-squircle's getSvgPath (the engine of @squircle-js/react) for
@@ -415,25 +523,6 @@
         let ceiling = 64;
         let value = 0;
         let failed = false;
-        // Right after a release the page and its bundle can come from two
-        // versions for a few seconds: the bundle is missing, or comes back
-        // as the page. One quiet reload a moment later gets a matching
-        // pair; failing again within a minute is a failed load.
-        const retryKey = "hb:boot-retry";
-        let retrying = false;
-        const retryOnce = () => {
-          if (retrying) return true;
-          try {
-            const last = Number(sessionStorage.getItem(retryKey) || 0);
-            if (Date.now() - last < 60000) return false;
-            sessionStorage.setItem(retryKey, String(Date.now()));
-          } catch {
-            return false;
-          }
-          retrying = true;
-          setTimeout(() => location.reload(), 1500);
-          return true;
-        };
 
         const api = {
           done: false,
@@ -736,21 +825,10 @@
         boot
           .querySelector("[data-boot-reload]")
           ?.addEventListener("click", () => location.reload());
-        // Only the site's own scripts count: a third-party one refused by the
-        // browser (an ad blocker stopping Cloudflare's analytics beacon,
-        // which Cloudflare adds to the page) is not a failed load.
         addEventListener(
           "error",
           (event) => {
-            const script = event.target;
-            if (
-              script instanceof HTMLScriptElement &&
-              new URL(script.src || location.href, location.href).origin ===
-                location.origin &&
-              !api.done &&
-              !failed &&
-              !retryOnce()
-            )
+            if (ownScript(event) && !api.done && !failed && !retryOnce())
               api.fail();
           },
           true,

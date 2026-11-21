@@ -1,23 +1,13 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
-import { CapProblem, solveCap } from "../../lib/cap";
+import { solveCap } from "../../lib/cap";
+import { CapProblem, capProblemText } from "../../lib/cap-problem";
 import { type HumanCheckRequest, humanCheckAtom } from "../../lib/human-check";
 import { currentTheme } from "../../lib/theme";
 import { loadTurnstile } from "../../lib/turnstile";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/kbd";
-
-/** What went wrong with Cap, said to the claimant (docs/cap-design.md §3). */
-function capProblemText(code: string) {
-  if (code === "instr_blocked")
-    return "这个浏览器没有通过人机验证的检测，可能是自动化工具或特殊的内置浏览器。换个浏览器再试。";
-  if (code === "wasm_load_failed" || code === "worker_spawn_failed")
-    return "这个浏览器运行不了人机验证，换个浏览器再试。";
-  if (code === "unreachable" || code === "network_error")
-    return "人机验证加载不出来，检查网络后点“重试”。";
-  return `人机验证没有通过（错误码 ${code}）。点“重试”；一直不过的话，换个浏览器再试。`;
-}
 
 /** What went wrong, said to the claimant; Turnstile's code kept for a report. */
 function problemText(code: string) {
@@ -199,7 +189,7 @@ export function HumanCheckDialog() {
       error={
         problem && !passed
           ? shown?.challenge.method === "cap"
-            ? capProblemText(problem)
+            ? capProblemText(problem, "点“重试”")
             : problemText(problem)
           : null
       }

@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { CapProblem, capProblemText } from "../../lib/cap-problem";
 import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { agoLabel } from "../../lib/roster-time";
@@ -100,6 +101,23 @@ export function ldc(minor: number) {
 }
 const fixed = (minor: number) => (minor / 100).toFixed(2);
 
+/** How to try again on the card: its ‹, back a step (TIP-RAW-ERRORS). */
+const AGAIN = "按“‹”再试";
+
+/**
+ * A small control's press area, 8px past it on every side (‹ is 28px, the
+ * text buttons one line): thumbs in a 社区 post miss less. Its look and
+ * the layout stay as they are; 8px is the gap to its neighbours, so it
+ * never takes a press meant for one (sweep 2026-11-21, T8).
+ */
+const HIT_AREA = "relative after:absolute after:-inset-2";
+
+/** A Credit 站 tip its order turned down: 没付, and no link to give. */
+const turnedDown = (result: TipResult) =>
+  result.tip.method === "checkout" &&
+  result.tip.status === "unpaid" &&
+  !result.payUrl;
+
 type Step =
   | "idle"
   | "pick"
@@ -176,6 +194,10 @@ export function TipCardView({
     card.recent ? "recent" : "top",
   );
   const requestId = useRef(crypto.randomUUID());
+  // What was last asked under this request, and the tip it answered with
+  // (sweep 2026-11-21, TIP-REGEN; see make()).
+  const lastTry = useRef<{ method: TipMethod; message: string } | null>(null);
+  const lastTip = useRef<string | null>(null);
 
   // A changed card (another default, other amounts) starts over.
   const shape = `${card.version}:${defaultAmount}`;
@@ -282,21 +304,40 @@ export function TipCardView({
     return false;
   }
 
+  // Cap's codes (CAP_instr_blocked) and the browser's own words for a
+  // failed fetch (“Failed to fetch”, “Load failed”) said plainly; a fetch
+  // that never got an answer rejects with a TypeError, and the card's own
+  // messages are plain Errors (sweep 2026-11-21, TIP-RAW-ERRORS).
   function fail(error: unknown) {
     const text =
-      error instanceof Error ? error.message : "没有完成，请再试一次。";
+      error instanceof CapProblem
+        ? capProblemText(error.code, AGAIN)
+        : error instanceof TypeError
+          ? "连不上红包站，请再试一次。"
+          : error instanceof Error
+            ? error.message
+            : "没有完成，请再试一次。";
     setProblem(text);
     go("failed", 1);
     if ((error as { code?: string }).code === "TIP_CARD_CHANGED") onChanged?.();
   }
 
-  const reset = () => {
+  // A new tip from here on: a new request, and nothing of the last link
+  // (its tip, its address, whether it was opened or asked about) carried
+  // over to the next one.
+  const fresh = () => {
     requestId.current = crypto.randomUUID();
+    lastTry.current = null;
+    lastTip.current = null;
     setTip(null);
     setPayUrl(null);
     setDelivered(false);
     setMissed(false);
     setCool(0);
+  };
+
+  const reset = () => {
+    fresh();
     setMethod(null);
     setMessage("");
     setProblem(null);
@@ -305,7 +346,7 @@ export function TipCardView({
 
   const startPay = (minor: number) => {
     setAmount(minor);
-    requestId.current = crypto.randomUUID();
+    fresh();
     go("pay", 1);
   };
 
@@ -325,20 +366,61 @@ export function TipCardView({
           }。`,
         ),
       );
-    try {
+    const text = message.trim();
+    // Back from a Credit 站 link (‹), then another 付法 or a 留言 added: a
+    // new tip. The same request with other content is refused (“同一笔打赏
+    // 不能换内容”), and a Credit 站 tip is paid only on Credit's own page,
+    // so a new request cannot pay twice. After 🐟额 or 我的商户 the request
+    // stays: one whose answer was lost may have gone through, and the
+    // server refusing other content under it is what stops a second one
+    // (sweep 2026-11-21, TIP-REGEN).
+    const last = lastTry.current;
+    if (
+      last?.method === "checkout" &&
+      (chosen !== "checkout" || last.message !== text)
+    )
+      fresh();
+    lastTry.current = { method: chosen, message: text };
+    let sent = requestId.current;
+    const send = async () => {
+      sent = requestId.current;
       const capToken =
         chosen === "checkout" && viewer?.capEndpoint && actions.capToken
           ? await actions.capToken()
           : undefined;
-      const result = await actions.create({
-        requestId: requestId.current,
+      return actions.create({
+        requestId: sent,
         cardVersion: card.version,
         amount: fixed(amount),
         method: chosen,
-        ...(message.trim() ? { message: message.trim() } : {}),
+        ...(text ? { message: text } : {}),
         ...(capToken ? { capToken } : {}),
       });
+    };
+    // No later press (another amount, say) has started a new tip since.
+    const current = () => requestId.current === sent;
+    try {
+      let result = await send();
       if (settle(result)) return;
+      // The link this card showed has expired (Credit 站 turned its order
+      // down, or the 15-minute check found it unpaid): its request only
+      // ever answers 没付 now. A new request is a new tip with a new 业务号
+      // and a new link, at once (tip-design §5: “过期了按“‹”回去重新生成”).
+      if (
+        turnedDown(result) &&
+        current() &&
+        lastTip.current === result.tip.id
+      ) {
+        fresh();
+        lastTry.current = { method: chosen, message: text };
+        result = await send();
+        if (settle(result)) return;
+      }
+      if (current()) {
+        // Turned down as it was made: the next press asks for a new one.
+        if (turnedDown(result)) fresh();
+        else lastTip.current = result.tip.id;
+      }
       if (result.payUrl) {
         setPayUrl(result.payUrl);
         go("link", 1);
@@ -427,7 +509,10 @@ export function TipCardView({
         setProblem(null);
         go(to, -1);
       }}
-      className="grid size-7 shrink-0 place-items-center rounded-lg text-xl leading-none text-ink-2 hover:bg-[var(--t-soft-2)]"
+      className={cn(
+        "grid size-7 shrink-0 place-items-center rounded-lg text-xl leading-none text-ink-2 hover:bg-[var(--t-soft-2)]",
+        HIT_AREA,
+      )}
     >
       ‹
     </button>
@@ -734,7 +819,10 @@ export function TipCardView({
       <button
         type="button"
         onClick={reset}
-        className="shrink-0 text-[13px] font-semibold text-[var(--t-ink)]"
+        className={cn(
+          "shrink-0 text-[13px] font-semibold text-[var(--t-ink)]",
+          HIT_AREA,
+        )}
       >
         再打赏
       </button>
@@ -881,7 +969,10 @@ export function TipCardView({
               <button
                 type="button"
                 onClick={() => go("msg", 1)}
-                className="shrink-0 text-[13px] font-semibold text-[var(--t-ink)]"
+                className={cn(
+                  "shrink-0 text-[13px] font-semibold text-[var(--t-ink)]",
+                  HIT_AREA,
+                )}
               >
                 {message.trim() ? "留言 ✎" : "＋留言"}
               </button>
@@ -906,6 +997,7 @@ export function TipCardView({
                 maxLength={TIP_LIMITS.messageMax}
                 onEnter={() => go("pay", -1)}
                 takesFocus
+                enterKeyHint="done"
               />
               <Button variant="primary" size="sm" onClick={() => go("pay", -1)}>
                 好
@@ -1187,6 +1279,8 @@ function TipInput({
   maxLength,
   onEnter,
   takesFocus,
+  inputMode,
+  enterKeyHint,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1197,6 +1291,10 @@ function TipInput({
   onEnter?: () => void;
   /** Its step is for typing it: focus comes here when the step opens. */
   takesFocus?: boolean;
+  /** A phone's keyboard for it: numbers for an amount (sweep 2026-11-21, T3). */
+  inputMode?: "decimal";
+  /** The keyboard's Enter key, named only where Enter does something. */
+  enterKeyHint?: "next" | "done";
 }) {
   return (
     <Squircle radius={radius.input}>
@@ -1204,6 +1302,8 @@ function TipInput({
         value={value}
         aria-label={label}
         data-step-focus={takesFocus || undefined}
+        inputMode={inputMode}
+        enterKeyHint={enterKeyHint}
         maxLength={maxLength}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
@@ -1214,7 +1314,10 @@ function TipInput({
           event.preventDefault();
           onEnter();
         }}
-        className="h-10 min-w-0 flex-1 bg-white px-3 text-[15px] text-ink shadow-[inset_0_0_0_1px_var(--t-line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_2px_var(--t-accent)]"
+        // 16px: smaller, an iPhone zooms the page in on focus and leaves
+        // it zoomed (the ☕ page, embeds outside the 社区; sweep 2026-11-21,
+        // T2).
+        className="h-10 min-w-0 flex-1 bg-white px-3 text-base text-ink shadow-[inset_0_0_0_1px_var(--t-line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_2px_var(--t-accent)]"
       />
     </Squircle>
   );
@@ -1246,6 +1349,8 @@ function OtherAmount({
         maxLength={7}
         onEnter={() => ok && onDone(parsed)}
         takesFocus
+        inputMode="decimal"
+        enterKeyHint="next"
       />
       <Button
         variant="primary"

@@ -836,6 +836,53 @@ describe("打赏 at Credit 站", () => {
     expect([...credit.orders.values()][0]?.name).toBe("打赏 · hb.lafi.sh");
   });
 
+  // What the card counts on when ‹ goes back from a link (tip-card.tsx
+  // make(), sweep 2026-11-21 TIP-REGEN): the same request again is the same
+  // tip, refused with other content; once its order expired it only ever
+  // answers 没付, and a new request makes a new 业务号 and a new link.
+  it("gives a link's request its own tip only: other content is refused, an expired one stays 没付, a new request links anew", async () => {
+    const { owner, fan, credit } = await open();
+    await merchantFor(owner, credit);
+    const card = await newCard(owner);
+    const requestId = crypto.randomUUID();
+    const first = (await tip(card, fan, { requestId })).json as TipJson;
+    expect(first).toMatchObject({ tip: { status: "pending" } });
+    expect(first.payUrl).not.toBeNull();
+    // Still waiting: the same request gives the same tip and its cashier.
+    const same = (await tip(card, fan, { requestId })).json as TipJson;
+    expect(same.tip.id).toBe(first.tip.id);
+    expect(same.payUrl).toBe(first.payUrl);
+    // A 留言 added, or another 付法: not under this request.
+    const message = await tip(card, fan, { requestId, message: "加油" });
+    expect(message.status).toBe(409);
+    expect(code(message).code).toBe("TIP_REQUEST_REUSED");
+    const balance = await tip(card, fan, { requestId, method: "balance" });
+    expect(code(balance).code).toBe("TIP_REQUEST_REUSED");
+    // Expired at Credit 站 (400): 没付, and so it stays.
+    credit.refuse(400);
+    const expired = (await tip(card, fan, { requestId })).json as TipJson;
+    expect(expired).toMatchObject({
+      tip: { id: first.tip.id, status: "unpaid" },
+      payUrl: null,
+    });
+    credit.refuse(null);
+    const again = (await tip(card, fan, { requestId })).json as TipJson;
+    expect(again).toMatchObject({
+      tip: { id: first.tip.id, status: "unpaid" },
+      payUrl: null,
+    });
+    // A new request: a new tip, a new 业务号, a new link.
+    const renewed = (await tip(card, fan, { requestId: crypto.randomUUID() }))
+      .json as TipJson;
+    expect(renewed.tip.id).not.toBe(first.tip.id);
+    expect(renewed.tip.status).toBe("pending");
+    expect(renewed.payUrl).not.toBeNull();
+    expect(renewed.payUrl).not.toBe(first.payUrl);
+    expect(await businessNoOf(renewed.tip.id)).not.toBe(
+      await businessNoOf(first.tip.id),
+    );
+  });
+
   it("is checked once more after 15 minutes, and paid later still counts", async () => {
     const { owner, fan, credit } = await open();
     await merchantFor(owner, credit);

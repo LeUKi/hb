@@ -1,6 +1,8 @@
+import { RotateCcw } from "lucide-react";
 import { useEffect } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { useTipActions, useTipCard } from "../../lib/tips";
+import { Button } from "../ui/button";
 import { TipCardView } from "./tip-card";
 
 // A 打赏卡 in a page outside the 社区 (/☕/<卡号>?embed&theme=auto|light|dark,
@@ -45,16 +47,36 @@ export function TipEmbed({
     view?.viewer.capEndpoint ?? null,
     "embed",
   );
-  if (query.error)
+  // Not read: why, and 再试一次 as in the 社区's mini app (tip-design §12),
+  // not “请刷新页面”, which inside another site's frame means reloading that
+  // whole page. Asked again only when pressed; the sheen while it is
+  // (sweep 2026-11-21, EMBED-BLANK-FAILURE).
+  if (query.error && !query.isFetching) {
+    const gone =
+      query.error instanceof ActivityRequestError && query.error.status === 404;
     return (
-      <p className="p-4 text-center text-sm text-ink-3">
-        {query.error instanceof ActivityRequestError &&
-        query.error.status === 404
-          ? "这张打赏卡不在了。"
-          : "打赏卡没有读出来，请刷新页面。"}
-      </p>
+      <div className="mx-auto grid min-h-[76px] max-w-[460px] content-center justify-items-center gap-1.5 px-4 py-2 text-center">
+        <p className="text-sm text-ink-2">
+          {gone
+            ? "这张打赏卡不在了。"
+            : query.error instanceof ActivityRequestError
+              ? query.error.message
+              : "连不上红包站，请再试一次。"}
+        </p>
+        {!gone && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void query.refetch()}
+          >
+            <RotateCcw aria-hidden="true" />
+            再试一次
+          </Button>
+        )}
+      </div>
     );
-  if (!view)
+  }
+  if (!view || query.error)
     return (
       <div className="loading-sheen mx-auto h-[76px] max-w-[460px] rounded-[22px] bg-fill" />
     );

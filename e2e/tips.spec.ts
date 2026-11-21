@@ -177,6 +177,143 @@ test.describe("打赏", () => {
     ).toBeDisabled();
   });
 
+  // tip-design §5: “过期了按“‹”回去重新生成（换一个新单号）” (sweep
+  // 2026-11-21, TIP-REGEN).
+  test("Credit 站：链接过期了，按 ‹ 回去再点 Credit 站就换一个新单号；加了留言也是新的一笔", async ({
+    page,
+    context,
+  }) => {
+    await mockSession(page, viewer);
+    await mockCard(page, { card: card(), viewer: signedInViewer() });
+    const bodies: { requestId: string; message?: string }[] = [];
+    const tips = new Map<string, string>();
+    await page.route("**/api/tip/k7Q2mX", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON();
+      bodies.push(body);
+      const known = tips.get(body.requestId);
+      if (!known) {
+        const id = `aaaaaaaa-bbbb-4ccc-8ddd-${String(tips.size + 1).padStart(12, "0")}`;
+        tips.set(body.requestId, id);
+        return route.fulfill({
+          json: {
+            tip: tip({
+              id,
+              method: "checkout",
+              status: "pending",
+              doneAt: null,
+            }),
+            payUrl: `https://credit.example.test/paying?order_no=${id}`,
+          },
+        });
+      }
+      // The same request again: its order has expired at Credit 站.
+      return route.fulfill({
+        json: {
+          tip: tip({
+            id: known,
+            method: "checkout",
+            status: "unpaid",
+            doneAt: null,
+          }),
+          payUrl: null,
+        },
+      });
+    });
+    await page.route("**/api/tip/k7Q2mX/tips/*/check", (route) =>
+      route.fulfill({
+        json: {
+          tip: tip({ method: "checkout", status: "pending", doneAt: null }),
+          payUrl: null,
+        },
+      }),
+    );
+    await context.route("https://credit.example.test/**", (route) =>
+      route.fulfill({ body: "<title>Credit</title>" }),
+    );
+    // One step at a time: the last one has slid out.
+    const settled = () =>
+      expect(tipCard(page).locator("[data-step]")).toHaveCount(1);
+    const back = async () => {
+      await settled();
+      await tipCard(page).getByRole("button", { name: "返回" }).click();
+    };
+    await openApp(page, "/☕/k7Q2mX");
+    await tipCard(page)
+      .getByRole("button", { name: /打赏 10 LDC/ })
+      .click();
+    await tipCard(page)
+      .getByRole("button", { name: /^Credit 站/ })
+      .click();
+    const open = tipCard(page).getByRole("button", {
+      name: "去 Credit 站付款 ↗",
+    });
+    await expect(open).toBeVisible();
+    const popup = page.waitForEvent("popup");
+    await open.click();
+    await (await popup).close();
+    await expect(tipCard(page)).toContainText("等你在新页面付款…");
+    // ‹, Credit 站 again: the old request says 没付, a new one links anew,
+    // to be opened, not “再打开”.
+    await back();
+    await tipCard(page)
+      .getByRole("button", { name: /^Credit 站/ })
+      .click();
+    await expect(open).toBeVisible();
+    expect(bodies).toHaveLength(3);
+    expect(bodies[1]?.requestId).toBe(bodies[0]?.requestId);
+    expect(bodies[2]?.requestId).not.toBe(bodies[0]?.requestId);
+    // ‹, a 留言, Credit 站: not under the last request, which would refuse
+    // other content.
+    await back();
+    await tipCard(page).getByRole("button", { name: "＋留言" }).click();
+    await tipCard(page).getByRole("textbox", { name: "留言" }).fill("加油");
+    await tipCard(page).getByRole("button", { name: "好" }).click();
+    await tipCard(page)
+      .getByRole("button", { name: /^Credit 站/ })
+      .click();
+    await expect(open).toBeVisible();
+    expect(bodies).toHaveLength(4);
+    expect(bodies[3]).toMatchObject({ message: "加油" });
+    expect(bodies[3]?.requestId).not.toBe(bodies[2]?.requestId);
+  });
+
+  // A 🐟额 tip whose answer never came may have gone through: tried again,
+  // it is the same request, so it cannot go out twice; the card says it
+  // could not reach 红包站, not the browser's “Failed to fetch” (sweep
+  // 2026-11-21, TIP-REGEN, TIP-RAW-ERRORS).
+  test("🐟额 没等到回答：说连不上红包站；回去再确认还是同一笔", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockCard(page, { card: card(), viewer: signedInViewer() });
+    const bodies: { requestId: string }[] = [];
+    await page.route("**/api/tip/k7Q2mX", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      bodies.push(route.request().postDataJSON());
+      return route.abort();
+    });
+    const settled = () =>
+      expect(tipCard(page).locator("[data-step]")).toHaveCount(1);
+    const confirmBalance = async () => {
+      await tipCard(page).getByRole("button", { name: /🐟额/ }).click();
+      const confirm = tipCard(page).getByRole("button", { name: "确认打赏" });
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+      await expect(tipCard(page)).toContainText("连不上红包站，请再试一次。");
+    };
+    await openApp(page, "/☕/k7Q2mX");
+    await tipCard(page)
+      .getByRole("button", { name: /打赏 10 LDC/ })
+      .click();
+    await confirmBalance();
+    await settled();
+    await tipCard(page).getByRole("button", { name: "返回" }).click();
+    await confirmBalance();
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]?.requestId).toBe(bodies[0]?.requestId);
+  });
+
   test("没登录的人只能去 Credit 站付", async ({ page }) => {
     await mockSession(page, null);
     await mockCard(page, {

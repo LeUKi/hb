@@ -9,6 +9,7 @@ import type {
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, ChevronDown, X } from "lucide-react";
 import { useId, useState } from "react";
+import { ActivityRequestError } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import { type SessionUser, useSessionUser } from "../../lib/session";
@@ -44,7 +45,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CopyLabelButton } from "../ui/copy-button";
-import { RevealInline } from "../ui/reveal";
+import { Reveal, RevealInline } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -140,6 +141,18 @@ function cardSummary(card: TipCard, palettes: TipPaletteOption[]) {
   return parts.join(" · ");
 }
 
+/**
+ * A write on this page that did not go through, as 07 §1 words them: the
+ * server's reason, or that the network or the service failed; never the
+ * browser's own “Failed to fetch” (sweep 2026-11-21, E6).
+ */
+function failedText(what: string, error: Error | null) {
+  if (!error) return null;
+  return error instanceof ActivityRequestError
+    ? `${what}没有完成：${error.message}`
+    : `${what}没有完成：网络或服务出了问题。可以再试一次。`;
+}
+
 function linkText(card: TipCard) {
   if (card.link.kind === "profile") return "关联：我的个人页";
   if (card.link.kind === "topic") return `关联：帖子 ${card.link.topicId}`;
@@ -206,6 +219,14 @@ function MyTips({ user }: { user: SessionUser }) {
   const stats = pages[0]?.stats ?? null;
   const stopping = actions.stop.isPending ? actions.stop.variables : null;
   const starting = actions.start.isPending ? actions.start.variables : null;
+  // Why 停用 or 启用 did not go through, under that card (E6).
+  const cardFailure = (code: string) =>
+    actions.stop.isError && actions.stop.variables === code
+      ? failedText("停用", actions.stop.error)
+      : actions.start.isError && actions.start.variables === code
+        ? failedText("启用", actions.start.error)
+        : null;
+  const hide = actions.hideMessage;
   // Narrowed by 付法 or 打赏卡; the time is always one of three.
   const narrowed = method !== "all" || card !== "";
   const empty = {
@@ -285,10 +306,9 @@ function MyTips({ user }: { user: SessionUser }) {
               // narrowest (288 + the panel's 32): no sideways scroll.
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3">
                 {data.cards.map((item) => (
-                  <Panel
-                    key={item.code}
-                    className="grid content-start gap-3 p-4"
-                  >
+                  // A column, so the line saying why 停用 or 启用 did not go
+                  // through opens in place (Reveal).
+                  <Panel key={item.code} className="flex flex-col gap-3 p-4">
                     <div className="grid gap-0.5 text-sm text-ink-2">
                       <div className="flex items-center gap-2">
                         <b className="text-base text-ink">{item.name}</b>
@@ -359,6 +379,11 @@ function MyTips({ user }: { user: SessionUser }) {
                         </Button>
                       ) : null}
                     </div>
+                    <Reveal show={cardFailure(item.code) !== null}>
+                      <p role="alert" className="text-sm text-danger">
+                        {cardFailure(item.code)}
+                      </p>
+                    </Reveal>
                     <div className="overflow-x-auto">
                       <TipCardView
                         card={previewOf(item, owner, false)}
@@ -444,12 +469,28 @@ function MyTips({ user }: { user: SessionUser }) {
                           tip={tip}
                           onHide={
                             side === "in" && tip.message
-                              ? () =>
-                                  actions.hideMessage.mutate({
+                              ? () => {
+                                  if (hide.isPending) return;
+                                  hide.mutate({
                                     id: tip.id,
                                     hidden: !tip.messageHidden,
-                                  })
+                                  });
+                                }
                               : undefined
+                          }
+                          busy={hide.isPending}
+                          hiding={
+                            hide.isPending && hide.variables?.id === tip.id
+                          }
+                          failure={
+                            hide.isError && hide.variables?.id === tip.id
+                              ? failedText(
+                                  hide.variables.hidden
+                                    ? "隐藏留言"
+                                    : "显示留言",
+                                  hide.error,
+                                )
+                              : null
                           }
                         />
                       ))}
@@ -597,7 +638,22 @@ const statusText: Partial<Record<Tip["status"], string>> = {
   not_sent: "发放失败",
 };
 
-function TipRow({ tip, onHide }: { tip: Tip; onHide?: () => void }) {
+function TipRow({
+  tip,
+  onHide,
+  busy,
+  hiding,
+  failure,
+}: {
+  tip: Tip;
+  onHide?: () => void;
+  /** A 隐藏留言 is on its way (this row's or another's): one at a time. */
+  busy: boolean;
+  /** This row's. */
+  hiding: boolean;
+  /** Why this row's 隐藏留言 or 显示留言 did not go through (E6). */
+  failure: string | null;
+}) {
   const time = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     month: "2-digit",
@@ -607,42 +663,62 @@ function TipRow({ tip, onHide }: { tip: Tip; onHide?: () => void }) {
   }).format(new Date(tip.doneAt ?? tip.createdAt));
   const who = tip.counterpart;
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm @wide/window:grid-cols-[6.5rem_minmax(0,10rem)_6rem_minmax(0,1fr)_auto]">
-      <span className="text-ink-3 tabular-nums">{time}</span>
-      <span className="flex min-w-0 items-center gap-2">
-        <Avatar
-          name={who?.displayName ?? "游"}
-          src={who?.avatarUrl ?? null}
-          size={24}
-        />
-        <span className="truncate">{who ? who.displayName : "游客"}</span>
-        {!who && <StatusChip tone="neutral">没登录</StatusChip>}
-      </span>
-      <span className="text-right font-semibold tabular-nums">
-        {ldc(tip.amountMinor)} {tip.method === "balance" ? "🐟" : "LDC"}
-      </span>
-      <span className="col-span-2 min-w-0 truncate text-ink-2 @wide/window:col-span-1">
-        {tipMethodName[tip.method]}
-        {statusText[tip.status] && <> · {statusText[tip.status]}</>}
-        {tip.card.name && <> · {tip.card.name}</>}
-        {tip.message && (
-          <span
-            className={cn(
-              "ml-2",
-              tip.messageHidden ? "text-ink-3 line-through" : "text-ink",
-            )}
+    // A column: the row, and under it, opening in place, why its 隐藏留言
+    // did not go through.
+    <li className="flex flex-col gap-1 px-4 py-3 text-sm">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @wide/window:grid-cols-[6.5rem_minmax(0,10rem)_6rem_minmax(0,1fr)_auto]">
+        <span className="text-ink-3 tabular-nums">{time}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar
+            name={who?.displayName ?? "游"}
+            src={who?.avatarUrl ?? null}
+            size={24}
+          />
+          <span className="truncate">{who ? who.displayName : "游客"}</span>
+          {!who && <StatusChip tone="neutral">没登录</StatusChip>}
+        </span>
+        <span className="text-right font-semibold tabular-nums">
+          {ldc(tip.amountMinor)} {tip.method === "balance" ? "🐟" : "LDC"}
+        </span>
+        <span className="col-span-2 min-w-0 truncate text-ink-2 @wide/window:col-span-1">
+          {tipMethodName[tip.method]}
+          {statusText[tip.status] && <> · {statusText[tip.status]}</>}
+          {tip.card.name && <> · {tip.card.name}</>}
+          {tip.message && (
+            <span
+              className={cn(
+                "ml-2",
+                tip.messageHidden ? "text-ink-3 line-through" : "text-ink",
+              )}
+            >
+              “{tip.message}”
+            </span>
+          )}
+        </span>
+        {onHide ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            aria-disabled={busy || undefined}
+            onClick={onHide}
           >
-            “{tip.message}”
-          </span>
+            {hiding
+              ? tip.messageHidden
+                ? "正在显示…"
+                : "正在隐藏…"
+              : tip.messageHidden
+                ? "显示留言"
+                : "隐藏留言"}
+          </Button>
+        ) : (
+          <span />
         )}
-      </span>
-      {onHide ? (
-        <Button size="xs" variant="ghost" onClick={onHide}>
-          {tip.messageHidden ? "显示留言" : "隐藏留言"}
-        </Button>
-      ) : (
-        <span />
-      )}
+      </div>
+      <Reveal show={failure !== null}>
+        <p role="alert" className="text-danger">
+          {failure}
+        </p>
+      </Reveal>
     </li>
   );
 }

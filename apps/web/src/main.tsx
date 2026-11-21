@@ -4,7 +4,7 @@ import { getDefaultStore, Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TipEmbed, tipEmbedOf } from "./components/tips/tip-embed";
-import { failBoot, markBoot } from "./lib/boot";
+import { failBoot, failEmbed, markBoot } from "./lib/boot";
 import { installHaptics } from "./lib/haptics";
 import { createAppQueryClient } from "./lib/query-cache";
 import { router } from "./router";
@@ -23,7 +23,8 @@ installHaptics();
 const tipEmbed = tipEmbedOf(window.location);
 
 createRoot(root, {
-  onUncaughtError: () => failBoot("render"),
+  // An embed has no loader to tell: its own stand-in (index.html).
+  onUncaughtError: () => (tipEmbed ? failEmbed() : failBoot("render")),
 }).render(
   tipEmbed ? (
     // A 打赏卡 in another page: the card alone, no shell.

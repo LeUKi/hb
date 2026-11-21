@@ -75,7 +75,13 @@ export function useMyTips(userId: string) {
   });
 }
 
-/** 新建、保存、停用、启用: each answers with the card, and 我的打赏 reads again. */
+/**
+ * 新建、保存、停用、启用: each answers with the card, and 我的打赏 reads again.
+ * 停用、启用 and 隐藏留言 read again when refused too (a list from before
+ * the 站长 stopped a card, or before another device started one), so the
+ * page shows what is there beside why (sweep 2026-11-21, E6). The read is
+ * awaited, so each stays pending until it is in.
+ */
 export function useTipCardActions(userId: string) {
   const queryClient = useQueryClient();
   const options = useCsrf();
@@ -115,7 +121,7 @@ export function useTipCardActions(userId: string) {
             options,
           ),
         ),
-      onSuccess: done,
+      onSettled: done,
     }),
     start: useMutation({
       mutationFn: async (code: string) =>
@@ -125,7 +131,7 @@ export function useTipCardActions(userId: string) {
             options,
           ),
         ),
-      onSuccess: done,
+      onSettled: done,
     }),
     hideMessage: useMutation({
       mutationFn: async ({ id, hidden }: { id: string; hidden: boolean }) =>
@@ -135,7 +141,7 @@ export function useTipCardActions(userId: string) {
             options,
           ),
         ),
-      onSuccess: done,
+      onSettled: done,
     }),
   };
 }

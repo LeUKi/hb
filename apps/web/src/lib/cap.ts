@@ -4,6 +4,9 @@
 // for its browser checks, come from this site, never from a CDN.
 import capWasmUrl from "@cap.js/wasm/browser/cap_wasm_bg.wasm?url";
 import pakoInflateUrl from "pako/dist/pako_inflate.min.js?url";
+import { CapProblem } from "./cap-problem";
+
+export { CapProblem };
 
 type CapErrorDetail = { code?: string; message?: string };
 type CapInstance = {
@@ -21,17 +24,6 @@ declare global {
     CAP_CUSTOM_WASM_URL?: string;
     CAP_PAKO_URL?: string;
     CAP_SILENT?: boolean;
-  }
-}
-
-/** Why a solve failed, as the dialog words it. */
-export class CapProblem extends Error {
-  constructor(
-    /** Cap's code: instr_blocked for a browser its checks stopped. */
-    public readonly code: string,
-  ) {
-    super(`CAP_${code}`);
-    this.name = "CapProblem";
   }
 }
 

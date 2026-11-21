@@ -17,6 +17,8 @@ type BootApi = {
 declare global {
   interface Window {
     hbBoot?: BootApi;
+    /** An embedded 打赏卡's stand-in for the loader's failure (index.html). */
+    hbEmbedFail?: () => void;
   }
 }
 
@@ -27,6 +29,15 @@ export function markBoot(stage: BootStage) {
 
 export function failBoot(reason: string) {
   window.hbBoot?.fail(reason);
+}
+
+/**
+ * An embedded 打赏卡 stopped by an error: React has emptied the root, and
+ * index.html puts one line and 重新加载 there, not an empty hole in the
+ * host's page (sweep 2026-11-21, EMBED-BLANK-FAILURE).
+ */
+export function failEmbed() {
+  window.hbEmbedFail?.();
 }
 
 let bootDone = window.hbBoot?.done ?? true;
