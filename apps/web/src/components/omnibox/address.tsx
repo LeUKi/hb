@@ -30,7 +30,9 @@ function Muted({ children }: { children: ReactNode }) {
 
 /**
  * The 表情码 shrunk until all of it fits the room the bar leaves (on
- * phones, so all 14 show), never below 8px.
+ * phones), never below 8px. On a 红包's own page all 14 fit from about
+ * 412px wide; narrower, the code ends in an ellipsis, as the wide bar's
+ * does, rather than slicing an emoji through its middle (sweep 2026-11-21).
  */
 function FitCode({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -60,7 +62,7 @@ function FitCode({ text }: { text: string }) {
   return (
     <span
       ref={ref}
-      className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-emoji"
+      className="min-w-0 flex-1 truncate font-emoji"
       style={{ fontSize: size }}
     >
       {text}
@@ -114,7 +116,7 @@ export function useAddress(compact: boolean): Address {
           {!compact && <Slash />}
           <span className="shrink-0 font-emoji">{RED_PACKET}</span>
           {compact ? <span className="w-1.5 shrink-0" /> : <Slash />}
-          {/* A narrow bar shrinks the code until all 14 emoji fit. */}
+          {/* A narrow bar shrinks the code to fit, down to 8px (FitCode). */}
           {compact ? (
             <FitCode text={activityCode(id)} />
           ) : (

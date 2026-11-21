@@ -30,9 +30,10 @@ import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone } from "../page/page-state";
 import { WindowDialog } from "../shell/window-dialog";
+import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
-import { CodeEditor } from "../ui/code-editor";
+import { CodeEditor, CodePeek } from "../ui/code-editor";
 import { CopyButton, CopyLabelButton } from "../ui/copy-button";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -383,6 +384,7 @@ export function PublicJudgePage({
   if (judge.takenDown) reason.current = judge.takenDown.reason;
   const takenDownReason = reason.current;
   const codeTitle = useId();
+  const { compact } = useWindowInfo();
   const version = judge.version;
   const params = version?.declarations?.params ?? [];
   const rules = ruleLines(version?.declarations?.hongbao);
@@ -598,14 +600,27 @@ export function PublicJudgePage({
             </span>
             <CopyButton value={version.fingerprint} label="代码指纹" />
           </p>
-          <CodeEditor
-            value={version.code}
-            language="js"
-            readOnly
-            labelledBy={codeTitle}
-            rows={6}
-            maxRows={30}
-          />
+          {/* On a phone a 30-line box took over the swipe, and 版本 and
+              用它的红包 were thousands of px of code away: there the code is
+              folded to its first lines, as in the 红包's 代码 dialog
+              (sweep 2026-11-21). */}
+          {compact ? (
+            <CodePeek
+              key={version.fingerprint}
+              value={version.code}
+              language="js"
+              labelledBy={codeTitle}
+            />
+          ) : (
+            <CodeEditor
+              value={version.code}
+              language="js"
+              readOnly
+              labelledBy={codeTitle}
+              rows={6}
+              maxRows={30}
+            />
+          )}
         </PageSection>
       )}
       {version?.network && (

@@ -371,10 +371,12 @@ export function Omnibox() {
 
   const expanded = mode === "expanded";
   const docked = mode === "docked";
-  // Docked in the 顶栏 over a page that bleeds (the red 红包 cover): the
-  // address becomes a light pill so it stays legible on the colour.
+  // Docked in the 顶栏 over a page that bleeds (the red 红包 cover), or over
+  // content scrolled beneath the bar's thin frost (a list's grey and black
+  // covers sank the inset fill, its "/" and its hint): the address becomes
+  // a light pill so it stays legible on the colour (sweep 2026-11-21).
   const edge = useAtomValue(viewEdgeAtom);
-  const overColor = edge.bleed && docked;
+  const overColor = (edge.bleed || edge.scrolled) && docked;
   const liveValue = expanded ? editDraft : startDraft;
   // While fading out into the address, keep showing what was typed.
   const frozen = useRef(liveValue);

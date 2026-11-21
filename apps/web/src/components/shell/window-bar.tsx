@@ -33,8 +33,12 @@ import { useWindowInfo } from "./window-info";
 
 function IdentityButton({ compact }: { compact: boolean }) {
   const size = compact ? "icon-bar" : "bar";
-  // Over a 代码判定红包's black lacquer a bare 登录 would not show.
-  const lacquer = useAtomValue(viewEdgeAtom).lacquer;
+  // A bare 登录 would not show over any 红包 cover under the bar: a page's
+  // red, grey or black one bleeding there, or a list's covers scrolled
+  // beneath its thin frost. There it is a pill like + and 红包记录 beside it
+  // (sweep 2026-11-21).
+  const edge = useAtomValue(viewEdgeAtom);
+  const variant = edge.bleed || edge.scrolled ? "secondary" : "ghost";
   const shape = useButtonShape(buttonRadius[size], buttonHeight[size]);
   const { ready, user } = useIdentity();
   const { openAccount } = useOmniboxController();
@@ -60,7 +64,7 @@ function IdentityButton({ compact }: { compact: boolean }) {
         }
         title={identity.maintenance ? "系统维护中，请稍后再试" : failure}
         className={cn(
-          buttonVariants({ variant: "ghost", size }),
+          buttonVariants({ variant, size }),
           "text-warning",
           !compact && "gap-1.5 px-3",
         )}
@@ -90,10 +94,7 @@ function IdentityButton({ compact }: { compact: boolean }) {
           openAccount();
         }}
         aria-label="登录"
-        className={buttonVariants({
-          variant: lacquer ? "secondary" : "ghost",
-          size,
-        })}
+        className={buttonVariants({ variant, size })}
         style={shape}
       >
         <SquircleFill radius={buttonRadius[size]} />

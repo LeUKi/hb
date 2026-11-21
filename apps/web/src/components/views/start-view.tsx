@@ -140,8 +140,10 @@ function CommandCard({
   );
 }
 
+// Under 22rem (a 320px phone) the spacing tightens by 6px, so a five-glyph
+// title such as 判定器广场 still fits beside its icon (sweep 2026-11-21).
 const cardClass =
-  "choice flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-left";
+  "choice flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-left @max-[22rem]/window:gap-2 @max-[22rem]/window:px-2.5";
 
 /**
  * A lookup waiting on 再次确认 holds the box while its 口令 is typed there:
