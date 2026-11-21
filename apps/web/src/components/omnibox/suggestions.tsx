@@ -176,7 +176,8 @@ function Row({
         <span
           className={`grid size-8 shrink-0 place-items-center transition-colors ${
             active
-              ? "bg-white text-ink raised"
+              ? // Segmented's raised face, dark included (sweep 2026-11-21).
+                "bg-[var(--color-raised,var(--color-white))] text-ink raised"
               : "bg-fill text-ink-2 shadow-none"
           }`}
         >

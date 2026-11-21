@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import {
   type ReactNode,
   type RefObject,
@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { StandIn } from "../hongbao/password-text";
+import { PopLayer, tabOut } from "../ui/popover";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 
 // 🐟额 PLUS (docs/balance-design.md §13): opened by invitation. Its tag is
@@ -197,10 +198,12 @@ function PlusPanel({
       </dl>
       <div className="border-line border-t pt-2.5">
         {plus.plus ? (
+          // 38px to tap, the line as it was (sweep 2026-11-21): the only way
+          // to the invitation is through this bubble.
           <button
             type="button"
             onClick={onInvite}
-            className="inline-flex items-center gap-0.5 text-sm font-medium text-accent-ink hover:underline"
+            className="-my-2 inline-flex items-center gap-0.5 py-2 text-sm font-medium text-accent-ink hover:underline"
           >
             邀请别人开通
             <ChevronRight className="size-4" aria-hidden="true" />
@@ -225,7 +228,8 @@ function Row({ name, text }: { name: string; text: string }) {
 /**
  * The tag beside 🐟额's title: hover, focus or a tap opens its bubble,
  * which stays while the pointer is on either; a tap keeps it open until
- * Esc, a tap elsewhere or a scroll.
+ * Esc, a tap elsewhere, a scroll or focus going elsewhere. Tab out of it
+ * goes on from the tag.
  */
 export function PlusTag({
   plus,
@@ -313,7 +317,10 @@ function TagPanel({
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-haspopup="dialog"
-        className="group/plus inline-flex cursor-pointer rounded-[7px] align-middle"
+        // The tag is 20px high and the only way to PLUS's bubble: a finger
+        // gets a 44px tall area around it (sweep 2026-11-21); a mouse keeps
+        // the tag's own, so hovering near it opens nothing.
+        className="group/plus relative inline-flex cursor-pointer rounded-[7px] align-middle pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1.5 pointer-coarse:after:-inset-y-3"
         onPointerEnter={(event) => {
           if (event.pointerType !== "mouse") return;
           later(() => setOpen(true), HOVER_DELAY);
@@ -419,7 +426,18 @@ function Bubble({
     const outside = (event: PointerEvent) => {
       if (!inside(event.target)) latestClose.current();
     };
+    // Focus gone elsewhere (the 指令框, a dialog): the bubble goes too, as
+    // the 资料卡 does (sweep 2026-11-21).
+    const focusMoved = (event: FocusEvent) => {
+      if (!inside(event.target)) latestClose.current();
+    };
     const key = (event: KeyboardEvent) => {
+      // Tab out of the bubble goes on from its tag (popover.tsx), not to
+      // what follows the window layer.
+      if (tabOut(event, panel.current, anchor.current)) {
+        latestClose.current();
+        return;
+      }
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
@@ -430,11 +448,13 @@ function Bubble({
     };
     const resize = () => latestClose.current();
     document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", focusMoved, true);
     document.addEventListener("keydown", key, true);
     document.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", resize);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", focusMoved, true);
       document.removeEventListener("keydown", key, true);
       document.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", resize);
@@ -445,7 +465,7 @@ function Bubble({
   return createPortal(
     <AnimatePresence>
       {open && place && (
-        <motion.div
+        <PopLayer
           key="panel"
           ref={panel}
           id={id}
@@ -475,7 +495,7 @@ function Bubble({
           <Squircle radius={radius.card}>
             <div className="glass-pop relative">{children}</div>
           </Squircle>
-        </motion.div>
+        </PopLayer>
       )}
     </AnimatePresence>,
     host,

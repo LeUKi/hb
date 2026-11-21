@@ -867,8 +867,11 @@ function Divider({
         event.preventDefault();
       }}
     >
+      {/* White on the desktop's crimson in both themes: bg-white turns
+          dark-grey in dark, where the bar (the separator's only focus cue)
+          was 1.1:1 (sweep 2026-11-21). */}
       <span
-        className={`h-12 w-1 rounded-full shadow-sm transition-[background-color,height] group-hover:h-16 group-focus-visible:h-16 ${armed ? "h-16 bg-danger" : "bg-white/45 group-hover:bg-white group-focus-visible:bg-white"}`}
+        className={`h-12 w-1 rounded-full shadow-sm transition-[background-color,height] group-hover:h-16 group-focus-visible:h-16 ${armed ? "h-16 bg-danger" : "bg-[rgb(255_255_255/0.45)] group-hover:bg-[#fff] group-focus-visible:bg-[#fff]"}`}
       />
     </div>
   );

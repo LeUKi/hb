@@ -20,6 +20,7 @@ import { activityShareUrl } from "../../lib/emoji-links";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
 import { openingLabel } from "../../lib/roster-time";
+import { Panel } from "../page/page";
 import { PanelDialog } from "../shell/panel-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { useWindowInfo } from "../shell/window-info";
@@ -438,7 +439,9 @@ function ShareForm({
           >
             {choice.where === "forum" ? "在帖子里的样子" : "复制出去的文字"}
           </h3>
-          <div className="panel grid min-w-0 gap-2 rounded-2xl px-4 py-3.5">
+          {/* The panel every page has: a squircle (04 §8), not a plain
+              rounded box (sweep 2026-11-21). */}
+          <Panel className="grid min-w-0 gap-2 px-4 py-3.5">
             {kind === "image" ? (
               <ImagePreview activity={activity} size={size} />
             ) : kind === "mini" ? (
@@ -450,7 +453,7 @@ function ShareForm({
                 {text}
               </p>
             )}
-          </div>
+          </Panel>
           {choice.where === "forum" && (
             <div className="flex min-w-0 items-center justify-between gap-3">
               <span className="min-w-0 text-xs text-ink-3">
@@ -521,9 +524,12 @@ function ShareForm({
           </header>
           <div className="view-scroll grid min-h-0 flex-1 content-start gap-2 overflow-y-auto overscroll-contain px-5">
             <p className="text-sm text-ink-2">复制的就是下面这一段。</p>
-            <pre className="rounded-xl bg-fill px-3.5 py-3 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap break-all text-ink">
-              {text}
-            </pre>
+            {/* A fill box: the callout's squircle (04 §8; sweep 2026-11-21). */}
+            <Squircle radius={radius.callout}>
+              <pre className="bg-fill px-3.5 py-3 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap break-all text-ink">
+                {text}
+              </pre>
+            </Squircle>
           </div>
           <footer className="flex px-5 pt-3 pb-4">
             <Button
@@ -575,7 +581,8 @@ function PasswordPicker({
               }}
               className={`flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                 index === value
-                  ? "bg-white font-medium text-ink raised"
+                  ? // Segmented's raised face, dark included (sweep 2026-11-21).
+                    "bg-[var(--color-raised,var(--color-white))] font-medium text-ink raised"
                   : "text-ink-2 hover:text-ink"
               }`}
             >
@@ -619,16 +626,16 @@ function PostPreview({ text }: { text: string }) {
     if (line === "```") {
       if (block)
         parts.push(
-          <div
-            key={start}
-            className="relative rounded-xl bg-fill px-3.5 py-2.5 pr-10 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap break-all text-ink"
-          >
-            {block.join("\n")}
-            <Copy
-              aria-hidden="true"
-              className="absolute top-2.5 right-3 size-4 text-ink-3"
-            />
-          </div>,
+          // A fill box: the callout's squircle (04 §8; sweep 2026-11-21).
+          <Squircle key={start} radius={radius.callout}>
+            <div className="relative bg-fill px-3.5 py-2.5 pr-10 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap break-all text-ink">
+              {block.join("\n")}
+              <Copy
+                aria-hidden="true"
+                className="absolute top-2.5 right-3 size-4 text-ink-3"
+              />
+            </div>
+          </Squircle>,
         );
       block = block ? null : [];
       continue;
@@ -681,27 +688,30 @@ const embedShape = (activity: HongbaoActivity) => ({
 function MiniPreview({ activity }: { activity: HongbaoActivity }) {
   return (
     <div className="grid min-w-0 gap-2">
-      <div
-        className={cn(
-          "grid justify-items-center overflow-hidden rounded-xl",
-          activity.mode === "code" && "hb-code",
-        )}
-      >
-        <div className="grid w-full justify-items-center gap-1 bg-[linear-gradient(180deg,var(--color-cover-top),var(--color-cover-bottom))] px-4 pt-4 pb-7 text-center">
-          <span className="text-xs text-cream-2">
-            {activity.author.displayName}的红包
-          </span>
-          <span className="line-clamp-2 text-base font-semibold text-cream">
-            {activity.title}
+      {/* The callout's squircle (04 §8; sweep 2026-11-21). */}
+      <Squircle radius={radius.callout}>
+        <div
+          className={cn(
+            "grid justify-items-center overflow-hidden",
+            activity.mode === "code" && "hb-code",
+          )}
+        >
+          <div className="grid w-full justify-items-center gap-1 bg-[linear-gradient(180deg,var(--color-cover-top),var(--color-cover-bottom))] px-4 pt-4 pb-7 text-center">
+            <span className="text-xs text-cream-2">
+              {activity.author.displayName}的红包
+            </span>
+            <span className="line-clamp-2 text-base font-semibold text-cream">
+              {activity.title}
+            </span>
+          </div>
+          <span
+            aria-hidden="true"
+            className="chip-gold -mt-5 grid size-10 place-items-center rounded-full text-lg font-semibold"
+          >
+            {activity.mode === "timed_draw" ? "报" : "开"}
           </span>
         </div>
-        <span
-          aria-hidden="true"
-          className="chip-gold -mt-5 grid size-10 place-items-center rounded-full text-lg font-semibold"
-        >
-          {activity.mode === "timed_draw" ? "报" : "开"}
-        </span>
-      </div>
+      </Squircle>
       <span className="text-xs text-ink-3 tabular-nums">
         宽度和帖子一样，高 {miniAppEmbedHeight(embedShape(activity))}
       </span>

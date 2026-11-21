@@ -25,6 +25,7 @@ import {
 import { MorphLabel } from "../ui/morph-label";
 import { PersonLine } from "../ui/person-line";
 import { Reveal } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import type { ErrorOf, Update } from "./fields";
 import type { FormState, ScopeForm, ScopePerson } from "./form-state";
 
@@ -200,11 +201,13 @@ function BatchPeopleDialog({
           placeholder={"@alice\nbob, carol\nhttps://linux.do/u/dave"}
           onChange={(event) => setText(event.target.value)}
         />
-        {/* Looked up as they arrive: the sheen until all are known. */}
+        {/* Looked up as they arrive: the sheen until all are known. No
+            fill of its own, so no corner to draw (04 §8 has no plain
+            rounded ones; sweep 2026-11-21). */}
         <Reveal show={people.length > 0}>
           <div
             className={cn(
-              "flex max-h-48 flex-wrap gap-1.5 overflow-y-auto rounded-lg",
+              "flex max-h-48 flex-wrap gap-1.5 overflow-y-auto",
               !settled && "loading-sheen",
             )}
           >
@@ -454,9 +457,13 @@ export function ScopeFields({
               Nothing picked yet (限定 starts so) is the next step, not a
               mistake: said the same, quietly; the step outside marks it. */}
           <Reveal show={sentence !== null || Boolean(missing)}>
-            <p className="rounded-lg bg-fill px-3 py-2 text-sm text-ink-2">
-              {missing ?? sentence}
-            </p>
+            {/* A fill box: the callout's squircle, as 参数's summary
+                (04 §8; sweep 2026-11-21). */}
+            <Squircle radius={radius.callout}>
+              <p className="bg-fill px-3 py-2 text-sm text-ink-2">
+                {missing ?? sentence}
+              </p>
+            </Squircle>
           </Reveal>
         </div>
       </Reveal>

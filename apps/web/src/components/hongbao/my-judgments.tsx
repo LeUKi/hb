@@ -24,7 +24,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MorphLabel, RollingText } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
-import { Squircle } from "../ui/squircle";
+import { radius, Squircle } from "../ui/squircle";
 import { type BoardActivity, useJudgeBoard } from "./judge-board";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
@@ -69,22 +69,26 @@ function FetchAnswers({ answers }: { answers: JudgeFetchAnswer[] }) {
       <Reveal show={open}>
         <ul id={id} className="grid gap-1.5">
           {answers.map((answer, index) => (
-            <li
+            // A small fill row: a squircle like every surface (04 §8;
+            // sweep 2026-11-21).
+            <Squircle
               // In order; nothing else tells two answers of one site apart.
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed list
               key={index}
-              className="grid gap-0.5 rounded-lg bg-fill-2 px-2.5 py-1.5"
+              radius={radius.tag}
             >
-              <span className="text-xs text-ink-3">
-                {answer.host} ·{" "}
-                {answer.error ? failed[answer.error] : answer.status}
-              </span>
-              {answer.response !== undefined && answer.response !== "" && (
-                <pre className="max-h-48 overflow-auto font-mono text-xs break-all whitespace-pre-wrap text-ink-2">
-                  {answer.response}
-                </pre>
-              )}
-            </li>
+              <li className="grid gap-0.5 bg-fill-2 px-2.5 py-1.5">
+                <span className="text-xs text-ink-3">
+                  {answer.host} ·{" "}
+                  {answer.error ? failed[answer.error] : answer.status}
+                </span>
+                {answer.response !== undefined && answer.response !== "" && (
+                  <pre className="max-h-48 overflow-auto font-mono text-xs break-all whitespace-pre-wrap text-ink-2">
+                    {answer.response}
+                  </pre>
+                )}
+              </li>
+            </Squircle>
           ))}
         </ul>
       </Reveal>

@@ -128,7 +128,11 @@ function Highlight({
       }}
     >
       <Squircle radius={sizes[size].option}>
-        <span className="block size-full bg-white raised" />
+        {/* The raised face's fill (--color-raised): white in light; in dark
+            a white tint a step over the track's fill-2, since the dark
+            --color-white is the track's own colour and the face vanished
+            into it (sweep 2026-11-21). White until the token is defined. */}
+        <span className="block size-full bg-[var(--color-raised,var(--color-white))] raised" />
       </Squircle>
     </motion.span>
   );

@@ -325,7 +325,9 @@ export function FilterChip({
           type="button"
           onClick={onClear}
           aria-label="清除这个筛选"
-          className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-white/60"
+          // A lit spot on the tint: in dark the raised white tint, not the
+          // dark --color-white's grey (sweep 2026-11-21).
+          className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-[var(--color-raised,var(--color-white))]/60"
         >
           <X className="size-3.5" aria-hidden="true" />
         </button>
@@ -353,8 +355,12 @@ export function ToggleChip({
         className={cn(
           // The raised face eases in and out with its colour.
           "inline-flex h-8 items-center px-3 text-sm transition-[color,background-color,box-shadow] duration-200",
+          // Segmented's raised face, but with no track under it: its
+          // neighbours are bare fill-2 chips, so it takes a tenth more
+          // white (white in light; about white 21% in dark, where the
+          // face alone sat at the chips' own colour; sweep 2026-11-21).
           pressed
-            ? "bg-white font-medium text-ink raised"
+            ? "bg-[color-mix(in_srgb,var(--color-raised,var(--color-white)),#fff_10%)] font-medium text-ink raised"
             : "bg-fill-2 text-ink-2 hover:text-ink",
         )}
       >
@@ -447,7 +453,13 @@ export function ListDetail<T extends { id: string }>({
                   }
                   className={cn(
                     "flex w-full items-center gap-3 p-3 text-left transition-colors",
-                    item.id === selectedId ? "bg-white/80" : "hover:bg-fill-2",
+                    // White 80% in light; in dark a step over the hover's
+                    // fill-2, not the dark --color-white, which came out
+                    // darker than a hovered row (as ToggleChip's face;
+                    // sweep 2026-11-21).
+                    item.id === selectedId
+                      ? "bg-[color-mix(in_srgb,var(--color-raised,var(--color-white)),#fff_10%)]/80"
+                      : "hover:bg-fill-2",
                   )}
                 >
                   {row(item, item.id === selectedId)}

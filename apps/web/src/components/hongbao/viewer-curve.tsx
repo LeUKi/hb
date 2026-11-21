@@ -171,10 +171,13 @@ export function ViewerCurve({
             className="absolute top-0 bottom-0 w-px bg-line"
             style={{ left: `${(x(opened) / WIDTH) * 100}%` }}
           >
-            {/* Its word on the side with room: right of the line, left near the end. */}
+            {/* Its word on the side with room: right of the line, left near
+                the end. 13px, the floor (04 §7; sweep 2026-11-21): its 13px
+                line still ends above the peak's dot, which HEADROOM keeps
+                about 15px down the plot. */}
             <span
               className={cn(
-                "absolute -top-0.5 text-[11px] leading-none whitespace-nowrap text-ink-3",
+                "absolute -top-0.5 text-xs leading-none whitespace-nowrap text-ink-3",
                 x(opened) > WIDTH * 0.8 ? "right-1" : "left-1",
               )}
             >

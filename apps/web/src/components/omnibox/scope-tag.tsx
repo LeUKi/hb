@@ -56,6 +56,8 @@ const TAG_RADIUS = 9;
 const NECK = 10;
 /** How far the goo reaches: the size of the curves where the parts meet. */
 const GOO_BLUR = 4;
+/** The ×'s reach for a finger: a 44px square (sweep 2026-11-21). */
+const REACH = 44;
 
 /**
  * The 图标标签: as tall as the box's 提交 button and as far from the box's
@@ -409,6 +411,19 @@ export function ScopeTag({
   // Where the words sit inside the bud as it moves: their own place.
   const rowLeft = useTransform(() => -headLeft.get());
   const rowTop = useTransform(() => bud.get() / 2 - height / 2);
+  // The ×'s reach for a finger (sweep 2026-11-21): the 主标签 is 24px tall
+  // and clips what it holds, and a tap just past its × landed on the
+  // window's scrim, which folds the whole box. A 44px square under the
+  // 主标签, centred on the × (the row's last 20px, 2px from its end), from
+  // the box's top edge up: the 6px gap, the tag and a little above it. It
+  // takes taps only once the words are all in.
+  const reachLeft = useTransform(
+    () => full.get() + wordsShift.get() - 12 - REACH / 2,
+  );
+  const reachEvents = useTransform(() => {
+    const shown = Math.min(words.get(), fade.get());
+    return shown > 0.9 ? "auto" : "none";
+  });
 
   // A computed value follows only what its first run read: everything is
   // read before anything is decided.
@@ -545,6 +560,24 @@ export function ScopeTag({
           <motion.path d={exact} fill={`url(#${fillId})`} />
         </g>
       </svg>
+      {/* The ×'s reach (above), for touch: under the 主标签, which keeps
+          its own taps; a second way to the same ×, so out of the tab
+          order and unread. */}
+      <motion.button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onRemove}
+        className="absolute hidden pointer-coarse:block"
+        style={{
+          left: reachLeft,
+          top: -REACH,
+          width: REACH,
+          height: REACH,
+          pointerEvents: reachEvents,
+        }}
+      />
       {/* The 主标签's words and ×, in their own place, shown as the bud
           grows round them. */}
       <motion.div
@@ -584,15 +617,23 @@ export function ScopeTag({
           ) : (
             <span className={titleClass}>{label}</span>
           )}
+          {/* The tag's full height and 4px wider than its 20px circle,
+              the margins giving the row's gap and end padding back, so it
+              takes the measured 20px (below) and nothing moves (sweep
+              2026-11-21). */}
           <button
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={onRemove}
             aria-label="改为查找全部红包"
             title="改为查找全部红包（退格）"
-            className="grid size-5 shrink-0 place-items-center rounded-full opacity-80 hover:bg-white/15 hover:opacity-100"
+            className="group/x -mx-0.5 grid h-full w-6 shrink-0 place-items-center opacity-80 hover:opacity-100"
           >
-            <X className="size-3.5" aria-hidden="true" />
+            {/* White on the tag's own colour in both themes: bg-white is
+                grey in dark (sweep 2026-11-21). */}
+            <span className="grid size-5 place-items-center rounded-full group-hover/x:bg-[rgb(255_255_255/0.15)]">
+              <X className="size-3.5" aria-hidden="true" />
+            </span>
           </button>
         </motion.span>
       </motion.div>

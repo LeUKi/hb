@@ -553,10 +553,16 @@ function Row({
   return (
     <div className="grid items-start gap-3 border-line border-b pb-5 last:border-b-0 last:pb-0 @wide/window:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @wide/window:gap-6">
       <div className="grid min-w-0 gap-4">{children}</div>
-      <div className="grid min-w-0 gap-2 rounded-2xl border border-line border-dashed p-3">
-        <p className="text-xs text-ink-3">预览 · {where}</p>
-        {preview}
-      </div>
+      {/* A squircle like every surface (04 §8; sweep 2026-11-21). The
+          dashed edge stays a border: natively it follows the squircle;
+          where the squircle is a clip it keeps its round corner, the clip
+          trimming at most 0.35px of it beside each corner. */}
+      <Squircle radius={radius.card}>
+        <div className="grid min-w-0 gap-2 border border-line border-dashed p-3">
+          <p className="text-xs text-ink-3">预览 · {where}</p>
+          {preview}
+        </div>
+      </Squircle>
     </div>
   );
 }

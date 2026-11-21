@@ -726,7 +726,7 @@ test.describe("附带网页", () => {
     const loads = await mock(page);
     await openApp(page, path);
     // The cover's tag (the button under 分享 has the same name).
-    await page.locator("button.hb-chip-red", { hasText: "附带网页" }).click();
+    await page.locator("button.hb-chip-hit", { hasText: "附带网页" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     await expect.poll(() => loads).toEqual([pageUrl]);
     await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();

@@ -127,7 +127,7 @@ function VoteButton({
             "inline-flex h-[30px] items-center gap-1.5 px-2.5 text-sm font-semibold tabular-nums transition-colors",
             item.voted
               ? "bg-accent-soft text-accent-ink"
-              : "bg-fill-2 text-ink hover:bg-[rgb(42_21_25/0.12)]",
+              : "bg-fill-2 text-ink hover:bg-line-strong",
           )}
         >
           <ThumbsUp

@@ -28,6 +28,18 @@ import type { CoverMotion } from "./cover-motion";
 const chipClass = "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs";
 
 /**
+ * A label that is a link (来自帖子, 附带网页): 36px to tap while it looks
+ * 28 (04 §4 asks 32 of a link; sweep 2026-11-21). The link reaches 4px
+ * past the label above and below, its margins keeping the row as it was;
+ * the label inside is the squircle, since a squircle clips its own box and
+ * any larger tap area with it. It lights while the link is hovered
+ * (hb-chip-hit in styles.css) and takes the cream ring while it has focus.
+ */
+const chipHit = "hb-chip-hit group/chip -my-1 inline-flex py-1 outline-none";
+const chipLinkFace =
+  "hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs squircle-ring group-focus-visible/chip:[--sq-ring-w:1.5px] group-focus-visible/chip:[--sq-ring:var(--color-cream)]";
+
+/**
  * A label on the cover; with a hint, it explains itself (TagHint). 代码判定's
  * own is drawn in gold (05 §14), its braces before it, as everywhere it is
  * named.
@@ -393,39 +405,40 @@ export function CoverHead({
             )}
             {ended && <CoverChip>已结束</CoverChip>}
             {drawing && <CoverChip>开奖中</CoverChip>}
-            {activity.topic && (
-              <Squircle radius={10}>
-                {/* The 社区's mini app opens no links: its words stay. */}
-                {embedded ? (
+            {activity.topic &&
+              // The 社区's mini app opens no links: its words stay.
+              (embedded ? (
+                <Squircle radius={10}>
                   <span className="hb-chip-red inline-flex h-7 items-center gap-1 px-2.5 text-xs">
                     <LinuxDoMark className="size-3.5" />
                     来自帖子
                   </span>
-                ) : (
-                  <a
-                    href={topicUrl(activity.topic)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs"
-                  >
-                    <LinuxDoMark className="size-3.5" />
-                    来自帖子
-                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                  </a>
-                )}
-              </Squircle>
-            )}
-            {page.available && (
-              <Squircle radius={10}>
-                <button
-                  type="button"
-                  onClick={page.open}
-                  className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none"
+                </Squircle>
+              ) : (
+                <a
+                  href={topicUrl(activity.topic)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={chipHit}
                 >
-                  <Globe className="size-3.5" aria-hidden="true" />
-                  附带网页
-                </button>
-              </Squircle>
+                  <Squircle radius={10}>
+                    <span className={chipLinkFace}>
+                      <LinuxDoMark className="size-3.5" />
+                      来自帖子
+                      <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                    </span>
+                  </Squircle>
+                </a>
+              ))}
+            {page.available && (
+              <button type="button" onClick={page.open} className={chipHit}>
+                <Squircle radius={10}>
+                  <span className={chipLinkFace}>
+                    <Globe className="size-3.5" aria-hidden="true" />
+                    附带网页
+                  </span>
+                </Squircle>
+              </button>
             )}
           </motion.div>
         )}
@@ -462,13 +475,17 @@ export function CoverHead({
                 </div>
                 {cut && (
                   <div className="flex h-6 shrink-0 items-center justify-end">
+                    {/* On a phone the only way to the whole 说明 (05 §12):
+                        its box reaches past the words to 34px high, its
+                        margins keeping the row as it was (sweep
+                        2026-11-21). */}
                     <Squircle radius={8}>
                       <button
                         id="note-more"
                         type="button"
                         aria-haspopup="dialog"
                         onClick={onOpenNote}
-                        className="hb-cover-action text-sm"
+                        className="hb-cover-action -mx-2 -my-1.5 px-2 py-1.5 text-sm"
                       >
                         展开全文
                       </button>

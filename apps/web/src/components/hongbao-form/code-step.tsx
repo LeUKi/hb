@@ -40,6 +40,7 @@ import { CodeEditor } from "../ui/code-editor";
 import { CopyLabelButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
+import { radius, Squircle } from "../ui/squircle";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
@@ -253,30 +254,33 @@ function NetworkNote({
   params: readonly JudgeParam[];
 }) {
   return (
-    <div className="grid gap-1.5 rounded-xl bg-fill px-3.5 py-3">
-      <p className="text-sm text-ink">
-        联网：
-        {network.map((entry, index) => (
-          <span key={networkWords(entry, params)}>
-            {index > 0 && "、"}
-            {writtenAddress(entry) !== null ? (
-              <span className="font-mono break-all">
-                {writtenAddress(entry)}
-              </span>
-            ) : (
-              networkWords(entry, params)
-            )}
-          </span>
-        ))}
-      </p>
-      <ul className="grid gap-1 text-xs text-ink-2">
-        <li>领的人提交的内容可能被发到这些地址。</li>
-        <li>结束后代码公开，写在代码里的令牌也会公开，结束后请作废。</li>
-        <li>
-          红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。
-        </li>
-      </ul>
-    </div>
+    // A fill box: the callout's squircle (04 §8; sweep 2026-11-21).
+    <Squircle radius={radius.callout}>
+      <div className="grid gap-1.5 bg-fill px-3.5 py-3">
+        <p className="text-sm text-ink">
+          联网：
+          {network.map((entry, index) => (
+            <span key={networkWords(entry, params)}>
+              {index > 0 && "、"}
+              {writtenAddress(entry) !== null ? (
+                <span className="font-mono break-all">
+                  {writtenAddress(entry)}
+                </span>
+              ) : (
+                networkWords(entry, params)
+              )}
+            </span>
+          ))}
+        </p>
+        <ul className="grid gap-1 text-xs text-ink-2">
+          <li>领的人提交的内容可能被发到这些地址。</li>
+          <li>结束后代码公开，写在代码里的令牌也会公开，结束后请作废。</li>
+          <li>
+            红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。
+          </li>
+        </ul>
+      </div>
+    </Squircle>
   );
 }
 

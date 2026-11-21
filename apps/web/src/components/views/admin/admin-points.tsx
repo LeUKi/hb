@@ -534,24 +534,31 @@ function PageLink({
   hot?: boolean;
 }) {
   const navigate = useNavigate();
+  // The row's hover fill is a squircle (04 §8); the line under it is its
+  // wrapper's, outside the squircle, whose clip would trim the line's ends
+  // (sweep 2026-11-21).
   return (
-    <a
-      href={href}
-      onClick={(event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-        event.preventDefault();
-        void navigate({ href });
-      }}
-      className="-mx-2 flex items-center gap-2 rounded-lg border-line border-b px-2 py-2.5 text-sm text-ink transition-colors last:border-b-0 hover:bg-fill-2"
-    >
-      <span className="flex-1">{label}</span>
-      {note && (
-        <span className={cn("text-xs", hot ? "text-danger" : "text-ink-3")}>
-          {note}
-        </span>
-      )}
-      <ChevronRight className="size-4 text-ink-3" aria-hidden="true" />
-    </a>
+    <div className="-mx-2 border-line border-b last:border-b-0">
+      <Squircle radius={radius.row}>
+        <a
+          href={href}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+            event.preventDefault();
+            void navigate({ href });
+          }}
+          className="flex items-center gap-2 px-2 py-2.5 text-sm text-ink transition-colors hover:bg-fill-2"
+        >
+          <span className="flex-1">{label}</span>
+          {note && (
+            <span className={cn("text-xs", hot ? "text-danger" : "text-ink-3")}>
+              {note}
+            </span>
+          )}
+          <ChevronRight className="size-4 text-ink-3" aria-hidden="true" />
+        </a>
+      </Squircle>
+    </div>
   );
 }
 
@@ -560,58 +567,61 @@ function Review({ row }: { row: AdminPointsRow }) {
   const [note, setNote] = useState("");
   const error = actions.review.error;
   return (
-    <div className="grid gap-2 rounded-xl bg-fill px-3 py-3">
-      <p className="text-sm text-ink-2">
-        提交于 {row.submittedAt ? clockLabel(row.submittedAt) : "—"}
-        。通过前先看“配置”里的每段说明文字。
-      </p>
-      <Field label="审核意见" htmlFor={`review-${row.id}`} optional>
-        <TextInput
-          id={`review-${row.id}`}
-          value={note}
-          maxLength={200}
-          onChange={(event) => setNote(event.target.value)}
-        />
-      </Field>
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error instanceof ActivityRequestError
-            ? error.message
-            : "审核没有完成，请稍后再试。"}
+    // A fill box: the callout's squircle (04 §8; sweep 2026-11-21).
+    <Squircle radius={radius.callout}>
+      <div className="grid gap-2 bg-fill px-3 py-3">
+        <p className="text-sm text-ink-2">
+          提交于 {row.submittedAt ? clockLabel(row.submittedAt) : "—"}
+          。通过前先看“配置”里的每段说明文字。
         </p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          aria-disabled={actions.review.isPending || undefined}
-          onClick={() => {
-            if (actions.review.isPending) return;
-            actions.review.mutate({
-              id: row.id,
-              approve: true,
-              note: note.trim(),
-            });
-          }}
-        >
-          {actions.review.isPending ? "正在提交…" : "通过，上线"}
-        </Button>
-        <Button
-          size="sm"
-          aria-disabled={actions.review.isPending || undefined}
-          onClick={() => {
-            if (actions.review.isPending) return;
-            actions.review.mutate({
-              id: row.id,
-              approve: false,
-              note: note.trim(),
-            });
-          }}
-        >
-          退回
-        </Button>
+        <Field label="审核意见" htmlFor={`review-${row.id}`} optional>
+          <TextInput
+            id={`review-${row.id}`}
+            value={note}
+            maxLength={200}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </Field>
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error instanceof ActivityRequestError
+              ? error.message
+              : "审核没有完成，请稍后再试。"}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            aria-disabled={actions.review.isPending || undefined}
+            onClick={() => {
+              if (actions.review.isPending) return;
+              actions.review.mutate({
+                id: row.id,
+                approve: true,
+                note: note.trim(),
+              });
+            }}
+          >
+            {actions.review.isPending ? "正在提交…" : "通过，上线"}
+          </Button>
+          <Button
+            size="sm"
+            aria-disabled={actions.review.isPending || undefined}
+            onClick={() => {
+              if (actions.review.isPending) return;
+              actions.review.mutate({
+                id: row.id,
+                approve: false,
+                note: note.trim(),
+              });
+            }}
+          >
+            退回
+          </Button>
+        </div>
       </div>
-    </div>
+    </Squircle>
   );
 }
 
