@@ -1585,6 +1585,19 @@
   [data-cover-pinned] > .hb-under-cover {
     will-change: transform;
   }
+  /* A 口令 showing or hiding (scramble.ts): a cell per letter, a line tall,
+     its width moving to the letter it settles into. */
+  .hb-scramble-cell {
+    display: inline-block;
+    height: 1lh;
+    overflow: hidden;
+    vertical-align: top;
+    text-align: center;
+    white-space: pre;
+  }
+  .hb-scramble-moving {
+    transition: width 160ms cubic-bezier(0.2, 0, 0, 1);
+  }
   /* 代码判定红包: 黑漆描金 (05 §14). Warm black with a sheen and a faint gold
      回纹 all over, a metal-gold rim, gold words. Once ended it turns a cool
      graphite with a silver 回纹: black made darker still reads as running.
