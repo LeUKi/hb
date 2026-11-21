@@ -1,19 +1,16 @@
 import { Eye, EyeOff } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 import { isAwake, onAwakeChange } from "../../lib/awake";
 import { cn } from "../../lib/cn";
 import { useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
 import { MorphLabel } from "../ui/morph-label";
-
-// 乱码 as it is known: 汉字 (“锟斤拷”, “烫”, “屯”, and common ones that UTF-8
-// read as GBK turns into), Latin-1 debris, and blocks to pile on top.
-const han =
-  "锟斤拷烫屯板瑰磋扮冲歌舵卞硅绘哄版规哥辨芥虫峰诲惧剧烘靛剁疯村挎借艰撮垮搁圭炬跨荤跺藉惰兼茶佃茬告稿界垫辩遍烽肩宠块崇鸿拌婚介戒";
-const latin = "ÃÂåæçðþßµ¶§±¤©®¿¡ÐÞØøœŒ€‰†‡ƒ";
-const blocks = "▓▒░█▚▞▙▟╬╳◘◙▣▤▥▦▧▨▩�";
+import { CELL, glyphsPath, pixelGlyphs } from "./pixel-glyphs";
 
 const slots = 8;
+
+/** A dynamic stand-in's length, in letters: it changes now and then. */
+const drift = { min: 5, max: 10 };
 
 function hash(seed: string, ...parts: number[]) {
   let value = 2166136261;
@@ -23,34 +20,28 @@ function hash(seed: string, ...parts: number[]) {
   return (value ^ (value >>> 15)) >>> 0;
 }
 
-type Glyph = { text: string; transform: string };
-
 /**
- * One layer of one slot at one tick: what it shows and how askew, changing
- * on its own beat (every `1 + layer` to `3 + layer` ticks).
+ * The letters at one tick, as glyph numbers: every letter a different one
+ * on every tick, as the block game's obfuscated text does every frame.
+ * `length` "drift": a new length every 8 to 20 ticks.
  */
-function glyph(
+function letters(
   seed: string,
   index: number,
-  position: number,
-  layer: number,
+  length: number | "drift",
   tick: number,
-): Glyph {
-  const beat = 1 + layer + (hash(seed, index, position, layer) % 3);
-  const step = Math.floor((tick + position * 3) / beat);
-  const roll = (n: number) =>
-    hash(seed, index, position, layer, step, n) / 2 ** 32;
-  const from =
-    layer === 0 ? (roll(0) < 0.6 ? han : latin) : roll(0) < 0.5 ? blocks : han;
-  const text = from[Math.floor(roll(1) * from.length)] ?? "";
-  const [x, y, turn, size] = [roll(2), roll(3), roll(4), roll(5)];
-  return {
-    text,
-    transform:
-      layer === 0
-        ? `translateY(${((y - 0.5) * 0.3).toFixed(3)}em) rotate(${Math.round((turn - 0.5) * 30)}deg) scale(${(0.85 + size * 0.45).toFixed(2)})`
-        : `translate(${((x - 0.5) * 0.4).toFixed(3)}em,${((y - 0.5) * 0.3).toFixed(3)}em) rotate(${Math.round((turn - 0.5) * 40)}deg) scale(${(0.75 + size * 0.5).toFixed(2)})`,
-  };
+) {
+  let count = length;
+  if (count === "drift") {
+    const beat = 8 + (hash(seed, index, 1) % 13);
+    const step = Math.floor((tick + (hash(seed, index, 2) % beat)) / beat);
+    count =
+      drift.min + (hash(seed, index, 3, step) % (drift.max - drift.min + 1));
+  }
+  return Array.from(
+    { length: count },
+    (_, slot) => hash(seed, index, 4, slot, tick) % pixelGlyphs.length,
+  );
 }
 
 // One clock for every stand-in on the page: it runs while one is on the
@@ -104,14 +95,13 @@ function subscribe(listener: () => void) {
   };
 }
 
-const still = () => () => {};
-
 /**
- * A hidden 口令 on the page: 8 slots of blurred 乱码, each a 汉字 or a bit of
- * Latin-1 with a block or 汉字 piled on, askew and changing on their own
- * beats; made from something else (the 红包, the row), so it says nothing
- * of the 口令's length or characters. Still when the system asks for less
- * motion; screen readers skip it.
+ * A hidden 口令 on the page: pixel letters that change on every tick (the
+ * look of 矿洞夺宝's 乱码, the user 2026-11-21), drawn in the text's colour
+ * with a faint shadow, no blur. Made from something else (the 红包, the
+ * row), so it says nothing of the 口令's length or characters. Its box is
+ * as wide as its longest, so a changing length never moves anything. Still
+ * when the system asks for less motion; screen readers skip it.
  */
 export function StandIn({
   seed,
@@ -122,46 +112,49 @@ export function StandIn({
   /** What it is made from: never the 口令. */
   seed: string;
   index?: number;
-  /** How many slots (8 for a 口令; fewer for a short word). */
-  length?: number;
+  /** How many letters (8 for a 口令); "drift": now this many, now that. */
+  length?: number | "drift";
   className?: string;
 }) {
   const reduced = useReducedMotionPref();
-  const now = useSyncExternalStore(reduced ? still : subscribe, () =>
-    reduced ? 0 : tick,
-  );
+  const main = useRef<SVGPathElement>(null);
+  const shadow = useRef<SVGPathElement>(null);
+  const span = length === "drift" ? drift.max : length;
+  const first = glyphsPath(letters(seed, index, length, reduced ? 0 : tick));
+  // Each tick writes the path itself: nothing else on the page renders.
+  useEffect(() => {
+    if (reduced) return;
+    return subscribe(() => {
+      const d = glyphsPath(letters(seed, index, length, tick));
+      main.current?.setAttribute("d", d);
+      shadow.current?.setAttribute("d", d);
+    });
+  }, [reduced, seed, index, length]);
   return (
     <span
       aria-hidden="true"
       className={cn(
-        "font-black whitespace-nowrap text-ink-2/80 blur-[2.5px] select-none",
+        "inline-block whitespace-nowrap text-ink-2/80 select-none",
         className,
       )}
     >
-      {Array.from({ length }, (_, position) => {
-        const base = glyph(seed, index, position, 0, now);
-        const over = glyph(seed, index, position, 1, now);
-        return (
-          <span
-            // biome-ignore lint/suspicious/noArrayIndexKey: slots are fixed places.
-            key={position}
-            className="relative inline-block w-[1em] text-center leading-none"
-          >
-            <span
-              className="inline-block"
-              style={{ transform: base.transform }}
-            >
-              {base.text}
-            </span>
-            <span
-              className="absolute inset-x-0 top-0 opacity-75"
-              style={{ transform: over.transform }}
-            >
-              {over.text}
-            </span>
-          </span>
-        );
-      })}
+      <svg
+        viewBox={`0 0 ${span * CELL} 8`}
+        width={`${(span * CELL) / 8}em`}
+        height="1em"
+        className="inline-block align-[-0.125em]"
+        shapeRendering="crispEdges"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          ref={shadow}
+          d={first}
+          transform="translate(1 1)"
+          opacity={0.25}
+        />
+        <path ref={main} d={first} />
+      </svg>
     </span>
   );
 }
@@ -202,7 +195,7 @@ export function PasswordText({
         <span className={cn(line, "font-mono")}>{text}</span>
       ) : (
         <span className={cn(line, "font-mono")}>
-          <StandIn seed={seed} index={index} />
+          <StandIn seed={seed} index={index} length="drift" />
           <span className="sr-only">已隐藏</span>
         </span>
       )}

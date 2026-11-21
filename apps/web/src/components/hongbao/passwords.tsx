@@ -148,6 +148,7 @@ export function PasswordSection({
             <StandIn
               seed={activityId}
               index={index}
+              length="drift"
               className="min-w-0 flex-1 truncate font-mono text-base"
             />
             <span className="flex shrink-0 items-center gap-1 text-xs text-ink-3">
