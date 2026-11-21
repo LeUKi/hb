@@ -1,7 +1,7 @@
 import {
   PAYMENT_LABELS,
   PAYMENT_RESEND_MINUTES,
-  PAYOUT_FUNDS_WAIT_MS,
+  PAYOUT_FUNDS_WAIT_DAYS,
   type PaymentState,
 } from "@hb/contracts";
 import { RED_PACKET } from "../../lib/activity-route";
@@ -60,7 +60,7 @@ const payoutStates: [PaymentState, string][] = [
   ],
   [
     "waiting",
-    `奖励暂未发放，比如红包作者的 LDC 商户余额不足；补足后自动接着发放，${PAYOUT_FUNDS_WAIT_MS / 86_400_000} 天后仍不足就终止发放。`,
+    `奖励暂未发放，比如红包作者的 LDC 商户余额不足；补足后自动接着发放，${PAYOUT_FUNDS_WAIT_DAYS} 天后仍不足就终止发放。`,
   ],
   ["confirmed", "到账了。"],
   [

@@ -36,13 +36,28 @@ const blockerLabels: Record<string, string> = {
   LDC_TIMED_DRAW_ENABLED: "限时开奖未启用",
 };
 
-/** The scheduled jobs, in the order a reader thinks of them. */
+/**
+ * The scheduled jobs, in the order a reader thinks of them: every job
+ * apps/api/src/scheduled.ts runs, so the one the 维护失败 card counts is
+ * always on this list. 付款补偿's four checks are jobs of their own since
+ * the split (sweep 2026-11-21, B7); the 判定器, 打赏 and 私信 jobs had been
+ * left off (sweep 2026-11-21).
+ */
 const jobs = [
   { job: "activities", name: "红包与开奖维护" },
   { job: "payments", name: "付款补偿" },
+  { job: "payment_withdrawals", name: "转出状态核对" },
+  { job: "payment_resends", name: "未发出的付款收尾" },
+  { job: "payment_funds", name: "余额不足等待检查" },
+  { job: "points_payments", name: "三方积分发放补偿" },
   { job: "credentials", name: "凭证检查恢复" },
   { job: "identity", name: "会话清理" },
   { job: "judge_usage", name: "判定器用量清理" },
+  { job: "judge_migration", name: "旧红包迁到判定器" },
+  { job: "judge_stats", name: "判定器广场统计" },
+  { job: "judge_keys", name: "判定器密钥清理" },
+  { job: "tips", name: "打赏兜底检查" },
+  { job: "notices", name: "私信通知补发与清理" },
 ] as const;
 
 type Check = {

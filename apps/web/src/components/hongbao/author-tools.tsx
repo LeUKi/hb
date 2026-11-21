@@ -1,4 +1,4 @@
-import type { ActivityPoints } from "@hb/contracts";
+import { type ActivityPoints, PAYOUT_FUNDS_WAIT_DAYS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import {
@@ -216,8 +216,9 @@ export function AuthorTools({
           title="商户余额不足，红包已结束"
         >
           <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            {/* The wait the API stops at, not a copy of it (sweep 2026-11-21). */}
             <span>
-              你的 Credit 余额不足已持续 3
+              你的 Credit 余额不足已持续 {PAYOUT_FUNDS_WAIT_DAYS}{" "}
               天，未发放的奖励已终止发放，不再重试。
             </span>
             <MoreLink

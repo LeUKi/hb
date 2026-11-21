@@ -13,7 +13,10 @@
       "!/assets/*",
       "!/sdk/*",
       "!/version.json",
-      "!/og.png"
+      "!/og.png",
+      "!/src/*",
+      "!/@*",
+      "!/node_modules/*"
     ]
   },
   "services": [

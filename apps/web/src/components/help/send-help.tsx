@@ -2,7 +2,7 @@ import {
   ACTIVITY_LIMITS,
   CLAIM_SCOPE_LIMITS,
   PAYMENT_RESEND_MINUTES,
-  PAYOUT_FUNDS_WAIT_MS,
+  PAYOUT_FUNDS_WAIT_DAYS,
   SCHEDULE_MAX_LEAD_MS,
   SCHEDULE_MIN_LEAD_MS,
   TRUST_LEVEL_MAX,
@@ -14,7 +14,6 @@ import { type HelpChapter, HelpDoc, HelpLink } from "./help-doc";
 // 发红包 (docs/help-center-design.md §4.2).
 
 const DAY_MS = 86_400_000;
-const FUNDS_WAIT_DAYS = PAYOUT_FUNDS_WAIT_MS / DAY_MS;
 const SCHEDULE_MIN_MINUTES = SCHEDULE_MIN_LEAD_MS / 60_000;
 const SCHEDULE_MAX_DAYS = SCHEDULE_MAX_LEAD_MS / DAY_MS;
 
@@ -499,7 +498,7 @@ export const sendChapters: HelpChapter[] = [
             <p>
               在 Credit
               站补足余额后，系统自动继续发放，不用在本站操作；没发的全部发出后，领取自动恢复。从最早一笔没发出的奖励算起{" "}
-              {FUNDS_WAIT_DAYS}{" "}
+              {PAYOUT_FUNDS_WAIT_DAYS}{" "}
               天后仍然不足，没发出的奖励终止发放（“发放失败”），用这个商户发的进行中的红包也会结束。
             </p>
           </>
@@ -548,8 +547,8 @@ export const sendChapters: HelpChapter[] = [
                 <Label>发放失败</Label>
                 ：已经终止，不再重试；这笔 LDC
                 没有付出，仍在付款的商户中。原因是收款人没有 Credit
-                账户、过了重新发送的期限，或者商户余额不足满 {FUNDS_WAIT_DAYS}{" "}
-                天。
+                账户、过了重新发送的期限，或者商户余额不足满{" "}
+                {PAYOUT_FUNDS_WAIT_DAYS} 天。
               </li>
             </ul>
             <p>付款记录里没有“重试”按钮：重试和核对都由系统自己做。</p>

@@ -1,9 +1,11 @@
 import { useLocation, useRouter } from "@tanstack/react-router";
+import { useAtomValue } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useCurrentActivityId } from "../../lib/activity-route";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay, type Panel } from "../../lib/overlay";
+import { windowDialogsAtom } from "../../lib/store";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { WindowClip } from "./window-clip";
@@ -58,6 +60,13 @@ export function PanelDialog({
     if (orphan) closeOverlay(router);
   }, [orphan, router]);
   const close = () => closeOverlay(router);
+  // A window dialog open over it (one opened in it: 分享's 原文, 名单's
+  // 开奖证明): the panel waits under its 压暗层 until it closes, as
+  // AppWindow keeps the page, so Tab from the dialog never comes back into
+  // it. StacksDialogs has no element to cover; window dialogs are portaled
+  // after the panels, so any open one is over this panel (sweep 2026-11-21;
+  // windowDialogsAtom).
+  const covered = useAtomValue(windowDialogsAtom) > 0;
   const fade = {
     initial: { opacity: 0 },
     animate: { opacity: 1 },
@@ -94,6 +103,7 @@ export function PanelDialog({
               aria-modal="true"
               aria-labelledby={labelledBy}
               tabIndex={-1}
+              inert={covered}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();

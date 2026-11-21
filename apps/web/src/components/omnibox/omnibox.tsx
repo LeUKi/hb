@@ -23,6 +23,7 @@ import {
 import { createPortal } from "react-dom";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { useCurrentActivityId } from "../../lib/activity-route";
+import { useCooldownActive } from "../../lib/attempt-cooldown";
 import { featuresOf, roleOf } from "../../lib/commands";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { inspectPassword } from "../../lib/password-rules";
@@ -304,6 +305,30 @@ function useSlotGeometry(
   return { x, y, width, height, radius, placed, element };
 }
 
+/**
+ * The box's button during the account's cooldown: one piece whose number
+ * rolls, not a new label each second. Only this leaf reads the seconds, so
+ * only it renders again as they tick (sweep 2026-11-21). On a narrow
+ * window only the seconds show (02 §4), said in full to a screen reader.
+ */
+function CooldownLabel({ compact }: { compact: boolean }) {
+  // Its last tick and the box's wake as it ends are two timers: never a
+  // "0 秒" between them.
+  const seconds = Math.max(1, useCooldownSeconds());
+  return compact ? (
+    <>
+      <span aria-hidden="true">
+        <RollingNumber value={seconds} /> 秒
+      </span>
+      <span className="sr-only">还需等待 {seconds} 秒</span>
+    </>
+  ) : (
+    <>
+      还需等待 <RollingNumber value={seconds} /> 秒
+    </>
+  );
+}
+
 export function Omnibox() {
   const mode = useOmniboxMode();
   const windowInfo = useWindowInfo();
@@ -337,7 +362,9 @@ export function Omnibox() {
   const startLines = useAtomValue(startLinesAtom);
   const editLines = useAtomValue(editLinesAtom);
   const hintTarget = useAtomValue(startHintElementAtom);
-  const cooldown = useCooldownSeconds();
+  // Only whether it runs: the seconds tick in CooldownLabel, so the whole
+  // box does not render again each second of a cooldown (sweep 2026-11-21).
+  const cooling = useCooldownActive(user?.id ?? null);
   const [focused, setFocused] = useState(false);
   // The value before an IME started composing; null while not composing.
   const [composeBase, setComposeBase] = useState<string | null>(null);
@@ -856,18 +883,9 @@ export function Omnibox() {
     ) : (
       "再次确认"
     )
-  ) : usesCooldown && cooldown > 0 ? (
-    // One piece whose number rolls, not a new label each second; on a narrow
-    // window only the seconds (02 §4), said in full to a screen reader.
-    compact ? (
-      <>
-        <RollingNumber value={cooldown} /> 秒
-      </>
-    ) : (
-      <>
-        还需等待 <RollingNumber value={cooldown} /> 秒
-      </>
-    )
+  ) : usesCooldown && cooling ? (
+    // Keyed by width: crossing the line cross-fades, as other words do.
+    <CooldownLabel key={compact ? "short" : "long"} compact={compact} />
   ) : activeItem?.kind === "verify" ? (
     "验证"
   ) : activeItem?.kind === "claim" || scheme.kind === "password" ? (
@@ -877,14 +895,6 @@ export function Omnibox() {
   ) : (
     ""
   );
-  // The cooldown's own label is on the button (not a retry, not judging).
-  const waitShown =
-    !pending &&
-    activeItem?.kind !== "optimize" &&
-    !commandMode &&
-    !retryRow &&
-    usesCooldown &&
-    cooldown > 0;
   const showAction =
     // 代码判定 judging: the box is emptied into its card, the button stays
     // to say 正在判定… (02 §4).
@@ -894,7 +904,7 @@ export function Omnibox() {
       !(commandMode && !activeItem) &&
       // An expanded box with nothing to run (a 口令 that cannot be fixed).
       !(expanded && scheme.kind === "password" && !activeItem));
-  const actionDisabled = pending || (usesCooldown && cooldown > 0 && !retryRow);
+  const actionDisabled = pending || (usesCooldown && cooling && !retryRow);
 
   const placeholder = codeScope
     ? scopeFacts?.code?.prompt || "输入要提交的内容"
@@ -1144,12 +1154,6 @@ export function Omnibox() {
                   <button
                     type="button"
                     disabled={actionDisabled}
-                    // Only the seconds on a narrow window: said in full.
-                    aria-label={
-                      compact && waitShown
-                        ? `还需等待 ${cooldown} 秒`
-                        : undefined
-                    }
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={execute}
                     className={buttonVariants({
