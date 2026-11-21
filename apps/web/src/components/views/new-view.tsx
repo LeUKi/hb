@@ -94,7 +94,10 @@ function CodedCopy({
   csrfToken: string;
 }) {
   const page = useHongbaoPageData(activity.id);
-  if (!page.data && !page.missing) return null;
+  // Its page's read under way, or failed: the sheen, or the error with 重试
+  // (it once stayed blank for good after an error).
+  if (!page.data && !page.missing)
+    return <PageLoad load={page.load}>{null}</PageLoad>;
   const shown = new Set(
     (page.data?.activity.judge?.params ?? [])
       .filter(({ param }) => !revealsAtEnd(param))

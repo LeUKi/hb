@@ -324,7 +324,7 @@ async function tokenSessionOf(
   const limiter = limiterOf(c.env, kind);
   if (limiter && !(await limiter.limit({ key: row.userId })).success) {
     countTokenRequest(c.env, row.userId, row.tokenId, kind, "limited");
-    throw new RateLimitedError(60, "令牌的请求太频繁了，一分钟后再试。");
+    throw new RateLimitedError(60, "尝试过于频繁，请稍后再试。");
   }
   countTokenRequest(c.env, row.userId, row.tokenId, kind, "ok");
   if (row.lastUsedAt === null || now - row.lastUsedAt >= TOUCH_INTERVAL_MS)
@@ -422,6 +422,6 @@ export function refuseTokenOn(
     tokenError(
       403,
       "TOKEN_CLAIMS_OFF",
-      "这个红包的发红包的人关了“允许用令牌领”，只能在网页上领。",
+      "红包作者关了“允许用令牌领”，这个红包只能在网页上领。",
     );
 }

@@ -80,7 +80,7 @@ export async function endActivity(
   if (!paused && (row.claimedCount !== 0 || row.registeredCount !== 0))
     invalidActivity("已有人领取或报名，不能提前结束");
   if (!paused && (code?.pending ?? 0) !== 0)
-    invalidActivity("已经有人赢到钱了，不能提前结束。");
+    invalidActivity("已经有人有待结算的奖励，不能提前结束。");
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, activityId, authorId, version),

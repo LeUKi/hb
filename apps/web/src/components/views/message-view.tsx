@@ -118,7 +118,7 @@ export function CommandPageView({
       <MessageView
         icon={command.icon}
         title={command.title}
-        text="只有管理员能打开这一页。"
+        text="只有站长能打开这一页。"
       />
     );
   if (gate)

@@ -38,6 +38,7 @@ import { CopyButton } from "../../ui/copy-button";
 import {
   ChoiceCards,
   Field,
+  isPlainEnter,
   Segmented,
   TextArea,
   TextInput,
@@ -1383,7 +1384,7 @@ function InviteLinks({
                   setError(null);
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") void submit();
+                  if (isPlainEnter(event)) void submit();
                 }}
               />
             </Field>
@@ -1830,7 +1831,7 @@ export function UserBalance({ userId }: { userId: string }) {
                       ) : (
                         <StatusChip tone="neutral">
                           {key.status === "admin_revoked"
-                            ? "管理员停用"
+                            ? "站长停用"
                             : "已停用"}
                         </StatusChip>
                       )}

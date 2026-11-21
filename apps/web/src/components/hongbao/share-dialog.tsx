@@ -26,6 +26,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { ChoiceCards, Segmented, Switch } from "../ui/field";
 import { radius, Squircle } from "../ui/squircle";
+import { PanelWait } from "./panel-wait";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 // 分享 (05 §5): a 红包's panel. Where it goes and what is copied are
@@ -245,12 +246,16 @@ function ShareBody({
   activityId: string;
   onClose: () => void;
 }) {
-  const page = useHongbaoPageData(activityId).data;
+  const read = useHongbaoPageData(activityId);
+  const page = read.data;
   if (!page)
     return (
-      <p role="status" className="px-6 py-10 text-center text-sm text-ink-3">
-        正在读取…
-      </p>
+      <PanelWait
+        titleId="share-title"
+        title="分享红包"
+        page={read}
+        onClose={onClose}
+      />
     );
   return (
     <ShareForm

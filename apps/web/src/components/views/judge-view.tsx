@@ -41,7 +41,13 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
-import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
+import {
+  ChoiceCards,
+  Field,
+  isPlainEnter,
+  Switch,
+  TextInput,
+} from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import {
   deployedLabel,
@@ -148,7 +154,7 @@ function Settings({
                 setSaved(false);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") save();
+                if (isPlainEnter(event)) save();
               }}
             />
           </Field>
@@ -168,7 +174,7 @@ function Settings({
                 setSaved(false);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") save();
+                if (isPlainEnter(event)) save();
               }}
             />
           </Field>

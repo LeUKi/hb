@@ -343,7 +343,7 @@ async function createCheckoutTip(
       throw error;
     });
   if (inserted && inserted.meta.changes === 0)
-    tipError(429, "TIP_TOO_FREQUENT", "生成得太频繁了，过一会儿再试。");
+    tipError(429, "TIP_TOO_FREQUENT", "尝试过于频繁，请稍后再试。");
   const row = await previousTip(env, tipper, input.requestId);
   if (!row) throw new Error("Tip missing after creation");
   return submitCheckout(env, row, tipper?.id ?? null);

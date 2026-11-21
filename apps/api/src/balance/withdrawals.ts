@@ -268,7 +268,7 @@ export async function createWithdrawal(
     balanceError(
       429,
       "BALANCE_WITHDRAW_TOO_FREQUENT",
-      "转出太频繁了，请过一会儿再试。",
+      "尝试过于频繁，请稍后再试。",
     );
 
   const plan = newWithdrawalPlan({

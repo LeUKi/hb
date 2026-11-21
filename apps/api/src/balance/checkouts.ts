@@ -301,11 +301,7 @@ export async function createCheckout(
       throw error;
     });
   if (inserted && inserted.meta.changes === 0)
-    balanceError(
-      429,
-      "CHECKOUT_TOO_FREQUENT",
-      "付款太频繁了，请过一会儿再试。",
-    );
+    balanceError(429, "CHECKOUT_TOO_FREQUENT", "尝试过于频繁，请稍后再试。");
   const row = await env.DB.prepare(
     "SELECT * FROM balance_checkouts WHERE from_user_id=? AND request_id=?",
   )

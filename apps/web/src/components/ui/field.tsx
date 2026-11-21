@@ -31,6 +31,22 @@ const FieldNote = createContext<string | undefined>(undefined);
  * when it is submitted; a short form whose fields check themselves as they
  * are typed sets `live` instead, and each error is said as it appears.
  */
+/**
+ * Enter meant as Enter: not the one that picks a candidate in a Chinese
+ * input method (isComposing, or keyCode 229 where a browser reports it so).
+ */
+export function isPlainEnter(event: {
+  key: string;
+  keyCode: number;
+  nativeEvent: { isComposing: boolean };
+}) {
+  return (
+    event.key === "Enter" &&
+    !event.nativeEvent.isComposing &&
+    event.keyCode !== 229
+  );
+}
+
 export function Field({
   label,
   hint,

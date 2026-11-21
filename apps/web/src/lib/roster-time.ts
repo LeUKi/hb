@@ -41,17 +41,24 @@ export function fullTime(at: number) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-/** A deadline as people say it: "18:47", "明天 20:00", "10月12日 18:00". */
+/**
+ * A deadline as people say it: "18:47", "明天 20:00", "10月12日 18:00",
+ * and with its year when that is not this one ("2027年10月27日 01:44": a
+ * 红包 running for a year read as long past without it).
+ */
 export function clockLabel(at: number, now = Date.now()) {
   const date = new Date(at);
+  const today = new Date(now);
   const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
   const day = (value: Date) =>
     new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-  const days = Math.round((day(date) - day(new Date(now))) / 86_400_000);
+  const days = Math.round((day(date) - day(today)) / 86_400_000);
   if (days === 0) return clock;
   if (days === 1) return `明天 ${clock}`;
   if (days === -1) return `昨天 ${clock}`;
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${clock}`;
+  const year =
+    date.getFullYear() === today.getFullYear() ? "" : `${date.getFullYear()}年`;
+  return `${year}${date.getMonth() + 1}月${date.getDate()}日 ${clock}`;
 }
 
 /**

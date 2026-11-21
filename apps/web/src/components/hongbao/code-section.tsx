@@ -30,6 +30,7 @@ import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
 import { radius, Squircle } from "../ui/squircle";
+import { PanelWait } from "./panel-wait";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 /** 2000 → "20.00". */
@@ -363,7 +364,8 @@ function CodeBody({
   activityId: string;
   onClose: () => void;
 }) {
-  const page = useHongbaoPageData(activityId).data;
+  const read = useHongbaoPageData(activityId);
+  const page = read.data;
   const judge = page?.activity.judge;
   const code = judge?.code ?? page?.activity.senderCode;
   const published = Boolean(judge?.code);
@@ -378,9 +380,12 @@ function CodeBody({
   }, [copied]);
   if (!page || !judge)
     return (
-      <p role="status" className="px-6 py-10 text-center text-sm text-ink-3">
-        正在读取…
-      </p>
+      <PanelWait
+        titleId="code-title"
+        title="判定器"
+        page={read}
+        onClose={onClose}
+      />
     );
   const { activity, view } = page;
   const named = judge.judge;

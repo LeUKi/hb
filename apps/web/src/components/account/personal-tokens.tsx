@@ -18,7 +18,7 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
-import { Field, TextInput } from "../ui/field";
+import { Field, isPlainEnter, TextInput } from "../ui/field";
 import { MorphLabel } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { Segmented } from "../ui/segmented";
@@ -35,7 +35,7 @@ const statusText: Record<PersonalTokenStatus, string> = {
   active: "有效",
   expired: "已过期",
   revoked: "已停用",
-  admin_revoked: "管理员停用",
+  admin_revoked: "站长停用",
 };
 const statusTone = {
   active: "success",
@@ -180,7 +180,7 @@ export function PersonalTokensSection({ user }: { user: SessionUser }) {
           onClick={() => setShowEnded(true)}
         >
           已失效的令牌 {ended.length} 个
-          {byAdmin > 0 && `（${byAdmin} 个由管理员停用）`}
+          {byAdmin > 0 && `（${byAdmin} 个由站长停用）`}
           <ChevronRight aria-hidden="true" />
         </Button>
       )}
@@ -367,7 +367,7 @@ function NewTokenDialog({
                 placeholder="比如程序名"
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") void submit();
+                  if (isPlainEnter(event)) void submit();
                 }}
               />
               <Reveal show={tooLong}>
@@ -468,7 +468,7 @@ function TokenDialog({
         <MorphLabel fit={false}>
           {shown
             ? shown.status === "admin_revoked"
-              ? `管理员停用：${shown.revokeReason ?? ""}`
+              ? `站长停用：${shown.revokeReason ?? ""}`
               : shown.status === "revoked"
                 ? "已停用，用它的脚本和客户端都用不了了。"
                 : shown.status === "expired"

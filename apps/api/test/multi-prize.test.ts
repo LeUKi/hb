@@ -397,7 +397,7 @@ describe("能赢好几次 (protocol 5)", () => {
     await submit(opened.id, await actor(), "add 10");
     await expect(
       endActivity(bindings, opened.id, author.id, opened.version),
-    ).rejects.toMatchObject({ message: "已经有人赢到钱了，不能提前结束。" });
+    ).rejects.toMatchObject({ message: "已经有人有待结算的奖励，不能提前结束。" });
   });
 
   it("pays each one a 商户 settles as it ends, its sender's own play with no payment", async () => {

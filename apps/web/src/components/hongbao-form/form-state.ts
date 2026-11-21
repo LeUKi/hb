@@ -483,7 +483,7 @@ function passwordProblem({
   length,
 }: ReturnType<typeof inspectPassword>) {
   if (invalidCount > 0)
-    return `有 ${invalidCount} 个不能用的字符，点「优化」去掉`;
+    return `有 ${invalidCount} 个不能用的字符，点“优化”去掉`;
   if (length < 6) return `还差 ${6 - length} 个字，至少 6 个字`;
   return `现在有 ${length} 个字，最多 ${ACTIVITY_LIMITS.passwordMaxCharacters} 个字`;
 }

@@ -116,7 +116,7 @@ export function ReceivingNotice({
         {receiving.reason === "unverified"
           ? "密钥检查通过后"
           : "配好商户、密钥检查通过后"}
-        ，大家都能在 Credit 站打赏你，钱进你的商户。
+        ，大家都能在 Credit 站打赏你，打赏的 LDC 进你的商户。
       </p>
       <ButtonLink
         href="/merchant"

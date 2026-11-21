@@ -284,7 +284,7 @@ export async function requireAuth(c: Context<ApiContext>) {
 export async function requireAdmin(c: Context<ApiContext>) {
   const session = await requireAuth(c);
   if (!session.user.isAdmin)
-    throw new HTTPException(403, { message: "此页面仅限管理员访问" });
+    throw new HTTPException(403, { message: "只有站长能打开这一页。" });
   return session;
 }
 
@@ -319,7 +319,7 @@ export async function requireProtectedMutation(c: Context<ApiContext>) {
 export async function requireAdminMutation(c: Context<ApiContext>) {
   const session = await requireProtectedMutation(c);
   if (!session.user.isAdmin)
-    throw new HTTPException(403, { message: "此页面仅限管理员访问" });
+    throw new HTTPException(403, { message: "只有站长能打开这一页。" });
   return session;
 }
 

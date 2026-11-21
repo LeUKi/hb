@@ -55,7 +55,7 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { useSearchChoice } from "../shell/use-search-choice";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
-import { Field, Segmented, TextInput } from "../ui/field";
+import { Field, isPlainEnter, Segmented, TextInput } from "../ui/field";
 import { Fish, fishText } from "../ui/fish";
 import { PersonLine } from "../ui/person-line";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
@@ -845,7 +845,7 @@ function WithdrawDialog({
           placeholder="0.00"
           onChange={(event) => setTyped(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void submit();
+            if (isPlainEnter(event)) void submit();
           }}
         />
       </Field>
@@ -955,7 +955,7 @@ function OwnerAdjustDialog({
           placeholder="0.00"
           onChange={(event) => setTyped(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void submit();
+            if (isPlainEnter(event)) void submit();
           }}
         />
       </Field>
@@ -1101,7 +1101,7 @@ function InviteDialog({
                 setError(null);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void submit();
+                if (isPlainEnter(event)) void submit();
               }}
             />
             <Reveal show={name.length > 0 && known !== undefined}>

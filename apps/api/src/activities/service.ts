@@ -1258,7 +1258,7 @@ export async function openActivity(
     openingExpectation.credentialVersion !==
       publicationMerchant?.credentialVersion
   )
-    activityConflict("商户的密钥刚换过，看一下再开放");
+    activityConflict("商户的密钥刚换过，确认商户没问题后再开放一次。");
   if (publicationMerchant) {
     const eligibility = await publicationEligibility(env, publicationMerchant);
     if (
@@ -1607,7 +1607,7 @@ export async function openActivity(
         authorId,
       );
       if (latestMerchant.credentialVersion !== expectedCredentialVersion)
-        activityConflict("商户的密钥刚换过，看一下再开放");
+        activityConflict("商户的密钥刚换过，确认商户没问题后再开放一次。");
     }
     if (!timedCountdown && deadline <= Date.now())
       invalidActivity("截止时间必须晚于正式开放时间");

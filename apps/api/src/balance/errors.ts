@@ -24,7 +24,7 @@ export class RequestIssuesError extends ActivityError {
 export class RateLimitedError extends ActivityError {
   constructor(
     public readonly retryAfter: number,
-    message = "请求太频繁了，请稍后再试",
+    message = "尝试过于频繁，请稍后再试。",
   ) {
     super(429, "RATE_LIMITED", message);
   }

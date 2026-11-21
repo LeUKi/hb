@@ -10,7 +10,7 @@ import { refused } from "../../lib/activities";
 import { useJudgeTry } from "../../lib/judge";
 import { amountText, shownAmount } from "../../lib/units";
 import { Button } from "../ui/button";
-import { TextInput } from "../ui/field";
+import { isPlainEnter, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
@@ -28,7 +28,7 @@ function verdictLine(
 ) {
   if (!("judged" in outcome))
     return outcome.ok ? `会发 ${amountText(outcome.amount, unit)}` : "不发";
-  if (outcome.added === 0) return outcome.settled ? "结算，没有领到" : "没加钱";
+  if (outcome.added === 0) return outcome.settled ? "结算，没有领到" : "没领到";
   return `+${shownAmount(outcome.added, unit).text} · ${outcome.settled ? "结算" : "待结算"} ${amountText(outcome.added, unit)}`;
 }
 
@@ -112,7 +112,7 @@ export function TryJudge({
           />
           <span className="font-medium text-ink">试一试</span>
           <span className="text-ink-3">
-            · 按现在的参数判定一次，不发钱，不记录
+            · 按现在的参数判定一次，不发奖励，也不记录
           </span>
         </button>
         <Reveal show={open}>
@@ -127,7 +127,7 @@ export function TryJudge({
                   autoComplete="off"
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
+                    if (!isPlainEnter(event)) return;
                     // Its own Enter: not the form's 下一步.
                     event.preventDefault();
                     judge();

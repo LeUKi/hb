@@ -171,7 +171,7 @@ export async function signPageIdentity(
     throw new ActivityError(
       403,
       "TOKEN_CLAIMS_OFF",
-      "这个红包的发红包的人关了“允许用令牌领”，只能在网页上玩。",
+      "红包作者关了“允许用令牌领”，这个红包只能在网页上领。",
     );
   const pageUrl = configuration(row).pageUrl;
   if (!pageUrl || row.pageStoppedAt !== null || !(await attachedPagesOn(env)))

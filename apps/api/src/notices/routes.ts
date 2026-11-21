@@ -239,7 +239,7 @@ export const noticeRoutes = new Hono<ApiContext>()
       throw new ActivityError(
         409,
         "SQUARE_WATCH_UNAVAILABLE",
-        "本站还没有你的隐私邮箱，发不了私信提醒。",
+        "本站还没有你的隐私邮箱，发不了私信提醒。在网站上用 LINUX DO 登录一次就有了。",
       );
     await (body.watching
       ? c.env.DB.prepare(

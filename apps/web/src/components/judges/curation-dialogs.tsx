@@ -5,7 +5,7 @@ import { useJudgeCurationWrites } from "../../lib/admin";
 import { counter } from "../hongbao-form/fields";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
-import { Field, TextInput } from "../ui/field";
+import { Field, isPlainEnter, TextInput } from "../ui/field";
 
 // 撤下 and 恢复 (docs/judge-square-design.md §8, §15.4): the 站长's two
 // questions about a 判定器, on its page and in 网站管理's 已撤下.
@@ -87,7 +87,7 @@ export function TakeDownDialog({
           autoComplete="off"
           onChange={(event) => setReason(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") submit();
+            if (isPlainEnter(event)) submit();
           }}
         />
       </Field>

@@ -163,7 +163,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
           if (current.openedAt) return await remember(current);
           const checked = await readMerchant();
           if (checked?.credentialVersion !== credentialVersion)
-            throw new Error("商户的密钥刚换过，看一下再开放。");
+            throw new Error("商户的密钥刚换过，确认商户没问题后再开放一次。");
           if (checked?.credentialVerification.status === "checking") continue;
           if (checked?.credentialVerification.status !== "passed")
             throw new Error(

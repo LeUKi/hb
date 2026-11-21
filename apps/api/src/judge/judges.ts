@@ -715,7 +715,11 @@ export async function fillMyParams(
   if (!asks.check && !asks.explain) return { problems: [], explanation: null };
   const limited = await env.JUDGE_FILLS?.limit({ key: userId });
   if (limited && !limited.success)
-    throw new ActivityError(429, "JUDGE_FILL_LIMIT", "改得太快了，稍等一下。");
+    throw new ActivityError(
+      429,
+      "JUDGE_FILL_LIMIT",
+      "尝试过于频繁，请稍后再试。",
+    );
   const now = Date.now();
   await usageStatement(env, {
     now,

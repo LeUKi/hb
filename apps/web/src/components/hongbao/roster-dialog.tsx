@@ -5,6 +5,7 @@ import { useChallengers } from "../../lib/judge";
 import { liveJudgedAtom } from "../../lib/live-state";
 import { PanelDialog } from "../shell/panel-dialog";
 import { DrawProofDialog, DrawProofLine } from "./draw-proof";
+import { PanelWait } from "./panel-wait";
 import { RosterPanel } from "./roster-panel";
 import type { HongbaoData } from "./use-hongbao";
 import {
@@ -23,9 +24,12 @@ function RosterBody({
   const page = useHongbaoPageData(activityId);
   if (!page.data)
     return (
-      <p role="status" className="px-6 py-10 text-center text-sm text-ink-3">
-        正在读取…
-      </p>
+      <PanelWait
+        titleId="roster-title"
+        title="领取名单"
+        page={page}
+        onClose={onClose}
+      />
     );
   return <RosterContent data={page.data} page={page} onClose={onClose} />;
 }

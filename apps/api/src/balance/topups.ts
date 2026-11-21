@@ -231,7 +231,7 @@ export async function createTopup(
     balanceError(
       429,
       "BALANCE_TOPUP_TOO_FREQUENT",
-      "转入太频繁了，请过一会儿再试。",
+      "尝试过于频繁，请稍后再试。",
     );
   const row =
     (await readTopup(env, id)) ??

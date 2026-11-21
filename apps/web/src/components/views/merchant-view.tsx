@@ -480,7 +480,7 @@ function TipCardsNote({ user }: { user: SessionUser }) {
       >
         <Panel className="p-5 text-sm text-ink-2">
           你有 {count} 张打赏卡在用，别人在 Credit
-          站打赏你的钱也进这个商户。换了商户，之后的打赏进新的商户；删掉商户，就只有开通🐟额
+          站给你的打赏也进这个商户。换了商户，之后的打赏进新的商户；删掉商户，就只有开通🐟额
           PLUS 的人能用🐟额打赏你。
         </Panel>
       </PageSection>

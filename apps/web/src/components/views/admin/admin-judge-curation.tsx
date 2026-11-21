@@ -17,7 +17,7 @@ import { fullTime } from "../../../lib/roster-time";
 import { RestoreDialog } from "../../judges/curation-dialogs";
 import { EmptyNote, PageSection, Panel } from "../../page/page";
 import { Button } from "../../ui/button";
-import { Segmented, TextInput } from "../../ui/field";
+import { isPlainEnter, Segmented, TextInput } from "../../ui/field";
 import { ListItem, Reveal, Swap } from "../../ui/reveal";
 import { DetailPart } from "./admin-frame";
 
@@ -119,7 +119,7 @@ function AddFeature() {
             autoComplete="off"
             onChange={(event) => setAddress(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") void look();
+              if (isPlainEnter(event)) void look();
             }}
           />
         </div>

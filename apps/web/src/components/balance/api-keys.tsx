@@ -15,7 +15,7 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
-import { Field, TextInput } from "../ui/field";
+import { Field, isPlainEnter, TextInput } from "../ui/field";
 import { fishText } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
@@ -30,7 +30,7 @@ import { TransferDetailDialog, TransferRow } from "./transfer";
 const statusText = {
   active: "有效",
   revoked: "已停用",
-  admin_revoked: "管理员停用",
+  admin_revoked: "站长停用",
 } as const;
 const statusTone = {
   active: "success",
@@ -171,7 +171,7 @@ export function ApiKeysSection({ user }: { user: SessionUser }) {
           onClick={() => setShowStopped(true)}
         >
           已停用的密钥 {stopped.length} 个
-          {byAdmin > 0 && `（${byAdmin} 个由管理员停用）`}
+          {byAdmin > 0 && `（${byAdmin} 个由站长停用）`}
           <ChevronRight aria-hidden="true" />
         </Button>
       )}
@@ -286,7 +286,7 @@ function DailyLimitField({
         placeholder="选填，不填就不限"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") onEnter();
+          if (isPlainEnter(event)) onEnter();
         }}
       />
       <p className="text-xs text-ink-3">
@@ -547,7 +547,7 @@ function KeyDialog({
         <MorphLabel fit={false}>
           {key
             ? key.status === "admin_revoked"
-              ? `管理员停用：${key.revokeReason ?? ""}`
+              ? `站长停用：${key.revokeReason ?? ""}`
               : key.status === "revoked"
                 ? "已停用，用它的网站和程序转不了了。"
                 : limitLine(key)

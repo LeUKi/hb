@@ -146,7 +146,7 @@ export async function registerForDraw(
       throw new ActivityError(
         409,
         "REAL_LDC_CLAIMS_PAUSED",
-        "真实 LDC 新报名暂时关闭，已有报名仍会正常开奖。",
+        "LDC 红包暂时不能报名，已经报了名的照常开奖。",
       );
     await assertMerchantFunded(env, activity);
     // 报名范围: someone outside never reaches the 口令 or its cooldown.

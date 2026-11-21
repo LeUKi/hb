@@ -87,7 +87,7 @@ function itemOf(
 }
 
 const notFound = () =>
-  new ActivityError(404, "ROADMAP_NOT_FOUND", "没有找到这一件。");
+  new ActivityError(404, "ROADMAP_NOT_FOUND", "没有找到这个需求。");
 
 /** The top of the page: all being built, and how many of the rest. */
 export async function roadmapSummary(
@@ -368,7 +368,7 @@ export async function vote(
     .first<{ status: string; hidden: number }>();
   if (!row || row.hidden === 1 || row.status === "merged") throw notFound();
   if (row.status !== "request" && row.status !== "building")
-    throw new ActivityError(409, "ROADMAP_CLOSED", "这一件已经不能点赞了。");
+    throw new ActivityError(409, "ROADMAP_CLOSED", "这个需求已经不能点赞了。");
   const now = Date.now();
   await env.DB.batch(
     voted
@@ -470,7 +470,7 @@ export async function adminAct(
     throw new ActivityError(
       409,
       "ROADMAP_STATUS",
-      "这一件现在不能这样处理，刷新再看看。",
+      "这个需求现在不能这样处理，刷新后再看看。",
     );
   const now = Date.now();
   const update = (sql: string, ...values: unknown[]) =>

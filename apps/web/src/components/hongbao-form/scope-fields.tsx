@@ -17,6 +17,7 @@ import { Button } from "../ui/button";
 import {
   ChoiceCards,
   Field,
+  isPlainEnter,
   TextArea,
   TextInput,
   ToggleCards,
@@ -315,7 +316,7 @@ function ScopePeople({
                 setTyped(event.target.value.replace(/^\s*@+/, ""))
               }
               onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
+                if (!isPlainEnter(event)) return;
                 event.preventDefault();
                 add();
               }}

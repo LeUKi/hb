@@ -3725,7 +3725,7 @@ test.describe("发红包 · 代码判定", () => {
     const toggle = page.getByRole("button", { name: /^试一试/ });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(toggle).toContainText(
-      "· 按现在的参数判定一次，不发钱，不记录",
+      "· 按现在的参数判定一次，不发奖励，也不记录",
     );
     await toggle.click();
     const input = page.getByRole("textbox", { name: "试一试的输入" });
@@ -4232,7 +4232,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     const dialog = allowDialog(page);
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(
-      "game.example.com 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。",
+      "game.example.com 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的“我的记录”里，冷却和人机验证照旧。只对这个红包有效。",
     );
     expect(state.submissions).toEqual([]);
     await dialog.getByRole("button", { name: "允许", exact: true }).click();

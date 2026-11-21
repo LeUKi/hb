@@ -1123,7 +1123,7 @@ test.describe("🐟额", () => {
     await expect(section.getByText("旧网站")).toHaveCount(0);
 
     await section
-      .getByRole("button", { name: "已停用的密钥 2 个（1 个由管理员停用）" })
+      .getByRole("button", { name: "已停用的密钥 2 个（1 个由站长停用）" })
       .click();
     const stopped = page.getByRole("dialog", { name: "已停用的密钥 · 2 个" });
     await expect(stopped.getByText("旧网站")).toBeVisible();

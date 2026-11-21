@@ -1,5 +1,6 @@
 import { PanelDialog } from "../shell/panel-dialog";
 import { NoteContent } from "./note-content";
+import { PanelWait } from "./panel-wait";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 function NoteBody({
@@ -9,12 +10,16 @@ function NoteBody({
   activityId: string;
   onClose: () => void;
 }) {
-  const activity = useHongbaoPageData(activityId).data?.activity;
+  const page = useHongbaoPageData(activityId);
+  const activity = page.data?.activity;
   if (!activity)
     return (
-      <p role="status" className="px-6 py-10 text-center text-sm text-ink-3">
-        正在读取…
-      </p>
+      <PanelWait
+        titleId="note-title"
+        title="说明"
+        page={page}
+        onClose={onClose}
+      />
     );
   return <NoteContent activity={activity} onClose={onClose} />;
 }

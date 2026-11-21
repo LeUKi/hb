@@ -35,8 +35,8 @@ export function drawWon(
     input.funding === "balance"
       ? "已经存进你的🐟额。"
       : input.funding === "points"
-        ? "会分发到你在对方网站的账户。"
-        : "会分发到你的 Credit。";
+        ? "会发放到你在对方网站的账户。"
+        : "会发放到你的 Credit 账户。";
   return {
     subject: subjectOf(`你在${nameOf(input.title)}中了 ${input.amount}`),
     body: bodyOf(
@@ -165,7 +165,7 @@ export function hongbaoStopped(
     subject: subjectOf(`${name}被站长停用了`),
     body: bodyOf(
       [
-        `你的${name}被站长停用，不能再领了。${input.refunds ? "没分发的🐟会退回你的🐟额。" : ""}`,
+        `你的${name}被站长停用，不能再领了。${input.refunds ? "没发放的🐟会退回你的🐟额。" : ""}`,
       ],
       { label: "去看看", url: hongbaoUrl(env, input.activityId) },
       off(env),
@@ -205,7 +205,7 @@ export function pointsHongbaoEnded(
       [
         input.beforeDraw
           ? `${name}开奖前查了一次，${why}，所以没有开奖，红包结束了。`
-          : `${name}提前结束了：${why}。已经分发的照常，剩下的不再分发。`,
+          : `${name}提前结束了：${why}。已经发放的照常，剩下的不再发放。`,
       ],
       { label: "去看看", url: hongbaoUrl(env, input.activityId) },
       off(env),
@@ -387,10 +387,10 @@ export function pointsBreaker(
 ): Notice {
   const name = points(input.name);
   return {
-    subject: subjectOf(`${name}的接口连不上，积分分发暂停了`),
+    subject: subjectOf(`${name}的接口连不上，积分发放暂停了`),
     body: bodyOf(
       [
-        `你添加的${name}的接口连续 5 次没有回复，积分分发暂停 10 分钟，之后会再试。接口恢复前不再提醒。`,
+        `你添加的${name}的接口连续 5 次没有回复，积分发放暂停 10 分钟，之后会再试。接口恢复前不再提醒。`,
       ],
       {
         label: "去看看",

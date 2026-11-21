@@ -345,7 +345,7 @@ export async function admitClaim(
       env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live"
         ? "REAL_LDC_CLAIMS_PAUSED"
         : "REAL_LDC_NOT_ENABLED",
-      "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
+      "LDC 红包暂时不能领取，已经领到的在红包记录里照常看得到。",
     );
   // 三方积分 paused, resting or retired: stopped before a share is taken
   // (docs/third-party-points-design.md §5).
@@ -658,7 +658,7 @@ function recipientOf(
     throw new ActivityError(
       400,
       "RECIPIENT_IDENTITY_UNVERIFIED",
-      "收款账号的稳定身份尚未确认，暂不能分配 LDC 奖励。",
+      "还没确认你的 LINUX DO 账号，暂时领不了 LDC 红包。退出后重新登录一次再领。",
     );
   }
   return { id: user.externalId, username: user.username };

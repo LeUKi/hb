@@ -302,7 +302,7 @@ export async function createSystem(
     pointsError(
       409,
       "POINTS_TOO_MANY",
-      `每人最多接入 ${POINTS_LIMITS.systemsPerOwner} 种三方积分`,
+      `每人最多添加 ${POINTS_LIMITS.systemsPerOwner} 种三方积分`,
     );
   return ownerView(await requireSystem(env, id));
 }

@@ -541,7 +541,7 @@ export function useJudgeTry() {
 /**
  * What a protocol 5 judgment moved for one person (docs/multi-prize-design.md
  * §4.1, §4.2): “+0.50 → 1.20”, in full “+0.50 · 待结算 1.20 LDC”; what it
- * settled them with; 没加钱.
+ * settled them with; 没领到.
  */
 export function moveLabel(
   moved: { added: string; pending: string; settled: boolean },
@@ -558,7 +558,7 @@ export function moveLabel(
   if (added === 0)
     return Number(moved.pending) > 0
       ? `待结算 ${pending} ${unit.unit}`
-      : "没加钱";
+      : "没领到";
   const change = `${added > 0 ? "+" : "−"}${shownAmount(moved.added.replace("-", ""), unit).text}`;
   return full
     ? `${change} · 待结算 ${pending} ${unit.unit}`

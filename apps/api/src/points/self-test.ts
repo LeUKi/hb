@@ -317,7 +317,7 @@ async function runSteps(
       ms: seventh.call.ms,
       note:
         seventh.kind === "ok" && seventh.available !== expected
-          ? "自检期间测试账户不要有别的进出"
+          ? "接口测试期间，测试账户不要有别的进出"
           : undefined,
     })
   )

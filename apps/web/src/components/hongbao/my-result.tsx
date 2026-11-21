@@ -88,7 +88,15 @@ const paymentReasons: Partial<Record<PaymentState, string>> = {
   reconciling: "发放结果尚未明确，系统正在核对原订单。",
   waiting: "奖励暂未发放，系统将自动重试。",
   attention: "发放已暂停，等待红包作者处理。",
+  failed: "本次发放已终止，奖励没有发出。",
 };
+
+/**
+ * The reasons whose words are written for the claimant. The others
+ * (上游返回非成功 HTTP 状态, 原单恢复授权…) are the operator's: a claimant
+ * sees the plain line for the payment's state instead.
+ */
+const claimantReasons = new Set(["recipient", "credentials"]);
 
 /** Under the status: why it waits, or when it was confirmed. */
 function PaymentNote({
@@ -114,8 +122,9 @@ function PaymentNote({
               : payment.fundsStopAt
                 ? fundsWaitNote(payment.fundsStopAt)
                 : paymentReason("funds", null)
-            : (paymentReason(payment.reason, null) ??
-              paymentReasons[payment.status]);
+            : ((payment.reason && claimantReasons.has(payment.reason)
+                ? paymentReason(payment.reason, null)
+                : null) ?? paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
 }
 
