@@ -492,7 +492,7 @@ export function HongbaoHero({
           <motion.div
             key="result"
             // Clears the content kept under the small cover.
-            className="pt-[calc(var(--hb-reserve)-0.5rem)]"
+            className="hb-under-cover pt-[calc(var(--hb-reserve)-0.5rem)]"
             transition={{ duration: 0.36, delay: play ? delay + 0.62 : 0 }}
             initial={play ? { opacity: 0, y: 12 } : false}
             animate={{ opacity: 1, y: 0 }}

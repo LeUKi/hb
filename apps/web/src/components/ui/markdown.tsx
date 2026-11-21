@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Globe } from "lucide-react";
-import { memo, type ReactNode } from "react";
-import Markdown from "react-markdown";
+import { memo, type ReactElement, type ReactNode } from "react";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn";
 import { useEmbedded } from "../../lib/embedded";
@@ -145,6 +145,50 @@ function NoteLink({ href, children }: { href?: string; children: ReactNode }) {
   );
 }
 
+const noteComponents: Components = {
+  table: ({ children: rows }) => (
+    <section
+      className="md-table"
+      aria-label="表格"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: a table wider than the note must scroll by keyboard too.
+      tabIndex={0}
+    >
+      <table>{rows}</table>
+    </section>
+  ),
+  a: ({ href, children: text }) => <NoteLink href={href}>{text}</NoteLink>,
+};
+
+/**
+ * Notes as parsed, by page and text. The big cover mounts its 说明 afresh
+ * each time it comes back from the small one (05 §12), and on a slow phone a
+ * long note's parse is a frame or more of that flip. Relative links resolve
+ * against the page, so the page is part of the key.
+ */
+const parsedNotes = new Map<string, ReactElement>();
+
+function parsedNote(text: string) {
+  const key = `${window.location.pathname}${window.location.search}\n${text}`;
+  const kept = parsedNotes.get(key);
+  if (kept) return kept;
+  // The plain Markdown is a function without hooks: its element tree can be
+  // kept and mounted again.
+  const tree = Markdown({
+    children: text,
+    remarkPlugins: notePlugins,
+    skipHtml: true,
+    disallowedElements: ["img"],
+    urlTransform: safeLink,
+    components: noteComponents,
+  });
+  parsedNotes.set(key, tree);
+  if (parsedNotes.size > 24) {
+    const oldest = parsedNotes.keys().next().value;
+    if (oldest !== undefined) parsedNotes.delete(oldest);
+  }
+  return tree;
+}
+
 /**
  * A sender's note. `tone` picks the colours: on the glass, or cream on the
  * 红包's red (06 §7). Parsed again only when the text changes: the cover
@@ -162,29 +206,7 @@ export const NoteMarkdown = memo(function NoteMarkdown({
 }) {
   return (
     <div className={cn("md", tone === "red" && "md-red", className)}>
-      <Markdown
-        remarkPlugins={notePlugins}
-        skipHtml
-        disallowedElements={["img"]}
-        urlTransform={safeLink}
-        components={{
-          table: ({ children: rows }) => (
-            <section
-              className="md-table"
-              aria-label="表格"
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: a table wider than the note must scroll by keyboard too.
-              tabIndex={0}
-            >
-              <table>{rows}</table>
-            </section>
-          ),
-          a: ({ href, children: text }) => (
-            <NoteLink href={href}>{text}</NoteLink>
-          ),
-        }}
-      >
-        {children}
-      </Markdown>
+      {parsedNote(children)}
     </div>
   );
 });

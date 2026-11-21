@@ -1577,6 +1577,14 @@
   .hb-cover-frame {
     transition: filter 600ms var(--ease-snappy);
   }
+  /* Under a cover that flips (taken part, 05 §12): what follows it is a
+     layer of its own, so the cover's height animation only moves it. Painted
+     with the page, all of it was painted again on every frame of the flip:
+     with the CPU slowed six times (a slow phone), half those frames came
+     late. */
+  [data-cover-pinned] > .hb-under-cover {
+    will-change: transform;
+  }
   /* 代码判定红包: 黑漆描金 (05 §14). Warm black with a sheen and a faint gold
      回纹 all over, a metal-gold rim, gold words. Once ended it turns a cool
      graphite with a silver 回纹: black made darker still reads as running.
