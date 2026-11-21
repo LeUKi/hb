@@ -7,7 +7,7 @@ import {
 } from "@hb/contracts";
 import { KeyRound, RotateCw } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { useEffect, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import type { RosterRow } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { agoLabel, fullTime, sinceOpen } from "../../lib/roster-time";
@@ -96,6 +96,16 @@ const pulledIn = {
   last: "最后一份发",
 } as const;
 
+/**
+ * A row's line, a squircle only when it is the viewer's own: no other row
+ * paints anything for the shape to cut (sweep 2026-11-21 P9), and each one
+ * cost a style read, a measure, a resize watch and a second render, on every
+ * row of a long 名单.
+ */
+function RowShape({ you, children }: { you: boolean; children: ReactElement }) {
+  return you ? <Squircle radius={10}>{children}</Squircle> : children;
+}
+
 /** One person, one line: rank, avatar, name, titles, 用时, amount. */
 function Row({
   row,
@@ -116,7 +126,7 @@ function Row({
 }) {
   return (
     <ListItem>
-      <Squircle radius={10}>
+      <RowShape you={row.you}>
         <div
           title={fullTime(row.at)}
           className={`grid items-center gap-x-2 px-4 transition-[grid-template-columns,column-gap] duration-[420ms] ease-[cubic-bezier(0.2,0,0,1)] @wide/window:gap-x-2.5 ${columns[kind]} ${
@@ -261,7 +271,7 @@ function Row({
             </span>
           )}
         </div>
-      </Squircle>
+      </RowShape>
     </ListItem>
   );
 }
@@ -369,7 +379,7 @@ export function ChallengerList({
             const you = viewer !== null && item.username === viewer;
             return (
               <ListItem key={item.username}>
-                <Squircle radius={10}>
+                <RowShape you={you}>
                   <div
                     title={fullTime(at)}
                     className={`grid grid-cols-[1.375rem_minmax(3em,1fr)_auto] items-center gap-x-2.5 px-4 py-1.5 ${
@@ -407,7 +417,7 @@ export function ChallengerList({
                       {agoLabel(at, now)}
                     </span>
                   </div>
-                </Squircle>
+                </RowShape>
               </ListItem>
             );
           })}

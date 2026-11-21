@@ -51,10 +51,59 @@ function scramble(svg: SVGSVGElement) {
   for (const path of svg.children) path.setAttribute("d", d);
 }
 
+// Letters are measured on a canvas, never in the page (sweep 2026-11-21
+// P3): a hidden span measured them one by one, laying the page out again for
+// every letter, and the sender's 名单 turning all its 口令 at once (a row
+// each) stood still for seconds on a phone. One canvas for the page, each
+// letter measured once per font.
+let context: CanvasRenderingContext2D | null | undefined;
+let contextFont = "";
+const advances = new Map<string, Map<string, number>>();
+
+/** The canvas to measure on, made on first use; none where there is none. */
+function canvas() {
+  if (context === undefined)
+    context = document.createElement("canvas").getContext("2d");
+  return context;
+}
+
+/** Whether a 口令 can scramble here: there is a canvas to measure it on. */
+export function canScramble() {
+  return canvas() !== null;
+}
+
+/**
+ * Each letter's width in a box of this style: its advance in the box's font
+ * (style, weight, size, family) plus the box's letter spacing, rounded up to
+ * the 1/64 px Chrome and Safari lay out in, as a letter alone in a box of
+ * its own is laid out. These are the hidden span's widths, letter for letter
+ * (checked in Chrome and WebKit on Han, letters and digits at four sizes):
+ * the cells end exactly as wide as the real text.
+ */
+function measurer(style: CSSStyleDeclaration) {
+  const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const spacing = Number.parseFloat(style.letterSpacing) || 0;
+  const known = advances.get(font) ?? new Map<string, number>();
+  advances.set(font, known);
+  return (character: string) => {
+    let advance = known.get(character);
+    if (advance === undefined) {
+      const drawing = canvas();
+      if (drawing && contextFont !== font) {
+        drawing.font = font;
+        contextFont = font;
+      }
+      advance = drawing?.measureText(character).width ?? 0;
+      known.set(character, advance);
+    }
+    return Math.ceil((advance + spacing) * 64) / 64;
+  };
+}
+
 export class Scramble {
   private readonly cells: Cell[] = [];
   private readonly letterWidth: number;
-  private readonly measure: HTMLSpanElement;
+  private readonly widthOf: (character: string) => number;
   private readonly characters: string[];
   private showing: boolean;
   private start = 0;
@@ -69,12 +118,13 @@ export class Scramble {
     private readonly done: () => void,
   ) {
     this.characters = Array.from(text);
-    const size = Number.parseFloat(getComputedStyle(box).fontSize) || 16;
+    // The page is read once, before anything is written to it: the box's
+    // font. Every width after this comes from the canvas.
+    const style = getComputedStyle(box);
+    this.widthOf = measurer(style);
+    const size = Number.parseFloat(style.fontSize) || 16;
     this.letterWidth = (size * CELL) / 8;
-    this.measure = document.createElement("span");
-    this.measure.style.cssText =
-      "position:absolute;visibility:hidden;white-space:pre;pointer-events:none";
-    box.replaceChildren(this.measure);
+    box.replaceChildren();
     // From where it was: the 乱码 at rest, or the 口令 as it shows.
     const from = show
       ? Array.from({ length: REST_LETTERS }, () => null)
@@ -88,7 +138,12 @@ export class Scramble {
     }
     this.showing = show;
     this.plan();
-    this.frame = requestAnimationFrame(this.step);
+    // Nothing here lays the page out, so the new cells take their first
+    // style in the coming frame, and a width set before then would jump
+    // instead of moving: the steps start on the frame after.
+    this.frame = requestAnimationFrame(() => {
+      this.frame = requestAnimationFrame(this.step);
+    });
   }
 
   /** Turned the other way on the way: from where the cells are now. */
@@ -100,11 +155,6 @@ export class Scramble {
 
   stop() {
     cancelAnimationFrame(this.frame);
-  }
-
-  private widthOf(character: string) {
-    this.measure.textContent = character;
-    return this.measure.getBoundingClientRect().width;
   }
 
   private add(width: number) {

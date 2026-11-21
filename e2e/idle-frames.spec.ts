@@ -1,13 +1,14 @@
 import { expect, type Page, test } from "@playwright/test";
 import { encodeActivityEmoji } from "../packages/contracts/src";
-import { mockSession, openApp, viewer } from "./support/app";
+import { mockSession, omniboxInput, openApp, viewer } from "./support/app";
 
 // 闲着不画 (docs/redesign/09-idle-frames.md): a 红包 page left open, with
-// its 附带网页 beside it, draws nothing once nobody is here. Every frame
-// drawn under a window's glass blurs the whole window again, so a loop
-// that never ends keeps the GPU busy (and the fans on). Loading looks (the
-// skeleton's sheen, 开 while it waits) are allowed; nothing else may loop,
-// and the page may change at most a few times a second (a clock ticking).
+// its 附带网页 beside it, and the start page draw nothing once nobody is
+// here. Every frame drawn under a window's glass blurs the whole window
+// again, so a loop that never ends keeps the GPU busy (and the fans on).
+// Loading looks (the skeleton's sheen, 开 while it waits) are allowed;
+// nothing else may loop, and the page may change at most a few times a
+// second (a clock ticking).
 
 const id = "88888888-6666-4777-8888-999999999999";
 const path = `/🧧/${encodeActivityEmoji(id)}`;
@@ -82,6 +83,10 @@ async function mock(page: Page) {
   );
 }
 
+/** :root[data-awake]: someone is here (lib/awake.ts). */
+const awake = (page: Page) =>
+  page.evaluate(() => document.documentElement.hasAttribute("data-awake"));
+
 /** Loops running now, other than the loading looks. */
 const loops = (page: Page) =>
   page.evaluate(
@@ -132,27 +137,45 @@ test("闲着的红包页（旁边开着附带网页）不画：8 秒没人动以
   await expect(page.locator(".hb-seal").first()).toBeVisible();
   await expect(page.locator("iframe")).toBeAttached();
   // Awake at first: 开's sheen sweeps.
-  expect(
-    await page.evaluate(() =>
-      document.documentElement.hasAttribute("data-awake"),
-    ),
-  ).toBe(true);
+  expect(await awake(page)).toBe(true);
   // Nobody here for longer than AWAKE_MS (8 s).
   await page.waitForTimeout(9_500);
-  expect(
-    await page.evaluate(() =>
-      document.documentElement.hasAttribute("data-awake"),
-    ),
-  ).toBe(false);
+  expect(await awake(page)).toBe(false);
   expect(await loops(page)).toEqual([]);
   expect(await changesPerSecond(page, 3_000)).toBeLessThanOrEqual(5);
   // Someone moves the pointer: awake again, the sheen sweeps again.
   await page.mouse.move(200, 300);
   await page.mouse.move(240, 320);
-  await expect
-    .poll(() =>
-      page.evaluate(() => document.documentElement.hasAttribute("data-awake")),
-    )
-    .toBe(true);
+  await expect.poll(() => awake(page)).toBe(true);
   await expect.poll(() => loops(page)).toContain("hb-seal-sheen");
+});
+
+// The start page's empty box says in turn what it takes, one each 2 s by
+// the clock (02 §6); each change rolls its two words' widths, so it moved
+// with nobody there (sweep 2026-11-21). Asleep it stays on the one it shows.
+test("闲着的起始页不画：8 秒没人动以后输入框的提示停在那一句，没有一直循环的动画；一动又接着轮换", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSession(page, viewer);
+  await openApp(page, "/");
+  // The moving placeholder drawn over the empty box (shell.spec.ts).
+  const hint = omniboxInput(page).locator("xpath=preceding-sibling::div[1]");
+  await expect(hint).toHaveText(/使用命令/);
+  expect(await awake(page)).toBe(true);
+  // Nobody here for longer than AWAKE_MS (8 s).
+  await page.waitForTimeout(9_500);
+  expect(await awake(page)).toBe(false);
+  expect(await loops(page)).toEqual([]);
+  const still = await hint.textContent();
+  expect(await changesPerSecond(page, 3_000)).toBeLessThanOrEqual(5);
+  // Read once, not waited for: in any 3 s the hint, still going, would have
+  // moved on once or twice (never back round to the same one).
+  expect(await hint.textContent()).toBe(still);
+  // Someone moves the pointer: awake again, the hint goes on by the clock.
+  await page.mouse.move(200, 300);
+  await page.mouse.move(240, 320);
+  await expect.poll(() => awake(page)).toBe(true);
+  await expect(hint).not.toHaveText(still ?? "");
 });

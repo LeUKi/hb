@@ -63,6 +63,7 @@ import {
   triedHongbao,
 } from "./judge-issues";
 import { useFormPoints, useFormUnit } from "./points-funding";
+import { sameJson } from "./same-json";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -161,7 +162,10 @@ export function HongbaoForm({
     activity ? formOf(activity) : (preset ?? emptyForm()),
   );
   const [form, setForm] = useState(baseline);
-  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  // As JSON.stringify would tell, without writing the 判定器's code and the
+  // texts out on every render: only the parts a change replaced are looked
+  // into (sweep 2026-11-21).
+  const dirty = !sameJson(form, baseline);
   // A new 红包 from someone with no merchant but 🐟额 to send starts on
   // 🐟额 (balance-design §14): set as the starting point, before anything
   // is typed, so it is not an unsaved change.

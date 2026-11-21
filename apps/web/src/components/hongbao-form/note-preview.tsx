@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Markdown from "react-markdown";
 import { isPageLink, notePlugins, PageButton } from "../ui/markdown";
 
@@ -21,9 +22,15 @@ function safeLink(url: string) {
 
 /**
  * A 说明 as it will read: GitHub-flavoured Markdown without images or HTML,
- * links made safe — production's SafeMarkdown rules.
+ * links made safe — production's SafeMarkdown rules. Parsed again only when
+ * its text changes, not on every render of the form around it (sweep
+ * 2026-11-21).
  */
-export function NotePreview({ text }: { text: string }) {
+export const NotePreview = memo(function NotePreview({
+  text,
+}: {
+  text: string;
+}) {
   if (!text.trim()) return <p className="text-sm text-ink-3">（空）</p>;
   return (
     <div className="md-preview">
@@ -49,4 +56,4 @@ export function NotePreview({ text }: { text: string }) {
       </Markdown>
     </div>
   );
-}
+});

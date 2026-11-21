@@ -15,7 +15,7 @@ import {
 import { activityPath, useCurrentActivityId } from "../../lib/activity-route";
 import {
   attemptCooldownSnapshot,
-  useAttemptCooldown,
+  useCooldownActive,
 } from "../../lib/attempt-cooldown";
 import { useCachedQueryData } from "../../lib/cached-query";
 import { liveJudgedAtom } from "../../lib/live-state";
@@ -264,19 +264,16 @@ export function usePageBridge(
   const participation = useCachedQueryData<ParticipationCache>(
     activityId && user ? participationKey(user.id, activityId) : null,
   );
-  // Read so it re-renders as the cooldown moves; the snapshot has the clock.
-  useAttemptCooldown(user?.id ?? null);
+  // Re-renders as a cooldown starts and as it ends, not each second: hb.me()
+  // holds its end, not what is left, so nothing pushed moves in between
+  // (sweep 2026-11-21). The snapshot has the clock.
+  const cooling = useCooldownActive(user?.id ?? null);
   const cooldown = attemptCooldownSnapshot(user?.id ?? null);
-  const serverNow = cooldown
-    ? cooldown.serverTime + (Date.now() - cooldown.receivedAt)
-    : null;
   const me = meOf(
     activity,
     user,
     participation,
-    cooldown && serverNow !== null && cooldown.nextAllowedAt > serverNow
-      ? cooldown.nextAllowedAt
-      : null,
+    cooling && cooldown ? cooldown.nextAllowedAt : null,
   );
   const myView = user ? myViewOf(participation) : null;
   // How far the server's clock is from this one (hb.now()): known once

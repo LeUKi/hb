@@ -108,8 +108,11 @@ function Me({ user }: { user: SessionUser }) {
   useHashTarget();
   const profile = useAccountProfile(user);
   const summary = useHistorySummary(user.id);
-  // The first page of 我发的 carries the counts (草稿 among them).
-  const sent = useSentPages(user.id, "all");
+  // The first page of 我发的 carries the counts (草稿 among them). Read as
+  // the page opens, never polled here: it was read every 15 s for that
+  // one number (sweep 2026-11-21). It is 红包记录's own 全部 list, so
+  // either page opens with what the other read.
+  const sent = useSentPages(user.id, "all", false);
   const refresh = useProfileRefresh();
   const [authError] = useAtom(authErrorAtom);
   const signOut = useSignOut(goHome);

@@ -91,11 +91,31 @@ function retryAfter(value: string | null) {
     : undefined;
 }
 
-export const historyListRefreshOptions = {
-  refetchInterval: 15_000,
-  refetchIntervalInBackground: false,
-  refetchOnWindowFocus: false,
-} as const;
+/**
+ * A polled list's refetchInterval: `every` while it is one batch long, then
+ * no more. A poll reads every batch the list holds again, one after another,
+ * so one scrolled ten batches down sent ten requests every 15 s; that far
+ * down, new rows at its top are out of sight anyway. Coming back to it,
+ * 刷新 and a write that changes it still read all of it again (07 §1;
+ * sweep 2026-11-21).
+ */
+export function listPoll(every: number | false) {
+  return (query: {
+    state: { data?: { pages: readonly unknown[] } | undefined };
+  }) =>
+    every !== false && (query.state.data?.pages.length ?? 1) <= 1
+      ? every
+      : false;
+}
+
+/** 红包记录's two lists: only the tab on screen (`live`) polls. */
+export function historyListRefreshOptions(live: boolean) {
+  return {
+    refetchInterval: listPoll(live ? 15_000 : false),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+  } as const;
+}
 
 type PageFocusRefetch = () => unknown;
 

@@ -209,3 +209,40 @@ export function useAttemptCooldown(userId: string | null | undefined) {
     active,
   };
 }
+
+/** setTimeout's longest wait: past it a timer fires at once. */
+const LONGEST_WAIT = 2 ** 31 - 1;
+
+/**
+ * Whether the account's cooldown runs, for what only branches on it: its
+ * caller renders again as one starts (or is replaced) and once as it ends,
+ * never each second. Through useAttemptCooldown a whole 红包 page rendered
+ * again every second of a cooldown, and the 附带网页 bridge wrote out its
+ * pushes each time (sweep 2026-11-21); the seconds shown tick in the leaf
+ * that shows them.
+ */
+export function useCooldownActive(userId: string | null | undefined) {
+  // Subscribed for the renders as the cooldown is applied or cleared.
+  useSyncExternalStore(
+    subscribeAttemptCooldown,
+    () => attemptCooldownSnapshot(userId),
+    () => undefined,
+  );
+  const [now, setNow] = useState(Date.now);
+  const remainingMs = attemptCooldownRemainingMs(
+    userId,
+    Math.max(now, Date.now()),
+  );
+  const active = remainingMs > 0;
+  // One wake, just after it ends. A wait longer than setTimeout takes would
+  // fire at once, again and again: a long one wakes early and looks again.
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(remainingMs + 2, LONGEST_WAIT),
+    );
+    return () => window.clearTimeout(timer);
+  }, [active, remainingMs]);
+  return active;
+}

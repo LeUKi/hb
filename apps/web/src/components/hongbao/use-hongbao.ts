@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
-import { useAttemptCooldown } from "../../lib/attempt-cooldown";
+import { useCooldownActive } from "../../lib/attempt-cooldown";
 import { loadCap } from "../../lib/cap";
 import { scopeNoticeAtom } from "../../lib/claim-scope";
 import { leaveClaimQueue } from "../../lib/claims";
@@ -77,7 +77,9 @@ export function useHongbao(data: HongbaoData) {
   const animation = useAtomValue(rewardAnimationAtom);
   const [claiming, setClaiming] = useState(false);
   const showScope = useSetAtom(scopeNoticeAtom);
-  const cooling = useAttemptCooldown(user?.id ?? null).active;
+  // Whether it runs, not its seconds (CooldownText ticks): the page renders
+  // again as a cooldown starts and ends, not each second (sweep 2026-11-21).
+  const cooling = useCooldownActive(user?.id ?? null);
 
   // The opening plays only for a claim made while this page is on screen;
   // coming back to a claimed 红包 shows it already open.

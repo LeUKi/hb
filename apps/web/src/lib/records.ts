@@ -17,6 +17,7 @@ import { api } from "../api";
 import {
   activityKeys,
   historyListRefreshOptions,
+  listPoll,
   readResponse,
 } from "./activities";
 import { claimKeys } from "./claims";
@@ -197,7 +198,10 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
 /** 即将开放: timed drafts, nearest first (scheduled-opening §7). */
 export type SquareFilter = "upcoming" | "active" | "ended" | "all";
 
-/** The 红包广场, newest first, 20 at a time; `live` polls (the shown list). */
+/**
+ * The 红包广场, newest first, 20 at a time; `live` polls (the shown list),
+ * while it is one batch long (listPoll).
+ */
 export function useSquarePages(
   status: SquareFilter,
   userId: string | null,
@@ -221,7 +225,7 @@ export function useSquarePages(
       ),
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
-    refetchInterval: live ? 15_000 : false,
+    refetchInterval: listPoll(live ? 15_000 : false),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
@@ -229,8 +233,15 @@ export function useSquarePages(
 
 export type SentFilter = "all" | "active" | "draft" | "finished";
 
-/** What this account sent, newest first; every page carries the counts. */
-export function useSentPages(userId: string, status: SentFilter) {
+/**
+ * What this account sent, newest first; every page carries the counts.
+ * `live`: it polls — the tab on screen; /me reads it only as it opens.
+ */
+export function useSentPages(
+  userId: string,
+  status: SentFilter,
+  live: boolean,
+) {
   return useInfiniteQuery({
     queryKey: [...activityKeys.mine(userId), "pages", status],
     initialPageParam: null as string | null,
@@ -253,12 +264,15 @@ export function useSentPages(userId: string, status: SentFilter) {
     // same account's only (07 §1).
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === userId ? previous : undefined,
-    ...historyListRefreshOptions,
+    ...historyListRefreshOptions(live),
   });
 }
 
-/** What this account took part in, newest first. */
-export function useJoinedPages(userId: string) {
+/**
+ * What this account took part in, newest first. `live`: the tab on
+ * screen, which polls.
+ */
+export function useJoinedPages(userId: string, live: boolean) {
   return useInfiniteQuery({
     queryKey: [...claimKeys.participations(userId), "pages"],
     initialPageParam: null as string | null,
@@ -275,7 +289,7 @@ export function useJoinedPages(userId: string) {
       ),
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
-    ...historyListRefreshOptions,
+    ...historyListRefreshOptions(live),
   });
 }
 

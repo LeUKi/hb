@@ -1,6 +1,7 @@
 import { PAYMENT_LABELS } from "@hb/contracts";
 import { ChevronRight, LayoutGrid, Plus } from "lucide-react";
 import { AnimatePresence } from "motion/react";
+import { useEffect } from "react";
 import { useHistorySummary } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { paymentTone } from "../../lib/hongbao-text";
@@ -226,8 +227,14 @@ function History({ user }: { user: SessionUser }) {
     "ended",
   ]);
   const summary = useHistorySummary(user.id);
-  const sent = useSentPages(user.id, filter === "ended" ? "finished" : filter);
-  const joined = useJoinedPages(user.id);
+  // Both are read, so either tab shows at once; only the one on screen
+  // polls (sweep 2026-11-21).
+  const sent = useSentPages(
+    user.id,
+    filter === "ended" ? "finished" : filter,
+    tab === "sent",
+  );
+  const joined = useJoinedPages(user.id, tab === "joined");
   const query = tab === "sent" ? sent : joined;
   const list = useQueryLazyList({
     hasNextPage: query.hasNextPage,
@@ -237,6 +244,13 @@ function History({ user }: { user: SessionUser }) {
     pageCount: query.data?.pages.length ?? 0,
     isPlaceholderData: query.isPlaceholderData,
   });
+  // A tab shown again after a while reads again at once, instead of
+  // showing what it had until its next poll (as the 红包广场's filters).
+  const { isStale, isFetching, refetch } = query;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new tab only
+  useEffect(() => {
+    if (isStale && !isFetching) void refetch();
+  }, [tab]);
   const author = {
     id: user.id,
     username: user.username,

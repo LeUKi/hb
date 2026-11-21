@@ -5,7 +5,7 @@ import { cn } from "../../lib/cn";
 import { useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
 import { CELL, glyphsPath, pixelGlyphs } from "./pixel-glyphs";
-import { REST_LETTERS, Scramble } from "./scramble";
+import { canScramble, REST_LETTERS, Scramble } from "./scramble";
 
 function hash(seed: string, ...parts: number[]) {
   let value = 2166136261;
@@ -77,6 +77,31 @@ function subscribe(listener: () => void) {
   };
 }
 
+// Which stand-ins and 口令 are in view, from one IntersectionObserver for
+// the page (sweep 2026-11-21 P3, P4): the sender's 名单 has one on every
+// row, hundreds in a long one, and only those in view need to move. A
+// scroller's edge counts, so a row scrolled out of the 名单 is out of view.
+const watched = new WeakMap<Element, (inView: boolean) => void>();
+let views: IntersectionObserver | undefined;
+
+/** Calls `onChange` as the element comes into view and as it leaves. */
+function watchView(element: Element, onChange: (inView: boolean) => void) {
+  if (typeof IntersectionObserver === "undefined") {
+    onChange(true);
+    return () => {};
+  }
+  views ??= new IntersectionObserver((entries) => {
+    for (const entry of entries)
+      watched.get(entry.target)?.(entry.isIntersecting);
+  });
+  watched.set(element, onChange);
+  views.observe(element);
+  return () => {
+    watched.delete(element);
+    views?.unobserve(element);
+  };
+}
+
 /**
  * A hidden 口令 on the page: pixel letters that change on every tick (the
  * look of 矿洞夺宝's 乱码, the user 2026-11-21), drawn in the text's colour
@@ -99,20 +124,38 @@ export function StandIn({
   className?: string;
 }) {
   const reduced = useReducedMotionPref();
+  const box = useRef<HTMLSpanElement>(null);
   const main = useRef<SVGPathElement>(null);
   const shadow = useRef<SVGPathElement>(null);
   const first = glyphsPath(letters(seed, index, length, reduced ? 0 : tick));
-  // Each tick writes the path itself: nothing else on the page renders.
+  // Each tick writes the path itself: nothing else on the page renders. On
+  // the clock only while in view (sweep 2026-11-21 P4: every row of the
+  // 名单 was drawn on each tick, those scrolled away too, under the
+  // dialog's two blurs); out of view it keeps its last frame.
   useEffect(() => {
-    if (reduced) return;
-    return subscribe(() => {
+    const element = box.current;
+    if (reduced || !element) return;
+    const draw = () => {
       const d = glyphsPath(letters(seed, index, length, tick));
       main.current?.setAttribute("d", d);
       shadow.current?.setAttribute("d", d);
+    };
+    let stop: (() => void) | undefined;
+    const unwatch = watchView(element, (inView) => {
+      if (inView && !stop) stop = subscribe(draw);
+      else if (!inView && stop) {
+        stop();
+        stop = undefined;
+      }
     });
+    return () => {
+      unwatch();
+      stop?.();
+    };
   }, [reduced, seed, index, length]);
   return (
     <span
+      ref={box}
       aria-hidden="true"
       className={cn(
         "inline-block whitespace-nowrap text-ink-2/80 select-none",
@@ -145,8 +188,8 @@ export function StandIn({
  * as “已隐藏” (the 口令 itself is not on the page then). Turning one into
  * the other scrambles (scramble.ts): the 乱码 stretches to the 口令's
  * letters as they settle from the left, and back; at once when the system
- * asks for less motion. `wrap` breaks a long one onto more lines, else it
- * truncates.
+ * asks for less motion, or out of view. `wrap` breaks a long one onto more
+ * lines, else it truncates.
  */
 export function PasswordText({
   text,
@@ -167,18 +210,28 @@ export function PasswordText({
 }) {
   const reduced = useReducedMotionPref();
   const [moving, setMoving] = useState(false);
+  const line = useRef<HTMLSpanElement>(null);
   const box = useRef<HTMLSpanElement>(null);
   const run = useRef<Scramble | null>(null);
+  const inView = useRef(false);
   const was = useRef(shown);
   const latest = useRef({ text, shown });
   latest.current = { text, shown };
+  useEffect(() => {
+    const element = line.current;
+    if (!element) return;
+    return watchView(element, (visible) => {
+      inView.current = visible;
+    });
+  }, []);
   // Shown or hidden after it was drawn: scramble there, or turn the one
-  // under way.
+  // under way. Only in view (sweep 2026-11-21 P3): one out of view, as most
+  // rows of a long 名单 are when all of them turn at once, switches at once.
   useLayoutEffect(() => {
     if (was.current === shown) return;
     was.current = shown;
     if (run.current) run.current.turn(shown);
-    else if (!reduced) setMoving(true);
+    else if (!reduced && inView.current && canScramble()) setMoving(true);
   }, [shown, reduced]);
   useLayoutEffect(() => {
     const element = box.current;
@@ -200,6 +253,7 @@ export function PasswordText({
   }, [moving]);
   return (
     <span
+      ref={line}
       className={cn(
         wrap ? "block [overflow-wrap:anywhere]" : "block truncate",
         "font-mono",
@@ -207,7 +261,7 @@ export function PasswordText({
       )}
     >
       {moving ? (
-        <span ref={box} aria-hidden="true" className="relative" />
+        <span ref={box} aria-hidden="true" />
       ) : shown ? (
         text
       ) : (

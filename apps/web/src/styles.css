@@ -519,8 +519,9 @@
   .field :focus-visible {
     outline: none;
   }
-  /* Loading bars (page skeleton): a soft sheen moving across. */
-  .skeleton {
+  /* Loading bars (page skeleton): a soft sheen moving across. The bar is
+     drawn on its ::after, the sweeping strip below. */
+  .skeleton::after {
     background: linear-gradient(
       90deg,
       rgb(42 21 25 / 0.06) 0%,
@@ -529,11 +530,10 @@
       rgb(42 21 25 / 0.09) 60%,
       rgb(42 21 25 / 0.06) 100%
     );
-    background-size: 220% 100%;
-    animation: skeleton-sheen 1.6s ease-in-out infinite;
+    background-size: 44% 100%;
   }
   /* On the 红包's red cover: cream bars instead of grey. */
-  .skeleton-red {
+  .skeleton-red::after {
     background: linear-gradient(
       90deg,
       rgb(255 236 214 / 0.14) 0%,
@@ -542,7 +542,7 @@
       rgb(255 236 214 / 0.2) 60%,
       rgb(255 236 214 / 0.14) 100%
     );
-    background-size: 220% 100%;
+    background-size: 44% 100%;
   }
   /* The 红包 page after its skeleton: the red stays (its height goes on
      from the skeleton's), what is on it and below it fades in. */
@@ -556,14 +556,7 @@
   }
   /* A card waiting on a read (代码判定 while its switch is checked, a
      判定器 being read): the skeleton's sheen sweeping across it. */
-  .loading-sheen {
-    position: relative;
-  }
   .loading-sheen::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
     background: linear-gradient(
       90deg,
       transparent 0%,
@@ -572,8 +565,7 @@
       transparent 62%,
       transparent 100%
     );
-    background-size: 220% 100%;
-    animation: skeleton-sheen 1.6s ease-in-out infinite;
+    background-size: 44% 100%;
   }
   /* 代码判定 judging (02 §4): the same sweep in its gold. */
   .loading-sheen-gold::after {
@@ -585,20 +577,55 @@
       transparent 64%,
       transparent 100%
     );
-    background-size: 220% 100%;
+    background-size: 44% 100%;
+  }
+  /* Both sweep as a strip on the ::after, five times as wide as its box,
+     moved by transform inside the box's clip, so the compositor runs it: a
+     moving background repainted every bar on every frame, on the main
+     thread while it was busy loading, and on the desktop blurred the glass
+     again (sweep 2026-11-21). The pattern repeats every 220% of the box
+     (44% of the strip) and moves from -120% to 144% of it, as the
+     background did. */
+  :is(.skeleton, .loading-sheen) {
+    position: relative;
+  }
+  /* The strip stays inside its box. Not on a squircle, which clips itself
+     (components/ui/squircle.tsx) but only if its overflow reads visible
+     when it mounts: a card that mounted loading would lose that clip. */
+  :is(.skeleton, .loading-sheen):not([data-squircle]) {
+    overflow: clip;
+  }
+  :is(.skeleton, .loading-sheen)::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -220%;
+    width: 500%;
+    pointer-events: none;
+    animation: skeleton-sheen 1.6s ease-in-out infinite;
+  }
+  /* A squircle draws its keyboard focus ring on the same ::after (the base
+     layer): while one is focused, the ::after is back on its box as that
+     ring, without the sheen. */
+  .loading-sheen[data-squircle]:focus-visible:not([tabindex="-1"])::after {
+    inset: 0;
+    width: auto;
+    animation: none;
+    background: none;
   }
   [data-motion="reduce"] .loading-sheen::after {
     animation: none;
     background: none;
   }
-  [data-motion="reduce"] .skeleton {
+  [data-motion="reduce"] .skeleton::after {
     animation: none;
   }
   [data-motion="reduce"] .hb-arrive {
     --hb-arrive: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .skeleton {
+    .skeleton::after {
       animation: none;
     }
     .loading-sheen::after {
@@ -1631,8 +1658,7 @@
     --focus-ring-color: rgb(243 211 139 / 0.9);
     --focus-band-color: transparent;
   }
-  /* The × inside a lacquer chip (omnibox), and anything on the lacquer. */
-  .hb-lacquer-button :focus-visible,
+  /* Anything on the lacquer: its focus outline in gold. */
   .hb-code :focus-visible {
     outline-color: rgb(243 211 139 / 0.9);
   }
@@ -1861,18 +1887,7 @@
     --sq-ring: var(--color-danger);
     --sq-ring-w: 1.5px;
   }
-  .hb-lacquer-button {
-    background: linear-gradient(180deg, #2c2724, #12100e);
-    color: #f3d38b;
-    --sq-ring: rgb(232 192 121 / 0.55);
-    box-shadow: var(--sq-ring-shadow);
-    transition: box-shadow 150ms var(--ease-snappy);
-  }
-  .hb-lacquer-button:hover:not(:disabled) {
-    --sq-ring: rgb(232 192 121 / 0.95);
-  }
-  /* Their focus in gold with a dark band, and the × inside the chip too. */
-  .hb-lacquer-button,
+  /* A lacquer chip's focus ring in gold with a dark band. */
   .hb-lacquer-chip {
     --focus-ring-color: #f3d38b;
     --focus-band-color: rgb(18 16 14 / 0.85);
@@ -2644,12 +2659,13 @@ html[data-embed] .build-stamp {
   }
 }
 
+/* The loading sheen's strip, five boxes wide: from -120% to 144% of its box. */
 @keyframes skeleton-sheen {
   from {
-    background-position: 100% 0;
+    transform: translateX(-24%);
   }
   to {
-    background-position: -120% 0;
+    transform: translateX(28.8%);
   }
 }
 
@@ -2953,7 +2969,7 @@ html[data-embed] .build-stamp {
   :root[data-site-dark] .field:focus-within {
     background: rgb(255 255 255 / 0.1);
   }
-  :root[data-site-dark] .skeleton {
+  :root[data-site-dark] .skeleton::after {
     background: linear-gradient(
       90deg,
       rgb(255 255 255 / 0.05) 0%,
@@ -2962,7 +2978,7 @@ html[data-embed] .build-stamp {
       rgb(255 255 255 / 0.08) 60%,
       rgb(255 255 255 / 0.05) 100%
     );
-    background-size: 220% 100%;
+    background-size: 44% 100%;
   }
   :root[data-site-dark] .loading-sheen::after {
     background: linear-gradient(
@@ -2973,7 +2989,7 @@ html[data-embed] .build-stamp {
       transparent 62%,
       transparent 100%
     );
-    background-size: 220% 100%;
+    background-size: 44% 100%;
   }
   :root[data-site-dark] .switch-knob {
     background: #f2eeee;

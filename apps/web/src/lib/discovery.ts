@@ -11,7 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { atom } from "jotai";
 import { api } from "../api";
-import { ActivityRequestError, readResponse } from "./activities";
+import { ActivityRequestError, listPoll, readResponse } from "./activities";
 import { activityToolsEnabled } from "./activity-tools-release";
 import {
   applyAttemptCooldown,
@@ -173,7 +173,8 @@ export function useRedemptionResultPages(userId: string, id: string) {
     },
     enabled: Boolean(userId) && Boolean(identity),
     retry: false,
-    refetchInterval: 15_000,
+    // While one batch long only (listPoll).
+    refetchInterval: listPoll(15_000),
   });
 }
 
@@ -199,7 +200,8 @@ export function useTopicActivityPages(
       return first ? { pages: [first], pageParams: [null] } : undefined;
     },
     retry: false,
-    refetchInterval: 15_000,
+    // While one batch long only (listPoll).
+    refetchInterval: listPoll(15_000),
   });
 }
 
@@ -248,7 +250,9 @@ export function useStatisticsPages(
     getNextPageParam: (last) => last.nextCursor,
     enabled,
     retry: false,
-    refetchInterval: enabled ? 15_000 : false,
+    // While one batch long only (listPoll): its totals on the first page
+    // then wait for 刷新 too.
+    refetchInterval: listPoll(enabled ? 15_000 : false),
     refetchIntervalInBackground: false,
   });
 }
