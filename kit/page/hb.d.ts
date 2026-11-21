@@ -84,7 +84,7 @@ export type HbReason =
   | "not_open"
   /** 红包已结束 */
   | "ended"
-  /** 判定器连续出错，暂停领取 */
+  /** 暂停领取（判定器连续出错，或红包作者的 LDC 商户余额不足；余额不足时 message 是原因） */
   | "paused"
   /** 判定器出错了，这次没有判定，可以再提交 */
   | "judge_failed"
@@ -141,7 +141,7 @@ export type HbFillReason =
   | "not_open"
   /** 红包已结束 */
   | "ended"
-  /** 判定器连续出错，暂停领取 */
+  /** 暂停领取（判定器连续出错，或红包作者的 LDC 商户余额不足） */
   | "paused"
   /** 已经领到过、报过名或已经结算了 */
   | "already_claimed"
@@ -170,7 +170,7 @@ export type HbMe =
       avatar: string | null;
       /** 现在能不能参加（领取、报名或提交给判定器） */
       open: boolean;
-      /** 不能参加的原因 */
+      /** 不能参加的原因；paused 是暂停领取（判定器连续出错，或红包作者的 LDC 商户余额不足） */
       why?:
         | "not_open"
         | "ended"

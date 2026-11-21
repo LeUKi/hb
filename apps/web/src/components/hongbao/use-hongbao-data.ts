@@ -13,6 +13,7 @@ import {
 } from "../../lib/activities";
 import { useActivityPasswords } from "../../lib/activity-passwords";
 import { useCurrentActivityId } from "../../lib/activity-route";
+import { isAwake, onAwakeChange } from "../../lib/awake";
 import { useCurrentParticipation } from "../../lib/claims";
 import {
   hongbaoOf,
@@ -37,6 +38,12 @@ import type { HongbaoData } from "./use-hongbao";
 
 /** Unpushed, a running 红包 is read again this often; its lists slower. */
 const POLL_MS = 5_000;
+/**
+ * ...and this often while nobody is at the page (lib/awake), read once
+ * more as they come back: a guest's page left open read it every 5 s for
+ * hours (P8, the user agreed: sweep 2026-11-21).
+ */
+const IDLE_POLL_MS = 30_000;
 const LIST_POLL_MS = 15_000;
 const DRAWING_POLL_MS = 1_000;
 
@@ -224,9 +231,10 @@ function useRosterFollow(
  *
  * While the live channel is open (lib/live.ts) nothing here polls: the
  * public read arrives pushed, and the rest is read again when a push says
- * it moved. Without it (guests, or turned away) the running 红包 polls.
- * Once it is over nothing does, but a payment still on its way. The 名单
- * is read only where it shows (useRosterFollow).
+ * it moved. Without it (guests, or turned away) the running 红包 polls,
+ * slower while nobody is at the page. Once it is over nothing does, but a
+ * payment still on its way. The 名单 is read only where it shows
+ * (useRosterFollow).
  */
 /** 自领: the 口令 the sender took their own share (or place) with. */
 function usedBySender(
@@ -241,6 +249,34 @@ function usedBySender(
     : null;
 }
 
+/** How often its public read is read again; false: pushed, or done. */
+function publicPoll(
+  activity: PublicActivity | undefined,
+  live: boolean,
+  awake: boolean,
+): number | false {
+  return publicSettled(activity)
+    ? false
+    : // A timed draft's opening, or its going back to a draft, is pushed
+      // (scheduled-opening §4): no polling for it while live.
+      opensBy(activity) !== null
+      ? live
+        ? false
+        : dueNow(activity)
+          ? DUE_POLL_MS
+          : TIMED_POLL_MS
+      : // Being drawn (开奖证明): each step is pushed (closed, its random
+        // number, drawn); off the live channel, read every second.
+        !live && drawing(activity)
+        ? DRAWING_POLL_MS
+        : // Past the deadline the push should say so; until it has, ask.
+          live && !pastDeadline(activity)
+          ? false
+          : awake
+            ? POLL_MS
+            : IDLE_POLL_MS;
+}
+
 export function useHongbaoPageData(id: string) {
   const identity = useIdentity();
   const user = identity.user;
@@ -250,25 +286,9 @@ export function useHongbaoPageData(id: string) {
     id,
     userId,
     identity.ready,
-    (activity) =>
-      publicSettled(activity)
-        ? false
-        : // A timed draft's opening, or its going back to a draft, is pushed
-          // (scheduled-opening §4): no polling for it while live.
-          opensBy(activity) !== null
-          ? live
-            ? false
-            : dueNow(activity)
-              ? DUE_POLL_MS
-              : TIMED_POLL_MS
-          : // Being drawn (开奖证明): each step is pushed (closed, its random
-            // number, drawn); off the live channel, read every second.
-            !live && drawing(activity)
-            ? DRAWING_POLL_MS
-            : // Past the deadline the push should say so; until it has, ask.
-              live && !pastDeadline(activity)
-              ? false
-              : POLL_MS,
+    // Asked as the query sets its timer (each render, each read): going
+    // idle slows it from its next read on, without rendering the page.
+    (activity) => publicPoll(activity, live, isAwake()),
   );
   const activity = publicQuery.data?.activity;
   const settled = publicSettled(activity);
@@ -278,6 +298,17 @@ export function useHongbaoPageData(id: string) {
   // (above). Hundreds of pages watch a timed 红包 (2026-11-05).
   const opensAt = opensBy(activity);
   const refetchPublic = publicQuery.refetch;
+  // Someone back at a page left idle (P8): read it now rather than up to
+  // IDLE_POLL_MS on; that read sets the poll back to POLL_MS.
+  const slowed =
+    activity !== undefined &&
+    publicPoll(activity, live, false) === IDLE_POLL_MS;
+  useEffect(() => {
+    if (!slowed) return;
+    return onAwakeChange(() => {
+      if (isAwake()) void refetchPublic();
+    });
+  }, [slowed, refetchPublic]);
   useEffect(() => {
     if (opensAt === null || live) return;
     const left = opensAt - Date.now();

@@ -30,6 +30,7 @@ import { currentTheme } from "../../lib/theme";
 import { sdkUnitOf } from "../../lib/units";
 import { useJudgeBoard } from "../hongbao/judge-board";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
+import { mineOf } from "./page-mine";
 
 // 附带网页 SDK (docs/judge-page-design.md §3, §11.8): what /sdk/v1.js in
 // the page beside a 红包 asks, answered over postMessage. Only that frame
@@ -159,34 +160,19 @@ const lineOf = (line: JudgeAnnouncement) => ({
   text: line.text,
 });
 
-/** The viewer's own submissions, as `hb.mine()` gives them. */
-async function readMine(activityId: string, next: string | null) {
+/** The viewer's own submissions, as `hb.mine()` gives them (page-mine.ts). */
+async function readMine(
+  activityId: string,
+  next: string | null,
+  money: ReturnType<typeof sdkUnitOf>,
+) {
   const list = await readResponse<MyJudgmentList>(
     await fetch(
       `/api/activities/${encodeURIComponent(activityId)}/judgments${next ? `?cursor=${encodeURIComponent(next)}` : ""}`,
       { cache: "no-store" },
     ),
   );
-  return {
-    total: list.total,
-    items: list.items.map((item) => ({
-      n: item.attempt,
-      at: item.at,
-      // Protocol 5: someone else's judgment that moved them, whose.
-      ...(item.by ? { by: item.by.name } : { input: item.input ?? "" }),
-      claimed: item.amount !== undefined,
-      ...(item.amount !== undefined ? { amount: item.amount } : {}),
-      ...(item.message ? { reply: item.message } : {}),
-      // Its 待结算 after: 0 once it settled them (as hb.submit() says it).
-      ...(item.moved
-        ? {
-            ...item.moved,
-            pending: item.moved.settled ? "0.00" : item.moved.pending,
-          }
-        : {}),
-    })),
-    next: list.nextCursor,
-  };
+  return mineOf(list, money);
 }
 
 type Ask =
@@ -282,6 +268,8 @@ export function usePageBridge(
   const { submitForPage, fillForPage, identityForPage, openAccount } =
     useOmniboxController();
   // What the listener reads when a message comes, as of the last render.
+  // hb.mine()'s amounts as the rest write them; LDC until it is read.
+  const money = sdkUnitOf(activity ?? {});
   const now = useRef({
     hongbao,
     view,
@@ -295,6 +283,7 @@ export function usePageBridge(
     me,
     myView,
     clock,
+    money,
   });
   now.current = {
     hongbao,
@@ -309,6 +298,7 @@ export function usePageBridge(
     me,
     myView,
     clock,
+    money,
   };
   /** Said hello: what it has been sent, to push only what changed. */
   const link = useRef<{
@@ -416,7 +406,7 @@ export function usePageBridge(
         });
       busy.current.mine = true;
       try {
-        reply({ value: await readMine(activityId, ask.next) });
+        reply({ value: await readMine(activityId, ask.next, state.money) });
       } catch (error) {
         reply({
           error: {

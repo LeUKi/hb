@@ -15,6 +15,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { readResponse } from "./activities";
+import { sessionQueryKey } from "./auth";
 import { useIdentity } from "./session";
 
 export type PointsCopy = {
@@ -490,9 +491,11 @@ export function useAdminPointsDetail(id: string) {
 export function useAdminPointsActions() {
   const send = useSend();
   const queryClient = useQueryClient();
+  // The session holds the 站长's red dot (pointsAttention): its own key,
+  // not ["session"], which matched nothing (sweep 2026-11-21, F7).
   const settle = () => {
     void queryClient.invalidateQueries({ queryKey: ["points"] });
-    void queryClient.invalidateQueries({ queryKey: ["session"] });
+    void queryClient.invalidateQueries({ queryKey: sessionQueryKey });
   };
   return {
     settings: useMutation({
@@ -561,6 +564,9 @@ export const payoutReasonWords: Record<string, string> = {
   admin: "站长标为发放失败",
   mismatch: "回复对不上",
   final_query: "等最后一次查单",
+  // Its runs kept dying with no answer kept: 结果不明 for the 站长 (points/
+  // payments.ts, sweep 2026-11-21 B10).
+  interrupted: "发放中断",
 };
 
 /** Whose view of the records: the 站长's panel or the issuer's own page. */

@@ -45,10 +45,24 @@ let script: HTMLScriptElement | null = null;
 export function loadTurnstile(): Promise<Turnstile> {
   if (window.turnstile) return Promise.resolve(window.turnstile);
   if (!script) {
-    script = document.createElement("script");
-    script.src = SCRIPT_URL;
-    script.async = true;
-    document.head.append(script);
+    const created = document.createElement("script");
+    created.src = SCRIPT_URL;
+    created.async = true;
+    // Its end is heard whether or not a call still waits on it: one that
+    // failed (or loaded with nothing defined: an extension swapped it)
+    // after every wait timed out is added again by the next 重试, not
+    // waited on until a reload (sweep 2026-11-21, E7).
+    const drop = () => {
+      if (script !== created) return;
+      created.remove();
+      script = null;
+    };
+    created.addEventListener("error", drop);
+    created.addEventListener("load", () => {
+      if (!window.turnstile) drop();
+    });
+    document.head.append(created);
+    script = created;
   }
   const element = script;
   return new Promise<Turnstile>((resolve, reject) => {
@@ -59,16 +73,9 @@ export function loadTurnstile(): Promise<Turnstile> {
       if (turnstile) resolve(turnstile);
       else reject(new Error("TURNSTILE_UNREACHABLE"));
     };
-    // Loaded yet nothing defined (an extension swapped it): as if it failed.
-    const loaded = () =>
-      window.turnstile ? settle(window.turnstile) : failed();
-    const failed = () => {
-      if (script === element) {
-        element.remove();
-        script = null;
-      }
-      settle(undefined);
-    };
+    // Loaded yet nothing defined: as if it failed (dropped above).
+    const loaded = () => settle(window.turnstile);
+    const failed = () => settle(undefined);
     const timer = window.setTimeout(() => settle(undefined), LOAD_TIMEOUT_MS);
     element.addEventListener("load", loaded);
     element.addEventListener("error", failed);

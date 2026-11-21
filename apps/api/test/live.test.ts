@@ -409,6 +409,48 @@ describe("a running 红包's live channel", () => {
     expect(reads(heard)).toHaveLength(1);
   });
 
+  it("pushes a 商户余额不足 wait beginning and ending, which its own row does not hold (F1)", async () => {
+    const activity = await running(3);
+    const { heard } = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(reads(heard)).toHaveLength(1));
+    expect(reads(heard)[0]?.activity.fundsPaused).toBeUndefined();
+    const announce = async () => {
+      const response = await env.ACTIVITY_DO.get(
+        env.ACTIVITY_DO.idFromName(activity.id),
+      ).fetch(
+        `https://activity.internal/internal/activities/${activity.id}/live/announce`,
+        { method: "POST" },
+      );
+      expect(response.status).toBe(204);
+      await response.arrayBuffer();
+    };
+    const wait = (since: number | null) =>
+      env.DB.prepare("UPDATE merchants SET funds_wait_since=? WHERE id=?")
+        .bind(since, merchantId)
+        .run();
+    await wait(Date.now());
+    await announce();
+    await vi.waitFor(
+      () => expect(reads(heard).at(-1)?.activity.fundsPaused).toBeDefined(),
+      { timeout: 3000 },
+    );
+    await wait(null);
+    await announce();
+    await vi.waitFor(
+      () => expect(reads(heard).at(-1)?.activity.fundsPaused).toBeUndefined(),
+      { timeout: 3000 },
+    );
+    // Another 红包's object is not this one's.
+    const other = await env.ACTIVITY_DO.get(
+      env.ACTIVITY_DO.idFromName(crypto.randomUUID()),
+    ).fetch(
+      `https://activity.internal/internal/activities/${activity.id}/live/announce`,
+      { method: "POST" },
+    );
+    expect(other.status).toBe(400);
+    await other.arrayBuffer();
+  });
+
   it("tells everyone how many people are watching, each counted once", async () => {
     const activity = await running(3);
     const first = await actor();

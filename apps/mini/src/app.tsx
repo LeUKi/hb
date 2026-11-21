@@ -87,6 +87,7 @@ import { useRosterList } from "../../web/src/lib/roster";
 import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import { forumAvatars } from "./avatars";
+import { withPushed } from "./live-merge";
 import { PointsCopyContext } from "./off-site/points";
 import { OpenLink, openOnSite, SITE } from "./open-link";
 import type { MiniSdk } from "./sdk";
@@ -531,14 +532,8 @@ function Page({
           current
             ? {
                 ...current,
-                // Its people as the read had them: their pictures the
-                // 社区's (forumAvatar), which the live channel does not say.
-                activity: {
-                  ...current.activity,
-                  ...live.activity,
-                  author: current.activity.author,
-                  scope: current.activity.scope,
-                },
+                // Whole, but for what the push leaves out (live-merge.ts).
+                activity: withPushed(current.activity, live.activity),
               }
             : current,
         );

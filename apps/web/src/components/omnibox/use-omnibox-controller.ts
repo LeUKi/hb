@@ -165,9 +165,12 @@ export function useScopeOffer(activityId: string | null): ScopeOffer {
   if (!user || !activity || activity.status !== "active") return null;
   if (activity.author.id === user.id) return null;
   // 代码判定: submit to its code until taken part; nothing to verify after.
+  // Paused (its code failing, or 商户余额不足), as the seal says: nothing
+  // to submit (sweep 2026-11-21, F5).
   if (activity.participationMode === "code")
     return participation?.claim ||
       activity.judge?.paused ||
+      activity.fundsPaused ||
       (deadline && Date.parse(deadline) <= Date.now())
       ? null
       : { id: activity.id, purpose: "code" };
@@ -1097,6 +1100,13 @@ export function useOmniboxController() {
               queryKey: activityKeys.public(activityId, account.id),
             });
             return notJudged("paused");
+          // 商户余额不足 (docs/payout-stop-design.md §6): paused too, with
+          // the server's words, which say why (sweep 2026-11-21, F5).
+          case "MERCHANT_FUNDS_PAUSED":
+            void queryClient.invalidateQueries({
+              queryKey: activityKeys.public(activityId, account.id),
+            });
+            return notJudged("paused", { message: error.message });
           case "JUDGE_UNAVAILABLE":
           case "CODE_BUSY":
             return notJudged("try_later");

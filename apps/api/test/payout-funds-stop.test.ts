@@ -266,6 +266,32 @@ async function refusal(promise: Promise<unknown>) {
   return { status: error.status, code: error.code, message: error.message };
 }
 
+/**
+ * Its bindings, noting what each 红包 object is asked and answers: the
+ * sweep tells pages open on them a wait began or ended (F1).
+ */
+function watched(f: Fixture) {
+  const asked: string[] = [];
+  const namespace = f.bindings.ACTIVITY_DO;
+  const bindings = {
+    ...f.bindings,
+    ACTIVITY_DO: {
+      idFromName: (name: string) => namespace.idFromName(name),
+      get: (...args: Parameters<typeof namespace.get>) => {
+        const stub = namespace.get(...args);
+        return {
+          fetch: async (input: string, init?: RequestInit) => {
+            const response = await stub.fetch(input, init);
+            asked.push(`${new URL(input).pathname} ${response.status}`);
+            return response;
+          },
+        };
+      },
+    } as unknown as ApiBindings["ACTIVITY_DO"],
+  } as ApiBindings;
+  return { asked, bindings };
+}
+
 /** The first payment sent and turned down: 余额不足. */
 async function shortOfFunds() {
   const f = await fixture();
@@ -328,8 +354,14 @@ describe("a merchant short of funds", () => {
 
   it("keeps counting while a payment or two trickles through, and ends the wait once nothing is left", async () => {
     const { f, since } = await shortOfFunds();
-    await sweepFundsWaits(f.bindings);
+    // Pages open on the 红包 hear the wait begin and end, and only then.
+    const sweep = watched(f);
+    const announced = `/internal/activities/${f.activityId}/live/announce 204`;
+    await sweepFundsWaits(sweep.bindings);
     expect((await merchant(f)).fundsWaitSince).toBe(since);
+    expect(sweep.asked).toEqual([announced]);
+    await sweepFundsWaits(sweep.bindings);
+    expect(sweep.asked).toEqual([announced]);
     const paid = (businessNo: string): PaymentAdapter => ({
       mode: "real",
       send: vi.fn(
@@ -377,8 +409,9 @@ describe("a merchant short of funds", () => {
     const [head, queued] = f.tasks;
     await through(head ?? "");
     // One through: the other still waits, and so does the count.
-    await sweepFundsWaits(f.bindings);
+    await sweepFundsWaits(sweep.bindings);
     expect((await merchant(f)).fundsWaitSince).toBe(since);
+    expect(sweep.asked).toEqual([announced]);
     await expect(
       refusal(
         assertMerchantFunded(f.bindings, {
@@ -388,9 +421,13 @@ describe("a merchant short of funds", () => {
       ),
     ).resolves.toMatchObject({ code: "MERCHANT_FUNDS_PAUSED" });
     await through(queued ?? "");
-    // Nothing left: the wait is over, claims go on.
-    await sweepFundsWaits(f.bindings);
+    // Nothing left: the wait is over, claims go on, and its page hears it.
+    await sweepFundsWaits(sweep.bindings);
     expect((await merchant(f)).fundsWaitSince).toBeNull();
+    expect(sweep.asked).toEqual([announced, announced]);
+    expect(
+      (await getPublicActivity(f.bindings, f.activityId)).fundsPaused,
+    ).toBeUndefined();
     await expect(
       assertMerchantFunded(f.bindings, {
         funding: "merchant",

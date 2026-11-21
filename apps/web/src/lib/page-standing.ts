@@ -25,7 +25,12 @@ export function pageStanding(
   const deadline = activity.draw?.deadlineAt ?? activity.deadlineAt;
   if (activity.status !== "active" || (deadline && Date.parse(deadline) <= now))
     return "ended";
-  if (activity.participationMode === "code" && activity.judge?.paused)
+  // As the seal (seal-state.ts): its code failing, or 商户余额不足 for
+  // any 红包 (docs/payout-stop-design.md §6; sweep 2026-11-21, F5).
+  if (
+    activity.fundsPaused ||
+    (activity.participationMode === "code" && activity.judge?.paused)
+  )
     return "paused";
   // Protocol 5: settled, with or without money (multi-prize §4.1).
   if (

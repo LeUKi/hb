@@ -1837,6 +1837,23 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       );
     if (pointsMoved && request.method === "POST")
       return this.pointsMoved(pointsMoved[1] ?? "", request);
+    // What its page shows moved outside its own row (a 商户余额不足 wait
+    // beginning or ending, payments/funds-stop.ts): everyone's page hears
+    // it (sweep 2026-11-21, F1).
+    const announcing =
+      /^\/internal\/activities\/([a-f0-9-]{36})\/live\/announce$/i.exec(
+        url.pathname,
+      );
+    if (announcing && request.method === "POST") {
+      const id = announcing[1] ?? "";
+      if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+        return Response.json(
+          { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+          { status: 400 },
+        );
+      this.announce(id);
+      return new Response(null, { status: 204 });
+    }
     // The gateway, about a judgment under way: never queued behind it,
     // which waits on its requests (judge/gateway.ts).
     const fetching =

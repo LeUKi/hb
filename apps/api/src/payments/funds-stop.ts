@@ -83,20 +83,22 @@ export async function fundsHolds(
  * from the merchant's oldest payment still unsent (one or two paid through
  * now and then, as a balance that trickles in allows, do not restart it);
  * its sender is told once; a wait with nothing left to send is dropped;
- * and a wait three days old stops. Returns how many payments stopped.
+ * pages open on its 红包 hear each wait begin and end; and a wait three
+ * days old stops. Returns how many payments stopped.
  */
 export async function sweepFundsWaits(env: ApiBindings, now = Date.now()) {
-  await env.DB.prepare(
+  const began = await env.DB.prepare(
     `UPDATE merchants SET funds_wait_since=COALESCE((
         SELECT MIN(t.created_at) FROM payment_tasks t
         WHERE t.merchant_id=merchants.id AND t.source='claim'
           AND t.status IN ('pending','sending','reconciling','waiting')),?1)
       WHERE id IN (SELECT DISTINCT merchant_id FROM payment_tasks
           WHERE status='waiting' AND reason='funds' AND source='claim')
-        AND kind='author' AND funds_wait_since IS NULL`,
+        AND kind='author' AND funds_wait_since IS NULL
+      RETURNING id`,
   )
     .bind(now)
-    .run();
+    .all<{ id: string }>();
   // Its sender hears of each wait once, with until when (payout-stop §4);
   // one already past its three days (a wait from before this rule) only
   // hears that it stopped.
@@ -108,12 +110,17 @@ export async function sweepFundsWaits(env: ApiBindings, now = Date.now()) {
   for (const merchant of told.results)
     if (merchant.since + PAYOUT_FUNDS_WAIT_MS > now)
       await noticePayoutWaiting(env, merchant.id, merchant.since);
-  await env.DB.prepare(
+  const over = await env.DB.prepare(
     `UPDATE merchants SET funds_wait_since=NULL
       WHERE funds_wait_since IS NOT NULL AND NOT EXISTS(SELECT 1 FROM payment_tasks t
         WHERE t.merchant_id=merchants.id AND t.source='claim'
-          AND t.status IN ('pending','sending','reconciling','waiting'))`,
-  ).run();
+          AND t.status IN ('pending','sending','reconciling','waiting'))
+      RETURNING id`,
+  ).all<{ id: string }>();
+  await announceFundsChange(env, [
+    ...began.results.map((row) => row.id),
+    ...over.results.map((row) => row.id),
+  ]);
   const due = await env.DB.prepare(
     `SELECT id, funds_wait_since AS since FROM merchants
       WHERE funds_wait_since IS NOT NULL AND funds_wait_since<=? AND lease_token IS NULL
@@ -125,6 +132,39 @@ export async function sweepFundsWaits(env: ApiBindings, now = Date.now()) {
   for (const merchant of due.results)
     stopped += await stopMerchant(env, merchant.id, merchant.since, now);
   return stopped;
+}
+
+/**
+ * A wait began or ended: the open 红包 of these merchants show claims
+ * paused (fundsPaused) or going on again, and their pages hear it pushed.
+ * The change is on the merchant, not on any 红包's row, so nothing else
+ * would push it, and a page on the live channel does not poll: claims
+ * stayed paused there after the wait ended (sweep 2026-11-21, F1). As
+ * fundsPausedOf picks them; the merchant is the sender's own, as a claim
+ * on it needs (claim-service.ts), so the author index finds them.
+ */
+async function announceFundsChange(env: ApiBindings, merchantIds: string[]) {
+  if (!merchantIds.length) return;
+  const open = await env.DB.prepare(
+    `SELECT a.id FROM merchants m
+      JOIN activities a ON a.author_id=m.author_id AND a.merchant_id=m.id
+      WHERE m.id IN (SELECT value FROM json_each(?)) AND a.funding='merchant'
+        AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.ended_at IS NULL`,
+  )
+    .bind(JSON.stringify(merchantIds))
+    .all<{ id: string }>();
+  for (const { id } of open.results) {
+    try {
+      await (
+        await activityObject(env, id).fetch(
+          `https://activity.internal/internal/activities/${encodeURIComponent(id)}/live/announce`,
+          { method: "POST" },
+        )
+      ).arrayBuffer();
+    } catch {
+      // Its pages catch up as they read it again (a reload, a guest's poll).
+    }
+  }
 }
 
 /**
