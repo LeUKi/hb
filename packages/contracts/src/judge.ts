@@ -555,6 +555,11 @@ export type JudgePage = SquareJudge & {
     code: string | null;
   } | null;
   versions: JudgePageVersion[];
+  /**
+   * One's own with no version others use yet: `version` is its author's
+   * newest that passed its tests, what 用它发红包 takes for them.
+   */
+  onlyMine?: true;
   /** For the 站长 only: taken down, when and why. */
   takenDown?: { at: string; reason: string };
 };

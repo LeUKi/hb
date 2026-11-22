@@ -115,7 +115,7 @@ function NewSettings({
           </Reveal>
         </div>
         <p className="text-xs text-ink-3">
-          第一次部署时一起保存，以后在判定器页改。
+          第一次部署时一起保存，以后在判定器页按“编辑”改。
         </p>
       </Panel>
       <ConfirmDialog
@@ -250,8 +250,9 @@ function NewJudge({
     shownFields.has(field)
       ? issues.find((issue) => issue.field === field)?.message
       : undefined;
-  // Its first deploy made it: on to its page, the results there — read
-  // whole first, so it opens at once rather than in steps.
+  // Its first deploy made it: on to 编辑判定器, the results there (its
+  // 部署新版本; apart from its 判定器页 since 2026-11-22) — read whole
+  // first, so it opens at once rather than in steps.
   const queryClient = useQueryClient();
   const made = form.judge.judgeId;
   const madeN = form.judge.versions.versions.at(-1)?.n ?? 1;
@@ -262,7 +263,7 @@ function NewJudge({
       async () => {
         if (gone) return;
         await navigate({
-          to: "/judges/$judgeId",
+          to: "/judges/$judgeId/edit",
           params: { judgeId: made },
           replace: true,
         });
@@ -319,7 +320,7 @@ function NewJudge({
           frozen={false}
           judge={deploy}
           gated={false}
-          testsNote={seed ? "别人的测试不公开，要自己写。" : undefined}
+          testsNote={seed ? "原作者的测试不公开，要自己写。" : undefined}
           beforeDeploy={
             <>
               <NewSettings value={settings} onChange={setSettings} />

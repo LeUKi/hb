@@ -96,8 +96,8 @@ const stateLabels: Record<Exclude<JudgeStatus, "empty">, string> = {
   failed: "已部署 · 测试没过",
 };
 
-/** A button on the lacquer: gold words, squircle. */
-function CardButton({
+/** A button on the lacquer: gold words, squircle (tests.json's card too). */
+export function CardButton({
   children,
   outline = false,
   more = false,

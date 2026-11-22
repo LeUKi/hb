@@ -285,7 +285,7 @@ export function HelpCodeView() {
           </p>
           <p>
             6.
-            判定器在广场里时，部署了新版本，别人要等你用它开放一个红包才能再用这个判定器；不想要的新版本可以在判定器页撤回（只能撤回最新的一版）。
+            判定器在广场里时，部署了新版本，别人要等你用它开放一个红包才能再用这个判定器；不想要的新版本可以在判定器页按“编辑”撤回（只能撤回最新的一版）。
           </p>
         </Panel>
       </PageSection>
@@ -944,7 +944,7 @@ export function judge(submission, tools) {
       <PageSection
         id="tests"
         title="测试"
-        description={`tests.json 是一个对象，测试写在它的 tests 里。一条测试就是一次提交，只写跟它有关的；也可以写 steps，让几个人依次提交。所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（一步算一次）。它只是数据，不算进代码，不公开。`}
+        description={`tests.json 是一个对象，测试写在它的 tests 里。一条测试就是一次提交，只写跟它有关的；也可以写 steps，让几个人依次提交。所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（一步算一次）。测试只在部署时用来检查代码，不会公开。`}
       >
         <Block label="tests.json" code={TESTS} />
         <Fields

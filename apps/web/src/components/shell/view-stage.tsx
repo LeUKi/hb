@@ -47,7 +47,7 @@ import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { InviteView } from "../views/invite-view";
 import { JudgeNewView } from "../views/judge-new-view";
-import { JudgeView } from "../views/judge-view";
+import { JudgeEditView, JudgeView } from "../views/judge-view";
 import { JudgesView } from "../views/judges-view";
 import { MagicView } from "../views/magic-view";
 import { MeView } from "../views/me-view";
@@ -274,6 +274,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="judges"
           page={<JudgeView id={params.judgeId ?? ""} />}
+        />
+      );
+    case "/judges/$judgeId/edit":
+      return (
+        <CommandPageView
+          id="judges"
+          page={<JudgeEditView id={params.judgeId ?? ""} />}
         />
       );
     case "/status":

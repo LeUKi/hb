@@ -269,6 +269,12 @@ const balanceCheckoutRoute = subRoute(
   "付款详情",
 );
 const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
+// One's own, to change (the user, 2026-11-22: apart from its 判定器页).
+const judgeEditRoute = subRoute(
+  "/judges/$judgeId/edit",
+  "judges",
+  "编辑判定器",
+);
 // 三方积分 (docs/third-party-points-design.md): one's systems and their
 // 配置页; a system's 详情页 is anyone's (a 红包's tag leads there).
 const pointsNewRoute = subRoute("/points/new", "points", "添加积分");
@@ -476,6 +482,7 @@ const routeTree = rootRoute.addChildren([
   judgesRoute,
   judgeNewRoute,
   judgeRoute,
+  judgeEditRoute,
   roadmapRoute,
   balanceRoute,
   balanceTopupRoute,

@@ -371,6 +371,14 @@ function UsedBy({
   );
 }
 
+/** Whether others see one's own, under its title; null when they do. */
+function ownStanding(judge: JudgePage) {
+  if (!judge.listed) return "没有加入判定器广场，别人看不到也用不了。";
+  if (judge.onlyMine)
+    return "已加入判定器广场，用它开放一个红包以后，别人才能看到和使用。";
+  return null;
+}
+
 export function PublicJudgePage({
   judge,
   viewerId,
@@ -401,7 +409,11 @@ export function PublicJudgePage({
   return (
     <Page>
       <PageHeader
-        back={{ label: "判定器广场", href: "/judges" }}
+        back={
+          judge.own
+            ? { label: "我的判定器", href: "/judges?tab=mine" }
+            : { label: "判定器广场", href: "/judges" }
+        }
         title={judge.name}
         description={
           <>
@@ -411,6 +423,13 @@ export function PublicJudgePage({
             <span className="mt-1 block text-ink-3">
               <JudgeSource judge={judge} />
             </span>
+            {/* One's own: whether others see it (the user, 2026-11-22:
+                its author sees this page too). */}
+            {judge.own && ownStanding(judge) && (
+              <span className="mt-1 block text-ink-2">
+                {ownStanding(judge)}
+              </span>
+            )}
             {judge.basedOn && !improved && (
               <span className="block text-ink-3">
                 {judge.basedOn.listed ? (
@@ -446,7 +465,7 @@ export function PublicJudgePage({
           </>
         }
         actions={
-          (version || admin) && (
+          (version || admin || judge.own) && (
             <>
               {admin && judge.listed && (
                 <Button
@@ -471,10 +490,23 @@ export function PublicJudgePage({
                   <SendWithJudge
                     judgeId={judge.id}
                     signedIn={Boolean(viewerId)}
+                    share={!judge.own || (judge.listed && !judge.onlyMine)}
                   />
                 )
               )}
-              {version && viewerId ? (
+              {judge.own ? (
+                <ButtonLink
+                  href={`/judges/${encodeURIComponent(judge.id)}/edit`}
+                  onGo={() =>
+                    void navigate({
+                      to: "/judges/$judgeId/edit",
+                      params: { judgeId: judge.id },
+                    })
+                  }
+                >
+                  编辑
+                </ButtonLink>
+              ) : version && viewerId ? (
                 <ButtonLink
                   href={`/judges/new?from=${encodeURIComponent(judge.id)}`}
                   onGo={() =>

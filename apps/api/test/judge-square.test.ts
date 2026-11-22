@@ -185,6 +185,30 @@ describe("判定器广场", () => {
     );
   });
 
+  it("shows its author its page as others see it; before a version others use, their own newest that passed, marked onlyMine (2026-11-22)", async () => {
+    const judge = await made();
+    const second = unique();
+    await check(author, second, TESTS, { id: judge.id });
+    const pageOf = async () =>
+      (await get<{ judge: JudgePage }>(`/judges/${judge.id}`, author)).body
+        .judge;
+    expect(await pageOf()).toMatchObject({
+      own: true,
+      listed: false,
+      onlyMine: true,
+      version: { n: 2, code: second },
+      versions: [],
+    });
+    // 第 1 版 opens a 红包: the version others would use, as they see it.
+    await opened(judge);
+    const page = await pageOf();
+    expect(page).toMatchObject({
+      own: true,
+      version: { n: 1, code: judge.code },
+    });
+    expect(page.onlyMine).toBeUndefined();
+  });
+
   it("lists 站长精选 in the 站长's order, and leaves out any that goes online while 联网 is off", async () => {
     const first = await made("第一个");
     const second = await made("第二个");

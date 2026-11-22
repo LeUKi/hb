@@ -228,9 +228,25 @@ async function mockSquare(page: Page, user: MockUser | null) {
       });
     if (rest.endsWith("/activities"))
       return route.fulfill({ json: { items: [], nextCursor: null } });
-    if (rest === `/${MINE}` || rest === `/${COPIED}`)
+    // One's own, as the API answers its author (2026-11-22): in the 广场
+    // or not as its state says; no version others use, its own newest.
+    if (rest === `/${MINE}`)
       return route.fulfill({
-        json: { judge: { ...guessPage, id: rest.slice(1), own: true } },
+        json: {
+          judge: {
+            ...guessPage,
+            id: MINE,
+            name: mine.name,
+            description: mine.description,
+            own: true,
+            listed: mine.listed && !mine.takenDown,
+            ...(mine.publicN === null ? { onlyMine: true as const } : {}),
+          } satisfies JudgePage,
+        },
+      });
+    if (rest === `/${COPIED}`)
+      return route.fulfill({
+        json: { judge: { ...guessPage, id: COPIED, own: true } },
       });
     return route.fulfill({ status: 404, json: { error: {} } });
   });
@@ -419,8 +435,12 @@ test.describe("判定器广场", () => {
     // menus do, and says what it copies: the way in, not this page (the
     // user, 2026-11-22).
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const send = page.getByRole("link", { name: "用它发红包", exact: true });
-    await page.getByRole("button", { name: "用它发红包的更多做法" }).click();
+    // Its own header's: the 广场's cards may still be leaving behind it.
+    const head = page.locator("header", {
+      has: page.getByRole("heading", { name: "猜数字", level: 1 }),
+    });
+    const send = head.getByRole("link", { name: "用它发红包", exact: true });
+    await head.getByRole("button", { name: "用它发红包的更多做法" }).click();
     const copy = page.getByRole("menuitem", { name: "复制用它发红包的链接" });
     await expect(copy).toBeVisible();
     const face = await send.boundingBox();
@@ -429,7 +449,7 @@ test.describe("判定器广场", () => {
     expect(menu.y).toBeGreaterThanOrEqual(face.y + face.height);
     await copy.click();
     await expect(
-      page.getByRole("link", { name: "已复制", exact: true }),
+      head.getByRole("link", { name: "已复制", exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
       new RegExp(`/new\\?judge=${GUESS}$`),
@@ -492,11 +512,11 @@ test.describe("判定器广场", () => {
       shownPublic.getByRole("button", { name: /^结束后公开/ }),
     ).toBeDisabled();
     await expect(
-      page.getByText("第一次部署时一起保存，以后在判定器页改。"),
+      page.getByText("第一次部署时一起保存，以后在判定器页按“编辑”改。"),
     ).toBeVisible();
     await expect(
       page.getByText(
-        "只是数据，不算进代码，不公开。别人的测试不公开，要自己写。",
+        "部署时用来检查代码，不会公开。原作者的测试不公开，要自己写。",
       ),
     ).toBeVisible();
     const tests = page.getByRole("textbox", { name: /^tests\.json/ });
@@ -505,7 +525,8 @@ test.describe("判定器广场", () => {
       '{ "tests": [{ "name": "答对", "input": "42", "params": { "answer": 42 }, "expect": { "ok": true } }] }',
     );
     await page.getByRole("button", { name: "部署并跑测试" }).click();
-    await expect(page).toHaveURL(new RegExp(`/judges/${COPIED}$`));
+    // Its results on 编辑判定器 (2026-11-22).
+    await expect(page).toHaveURL(new RegExp(`/judges/${COPIED}/edit$`));
     expect(asked.deploys.at(-1)).toMatchObject({
       code: guessCode,
       judge: {
@@ -517,19 +538,49 @@ test.describe("判定器广场", () => {
     });
   });
 
-  test("自己的判定器页：别人能用时（在广场里）用它发红包也带复制用它发红包的链接；不在广场只有按钮（2026-11-22）", async ({
+  test("自己的判定器页：和别人看到的一样，多一个编辑，到 /edit 改；不在广场写别人看不到，只有按钮；别人能用时用它发红包也带复制用它发红包的链接（2026-11-22）", async ({
     page,
   }) => {
     const { state } = await mockSquare(page, member);
     await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByRole("heading", { name: "我的猜谜", level: 1 }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("没有加入判定器广场，别人看不到也用不了。"),
+    ).toBeVisible();
+    // What others see: its rules and code; none of the author's tools.
+    await expect(
+      page.getByRole("heading", { name: "发红包时的默认值" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "部署新版本" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("link", { name: "复制一份来改" })).toHaveCount(
+      0,
+    );
     await expect(
       page.getByRole("link", { name: "用它发红包", exact: true }),
     ).toBeVisible();
     // Only one's own takes it: a link would lead others nowhere.
     const arrow = page.getByRole("button", { name: "用它发红包的更多做法" });
     await expect(arrow).toHaveCount(0);
+    await page.getByRole("link", { name: "编辑", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/judges/${MINE}/edit$`));
+    await expect(
+      page.getByRole("heading", { name: "编辑「我的猜谜」", level: 1 }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "部署新版本" }),
+    ).toBeVisible();
+    // Back to its 判定器页.
+    await page.getByRole("link", { name: "判定器页" }).click();
+    await expect(page).toHaveURL(new RegExp(`/judges/${MINE}$`));
     state.mine = { ...mineDetail(), listed: true, publicN: 1 };
     await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByText("没有加入判定器广场，别人看不到也用不了。"),
+    ).toHaveCount(0);
     await arrow.click();
     await expect(
       page.getByRole("menuitem", { name: "复制用它发红包的链接" }),
@@ -565,7 +616,7 @@ test.describe("判定器广场", () => {
         json: { ok: true, amount: 30, message: "猜对了" },
       });
     });
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     await expect(
       page.getByRole("heading", { name: "参数和试一试" }),
     ).toBeVisible();
@@ -631,7 +682,7 @@ test.describe("判定器广场", () => {
         network: null,
       },
     };
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     const small = page.locator("#hb-try-param-small");
     await expect(small).toHaveValue("0.10");
     // As one deletes it a key at a time.
@@ -685,7 +736,7 @@ test.describe("判定器广场", () => {
         return route.fulfill({ json: { judge: state.mine } });
       },
     );
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     await expect(
       page.getByText(
         "别人现在用不了：最新的第 3 版还没开放过红包。用它开放一个红包后，别人就用第 3 版。",
@@ -774,7 +825,7 @@ test.describe("判定器广场", () => {
         },
       });
     });
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     await expect(
       page.getByText(
         "部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。",
@@ -808,7 +859,7 @@ test.describe("判定器广场", () => {
       usable: { n: 1, declarations: null, network },
       versions: [{ ...mineVersion(1, 1), network }],
     };
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     await expect(
       page.getByText(
         "开放过的红包会一直用它们开放时的那一版。改服务器或附带网页时，要让旧版也照样能用，不然那些红包会领不到。",
@@ -899,7 +950,7 @@ test.describe("判定器广场", () => {
     page,
   }) => {
     const { asked, state } = await mockSquare(page, member);
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     await expect(page.getByText("第 1 版 · 还没发过红包")).toBeVisible();
     // 部署新版本 says where writing one is told too (§16.2).
     await expect(
@@ -1132,7 +1183,7 @@ test.describe("判定器广场", () => {
     page,
   }) => {
     const { asked } = await mockSquare(page, member);
-    await openApp(page, `/judges/${MINE}`);
+    await openApp(page, `/judges/${MINE}/edit`);
     const section = page.locator("section", {
       has: page.getByRole("heading", { name: "公告" }),
     });

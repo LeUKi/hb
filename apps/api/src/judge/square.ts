@@ -363,18 +363,39 @@ async function openedVersions(
   }));
 }
 
-/** 判定器页 (§8): for anyone it is open to. */
+/**
+ * One's own newest version that passed its tests and was not withdrawn:
+ * what 用它发红包 takes for its author.
+ */
+async function newestPassedOf(env: ApiBindings, judgeId: string) {
+  const row = await env.DB.prepare(
+    `SELECT n FROM judge_versions WHERE judge_id = ? AND passed = 1 AND withdrawn_at IS NULL
+      ORDER BY n DESC LIMIT 1`,
+  )
+    .bind(judgeId)
+    .first<{ n: number }>();
+  return row?.n ?? null;
+}
+
+/**
+ * 判定器页 (§8): for anyone it is open to, its author too (the user,
+ * 2026-11-22: they see it as others do, with 编辑). With no version others
+ * use yet, its author sees their own newest that passed (onlyMine).
+ */
 export async function judgePage(
   env: ApiBindings,
   judgeId: string,
   viewer: Viewer,
 ): Promise<JudgePage> {
   const { row, listed, own } = await visibleJudge(env, judgeId, viewer);
-  const [n, versions, { pageEnabled }] = await Promise.all([
+  const [publicN, versions, { pageEnabled }] = await Promise.all([
     publicVersionOf(env, judgeId),
     openedVersions(env, judgeId),
     readBalanceSettings(env),
   ]);
+  const mineN =
+    publicN === null && own ? await newestPassedOf(env, judgeId) : null;
+  const n = publicN ?? mineN;
   const version =
     n === null
       ? null
@@ -420,6 +441,7 @@ export async function judgePage(
         }
       : null,
     versions,
+    ...(mineN !== null ? { onlyMine: true as const } : {}),
     ...(viewer?.isAdmin &&
     row.takenDownAt !== null &&
     row.takenDownReason !== null

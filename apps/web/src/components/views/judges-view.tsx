@@ -207,7 +207,7 @@ function Square({ userId }: { userId: string | null }) {
               ) : (
                 <EmptyNote
                   title="广场上还没有判定器"
-                  text="在自己的判定器页打开“加入判定器广场”，开放过红包以后就在这里。"
+                  text="在自己的判定器页按“编辑”，打开“加入判定器广场”；开放过红包以后就在这里。"
                 />
               )
             ) : (

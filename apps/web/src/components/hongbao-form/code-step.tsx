@@ -17,6 +17,7 @@ import {
   ClipboardPaste,
   FileUp,
   Info,
+  ListChecks,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -43,7 +44,7 @@ import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
-import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
+import { CardButton, FilePicker, fromClipboard, JudgeCard } from "./judge-card";
 import { JudgeEntries, LoadingJudge, PickedJudge } from "./judge-picker";
 import { ParamsFields, ParamsUnitContext, paramsFor } from "./params-fields";
 import { useFormUnit } from "./points-funding";
@@ -55,8 +56,10 @@ import type { JudgeDeploy } from "./use-judge-deploy";
 type BorrowJudge = ReturnType<typeof useBorrowJudge>;
 
 /**
- * tests.json: still a plain box (07 §5) with line numbers and colours (05
- * §14) to type or paste into, its name and count above.
+ * tests.json in the same lacquer card as judge.js (07 §5; the user,
+ * 2026-11-22: its 粘贴 floated outside the box, and its note read oddly):
+ * its head says what the tests are for, the box takes typing or ⌘V, and
+ * 粘贴 and 从文件选 sit in the card's foot as judge.js's do.
  */
 function TestsBox({
   value,
@@ -69,7 +72,7 @@ function TestsBox({
   value: string;
   error?: string;
   disabled: boolean;
-  /** One more line under its own (复制一份来改: 别人的测试不公开). */
+  /** One more sentence after its own (复制一份来改: 原作者的测试不公开). */
   note?: string;
   /**
    * Saving, or waiting on 重试原提交: the step's fieldset stops native
@@ -88,53 +91,75 @@ function TestsBox({
   };
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        {/* The editor is no form control: its name goes by aria-labelledby. */}
-        <span id={labelId} className="flex items-baseline gap-2">
-          <span className="font-mono text-sm font-medium text-ink">
-            tests.json
-          </span>
-          <span className="text-xs text-ink-3">{testCount(value)}</span>
+      {/* The editor is no form control: its name, with its count, goes by
+          aria-labelledby. */}
+      <span
+        id={labelId}
+        className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
+      >
+        <span className="font-mono text-sm font-medium text-ink">
+          tests.json
         </span>
-        {!disabled && (
-          <span className="flex items-center gap-1">
-            <Button size="sm" variant="quiet" onClick={() => void paste()}>
-              <ClipboardPaste />
-              粘贴
-            </Button>
-            <Button
-              size="sm"
-              variant="quiet"
-              onClick={() => file.current?.click()}
-            >
-              <FileUp />
-              从文件选
-            </Button>
-            <FilePicker
-              pickerRef={file}
-              accept=".json,application/json"
-              onText={onChange}
-            />
-          </span>
-        )}
-      </div>
-      <p id={noteId} className="text-xs text-ink-3">
-        只是数据，不算进代码，不公开。{note}
-      </p>
-      <CodeEditor
-        id={id}
-        labelledBy={labelId}
-        describedBy={[noteId, error ? `${id}-error` : ""].join(" ").trim()}
-        value={value}
-        onChange={onChange}
-        language="json"
-        placeholder={
-          '{\n  "tests": [\n    { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n  ]\n}'
-        }
-        disabled={disabled || frozen}
-        invalid={Boolean(error)}
-        rows={6}
-        maxRows={16}
+        <span className="text-xs text-ink-3">{testCount(value)}</span>
+      </span>
+      <Squircle radius={radius.card}>
+        <div
+          className={cn(
+            "hb-judge-card grid min-w-0 grid-cols-[minmax(0,1fr)]",
+            error && "hb-lacquer-invalid",
+          )}
+        >
+          <div className="hb-judge-rule flex min-w-0 items-center gap-2.5 border-b px-3.5 py-2.5">
+            <Squircle radius={9}>
+              <span className="hb-judge-mark grid size-8 shrink-0 place-items-center">
+                <ListChecks className="size-4" aria-hidden="true" />
+              </span>
+            </Squircle>
+            <span className="grid min-w-0 flex-1">
+              <span className="hb-judge-name truncate text-sm font-semibold">
+                测试
+              </span>
+              <span id={noteId} className="hb-judge-quiet text-xs text-pretty">
+                部署时用来检查代码，不会公开。{note}
+              </span>
+            </span>
+          </div>
+          <CodeEditor
+            id={id}
+            labelledBy={labelId}
+            describedBy={[noteId, error ? `${id}-error` : ""].join(" ").trim()}
+            value={value}
+            onChange={onChange}
+            language="json"
+            placeholder={
+              '{\n  "tests": [\n    { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n  ]\n}'
+            }
+            disabled={disabled || frozen}
+            invalid={Boolean(error)}
+            rows={6}
+            maxRows={16}
+          />
+          {!disabled && (
+            <div className="hb-judge-rule flex flex-wrap items-center gap-1 border-t px-2 py-1.5">
+              <CardButton disabled={frozen} onClick={() => void paste()}>
+                <ClipboardPaste aria-hidden="true" />
+                粘贴
+              </CardButton>
+              <CardButton
+                disabled={frozen}
+                onClick={() => file.current?.click()}
+              >
+                <FileUp aria-hidden="true" />
+                从文件选
+              </CardButton>
+            </div>
+          )}
+        </div>
+      </Squircle>
+      <FilePicker
+        pickerRef={file}
+        accept=".json,application/json"
+        onText={onChange}
       />
       <Reveal show={Boolean(error)}>
         <p id={`${id}-error`} className="text-xs text-danger">
@@ -657,9 +682,9 @@ function CodeDialog({
               {ownId && (
                 <ButtonLink
                   size="sm"
-                  href={`/judges/${encodeURIComponent(ownId)}`}
+                  href={`/judges/${encodeURIComponent(ownId)}/edit`}
                 >
-                  去判定器页改 ↗
+                  去编辑判定器 ↗
                 </ButtonLink>
               )}
               <CopyLabelButton value={code} variant="quiet" size="sm">
@@ -709,7 +734,7 @@ function UnsavedCode({
       ? `这份草稿里的判定器 第 ${version.n} 版是按旧规则（有份数）写的，要按新规则重新跑一遍测试才能开放，不算部署。`
       : judge.rerun
         ? `这份草稿里的判定器 第 ${version.n} 版要在线上重新跑一遍测试才能开放，不算部署。`
-        : `这份草稿里的判定器 第 ${version.n} 版测试没过。去判定器页部署新版本，或者换一个判定器。`;
+        : `这份草稿里的判定器 第 ${version.n} 版测试没过。去编辑判定器部署新版本，或者换一个判定器。`;
   return (
     // Where 保存并开放 sends one it stopped (as to the picked card).
     <div id="hb-judge-picked" tabIndex={-1} className="grid gap-2 outline-none">
@@ -768,9 +793,9 @@ function UnsavedCode({
             <ButtonLink
               size="xs"
               variant="secondary"
-              href={`/judges/${encodeURIComponent(form.judge.judgeId)}`}
+              href={`/judges/${encodeURIComponent(form.judge.judgeId)}/edit`}
             >
-              去判定器页 ↗
+              去编辑判定器 ↗
             </ButtonLink>
           )}
           <Button

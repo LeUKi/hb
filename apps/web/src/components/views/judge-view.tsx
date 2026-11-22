@@ -35,7 +35,7 @@ import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
 import { JudgeHelpLinks, networkWords, statsLine } from "../judges/judge-bits";
 import { NoticeSettings } from "../judges/judge-notice";
-import { SendWithJudge } from "../judges/send-with-judge";
+import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -61,9 +61,10 @@ import {
 import { MessageView } from "./message-view";
 
 // 判定器页 /judges/<编号> (docs/judge-square-design.md §8, §14.4, §15.4):
-// one's own — its name and line, 代码公开, 判定器广场, every version, and
-// 部署新版本 with the 发红包 form's own card; 用它发红包 at the top — or,
-// for anyone else it is open to, what the 广场 shows of it.
+// what the 广场 shows of it, to anyone it is open to, its author too; and
+// 编辑判定器 /judges/<编号>/edit, its author's — its name and line, 代码公开,
+// 判定器广场, every version, and 部署新版本 with the 发红包 form's own card
+// (apart since 2026-11-22, the user).
 
 /**
  * 代码公开's two cards (§2), a line each; `always` says what 一直公开 means
@@ -872,7 +873,6 @@ function JudgePage({
   judge: MyJudgeDetail;
   user: SessionUser;
 }) {
-  const navigate = useNavigate();
   const [changed, setChanged] = useState({
     settings: false,
     deploy: false,
@@ -910,8 +910,13 @@ function JudgePage({
   return (
     <Page>
       <PageHeader
-        back={{ label: "我的判定器", href: "/judges?tab=mine" }}
-        title={judge.name}
+        // Apart from its 判定器页 (the user, 2026-11-22): back to it; the
+        // title names what is changed, as 设置「…」 for 三方积分.
+        back={{
+          label: "判定器页",
+          href: `/judges/${encodeURIComponent(judge.id)}`,
+        }}
+        title={`编辑「${judge.name}」`}
         description={
           <>
             {judge.description && (
@@ -922,24 +927,6 @@ function JudgePage({
               <span className="mt-1 block text-ink-2">{standing}</span>
             )}
           </>
-        }
-        actions={
-          // Its link copied too while others can use it (广场, §17): a
-          // link to a 判定器 only one's own takes would lead others nowhere.
-          judge.usable &&
-          (others !== null ? (
-            <SendWithJudge judgeId={judge.id} signedIn />
-          ) : (
-            <ButtonLink
-              variant="primary"
-              href={`/new?judge=${encodeURIComponent(judge.id)}`}
-              onGo={() =>
-                void navigate({ to: "/new", search: { judge: judge.id } })
-              }
-            >
-              用它发红包
-            </ButtonLink>
-          ))
         }
         refreshable
       />
@@ -1049,9 +1036,13 @@ function standingOf(judge: MyJudgeDetail) {
   return "还没有开放过红包的版本，广场上暂时看不到它。";
 }
 
-/** One's own, read as its author reads it. */
+/** 编辑判定器 /judges/<编号>/edit: one's own, read as its author reads it. */
 function OwnJudge({ id, user }: { id: string; user: SessionUser }) {
   const query = useMyJudge(user.id, id);
+  if (query.error instanceof ActivityRequestError && query.error.status === 404)
+    return (
+      <MessageView title="未找到判定器" text="判定器不存在，或者不是你的。" />
+    );
   return (
     <PageLoad load={queryLoad(query)}>
       {query.data && <JudgePage judge={query.data} user={user} />}
@@ -1059,10 +1050,13 @@ function OwnJudge({ id, user }: { id: string; user: SessionUser }) {
   );
 }
 
+/**
+ * 判定器页 /judges/<编号>, as anyone it is open to sees it, its author too
+ * (the user, 2026-11-22): theirs adds 编辑, to /judges/<编号>/edit.
+ */
 export function JudgeView({ id }: { id: string }) {
   const { user, ready } = useIdentity();
   const viewerId = user?.id ?? null;
-  // Whoever looks: its author gets their own page.
   const query = useJudgePage(viewerId, id, ready);
   const error = query.error;
   if (error instanceof ActivityRequestError && error.status === 404)
@@ -1072,10 +1066,29 @@ export function JudgeView({ id }: { id: string }) {
         text="判定器不存在，或者不在判定器广场里。"
       />
     );
-  if (query.data?.own && user) return <OwnJudge id={id} user={user} />;
   return (
     <PageLoad load={queryLoad(query)}>
       {query.data && <PublicJudgePage judge={query.data} viewerId={viewerId} />}
     </PageLoad>
   );
+}
+
+/** 编辑判定器: its author's, after signing in. */
+export function JudgeEditView({ id }: { id: string }) {
+  const { user, ready } = useIdentity();
+  const { openAccount } = useOmniboxController();
+  if (!ready) return null;
+  if (!user)
+    return (
+      <MessageView
+        title="编辑判定器"
+        text="登录后可以使用。"
+        action={
+          <Button variant="primary" onClick={openAccount}>
+            登录
+          </Button>
+        }
+      />
+    );
+  return <OwnJudge id={id} user={user} />;
 }

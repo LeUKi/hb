@@ -2138,7 +2138,17 @@ test.describe("发红包 · 代码判定", () => {
             bySiteOwner: false,
             network: false,
             own: true,
-            version: null,
+            // Not in the 广场, nothing opened: its author sees their
+            // newest that passed (2026-11-22).
+            version: {
+              n: 3,
+              fingerprint: sha256(firstCode),
+              deployedAt: openedAt,
+              declarations: guessDeclarations,
+              network: null,
+              code: firstCode,
+            },
+            onlyMine: true,
             versions: [],
           },
         },
@@ -2321,8 +2331,9 @@ test.describe("发红包 · 代码判定", () => {
   }
 
   /** The first deploy made it: its 判定器页, one card again (not two). */
+  /** Its 编辑判定器 page, where a deploy's results stay (2026-11-22). */
   async function onJudgePage(page: Page, judgeId = "judge-1") {
-    await expect(page).toHaveURL(new RegExp(`/judges/${judgeId}$`));
+    await expect(page).toHaveURL(new RegExp(`/judges/${judgeId}/edit$`));
     await expect(page.locator("#hb-code-code")).toHaveCount(1);
   }
 
@@ -3262,10 +3273,11 @@ test.describe("发红包 · 代码判定", () => {
       .getByRole("button", { name: /^第 2 步 判定器：猜数字 · 第 1 版/ })
       .click();
     await expect(unsaved(page)).toContainText(
-      "这份草稿里的判定器 第 1 版测试没过。去判定器页部署新版本，或者换一个判定器。",
+      "这份草稿里的判定器 第 1 版测试没过。去编辑判定器部署新版本，或者换一个判定器。",
     );
-    const there = unsaved(page).getByRole("link", { name: "去判定器页 ↗" });
-    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}`);
+    // Deployed on its own 编辑判定器 page (2026-11-22).
+    const there = unsaved(page).getByRole("link", { name: "去编辑判定器 ↗" });
+    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}/edit`);
     await expect(there).toHaveAttribute("target", "_blank");
     await expect(
       unsaved(page).getByRole("button", { name: "换一个" }),
@@ -3306,7 +3318,7 @@ test.describe("发红包 · 代码判定", () => {
     });
     // Deployed before, on the page that made it.
     server.ran.add(sha256(failing));
-    await openApp(page, "/judges/judge-9");
+    await openApp(page, "/judges/judge-9/edit");
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试没过");
     const area = page.locator("#hb-code-check");
@@ -3468,9 +3480,9 @@ test.describe("发红包 · 代码判定", () => {
     const dialog = page.getByRole("dialog", { name: "代码" });
     await expect(dialog).toContainText("判定器「猜数字」· 第 2 版");
     await expect(dialog.getByRole("textbox")).toContainText("export function");
-    // One's own: changed on its 判定器页, in a new tab.
-    const there = dialog.getByRole("link", { name: "去判定器页改 ↗" });
-    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}`);
+    // One's own: changed on 编辑判定器, in a new tab.
+    const there = dialog.getByRole("link", { name: "去编辑判定器 ↗" });
+    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}/edit`);
     await expect(there).toHaveAttribute("target", "_blank");
     await dialog.getByRole("button", { name: "关闭" }).click();
     await expect(
@@ -3553,7 +3565,17 @@ test.describe("发红包 · 代码判定", () => {
             bySiteOwner: false,
             network: false,
             own: true,
-            version: null,
+            // Not in the 广场, nothing opened: its author sees their
+            // newest that passed (2026-11-22).
+            version: {
+              n: 3,
+              fingerprint: sha256(firstCode),
+              deployedAt: openedAt,
+              declarations: guessDeclarations,
+              network: null,
+              code: firstCode,
+            },
+            onlyMine: true,
             versions: [],
           },
         },
@@ -3807,12 +3829,20 @@ test.describe("发红包 · 代码判定", () => {
     await expect(row).toContainText(`第 3 版 · ${day}部署 · 开放过 2 个`);
     await row.click();
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
+    // Its 判定器页 as others see it, with 编辑 (2026-11-22).
     await expect(
       page.getByRole("heading", { name: "猜数字", level: 1 }),
     ).toBeVisible();
     await expect(
-      page.getByText("第 3 版 · 发过 2 个红包 · 判定 9 次 · 领到 3 人次"),
+      page.getByText("发过 2 个红包 · 判定 9 次 · 领到 3 人次"),
     ).toBeVisible();
+    await expect(
+      page.getByText("没有加入判定器广场，别人看不到也用不了。"),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "编辑" })).toHaveAttribute(
+      "href",
+      `/judges/${GUESS_ID}/edit`,
+    );
     await page.getByRole("link", { name: "用它发红包" }).click();
     await expect(page).toHaveURL(new RegExp(`/new\\?judge=${GUESS_ID}$`));
     await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
@@ -3890,7 +3920,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await mockDeploys(page);
     const asked = await mockMyJudges(page);
-    await openApp(page, `/judges/${GUESS_ID}`);
+    await openApp(page, `/judges/${GUESS_ID}/edit`);
     // 设置's own 保存: the 公告 below has one too (judge-square §20).
     const settings = page.locator("section", {
       has: page.getByRole("heading", { name: "设置", exact: true }),
@@ -3905,8 +3935,9 @@ test.describe("发红包 · 代码判定", () => {
       description: "猜中的领",
       codePublic: "ended",
     });
+    // 编辑「名字」 (2026-11-22): the title follows the name saved.
     await expect(
-      page.getByRole("heading", { name: "猜大小", level: 1 }),
+      page.getByRole("heading", { name: "编辑「猜大小」", level: 1 }),
     ).toBeVisible();
     await name.fill("");
     await settings.getByRole("button", { name: "保存" }).click();
@@ -3973,7 +4004,7 @@ test.describe("发红包 · 代码判定", () => {
       },
     });
     await mockMyJudges(page);
-    await openApp(page, `/judges/${GUESS_ID}`);
+    await openApp(page, `/judges/${GUESS_ID}/edit`);
     const at = new Date(openedAt);
     const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
     const version = page.getByRole("button", { name: /^第 3 版/ });
