@@ -385,8 +385,9 @@ test.describe("判定器广场", () => {
     ).toHaveAccessibleDescription("站长挑选或改进过的判定器。");
   });
 
-  test("别人的判定器页：参数、发多少、代码、版本；复制一份来改带着代码和名字，测试自己写，有帮助入口，能选加入广场（§16.1），部署后到它的判定器页", async ({
+  test("别人的判定器页：参数、发红包时的默认值、代码、版本；用它发红包 ▾ 复制用它发红包的链接；复制一份来改带着代码和名字，测试自己写，有帮助入口，能选加入广场（§16.1），部署后到它的判定器页", async ({
     page,
+    context,
   }) => {
     const { asked } = await mockSquare(page, member);
     await openApp(page, "/judges");
@@ -404,12 +405,35 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     await expect(page.getByText("猜的范围", { exact: true })).toBeVisible();
     await expect(page.getByText("答案（整数，结束后公开）")).toBeVisible();
+    // Not all of it is 发多少 (the user, 2026-11-22).
+    await expect(
+      page.getByRole("heading", { name: "发红包时的默认值" }),
+    ).toBeVisible();
     for (const line of [
       "总奖池默认 5 LDC",
       "截止默认 3 天",
       "建议打开领取前人机验证",
     ])
       await expect(page.getByText(line, { exact: true })).toBeVisible();
+    // 用它发红包 ▾ (judge-square §6): the menu opens under the button, as
+    // menus do, and says what it copies: the way in, not this page (the
+    // user, 2026-11-22).
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const send = page.getByRole("link", { name: "用它发红包", exact: true });
+    await page.getByRole("button", { name: "用它发红包的更多做法" }).click();
+    const copy = page.getByRole("menuitem", { name: "复制用它发红包的链接" });
+    await expect(copy).toBeVisible();
+    const face = await send.boundingBox();
+    const menu = await page.getByRole("menu").boundingBox();
+    if (!face || !menu) throw new Error("NO_BOX");
+    expect(menu.y).toBeGreaterThanOrEqual(face.y + face.height);
+    await copy.click();
+    await expect(
+      page.getByRole("link", { name: "已复制", exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
+      new RegExp(`/new\\?judge=${GUESS}$`),
+    );
     await expect(
       page.getByText(`第 2 版 · 代码指纹 ${sha256(guessCode).slice(0, 8)}…`),
     ).toBeVisible();
@@ -493,6 +517,25 @@ test.describe("判定器广场", () => {
     });
   });
 
+  test("自己的判定器页：别人能用时（在广场里）用它发红包也带复制用它发红包的链接；不在广场只有按钮（2026-11-22）", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByRole("link", { name: "用它发红包", exact: true }),
+    ).toBeVisible();
+    // Only one's own takes it: a link would lead others nowhere.
+    const arrow = page.getByRole("button", { name: "用它发红包的更多做法" });
+    await expect(arrow).toHaveCount(0);
+    state.mine = { ...mineDetail(), listed: true, publicN: 1 };
+    await openApp(page, `/judges/${MINE}`);
+    await arrow.click();
+    await expect(
+      page.getByRole("menuitem", { name: "复制用它发红包的链接" }),
+    ).toBeVisible();
+  });
+
   test("自己的判定器页：参数和试一试（§16.2）用测试全过的最新一版，参数带默认值，发多少照判定器写，试一试按默认值的红包判定；没有测试全过的版本时只写一句", async ({
     page,
   }) => {
@@ -536,7 +579,7 @@ test.describe("判定器广场", () => {
       page.getByText("默认标题：猜一猜", { exact: true }),
     ).toBeVisible();
     await expect(page.getByText(/^份数/)).toHaveCount(0);
-    await expect(page.getByText("自带说明", { exact: true })).toBeVisible();
+    await expect(page.getByText("默认说明", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "game.example.com ↗" }),
     ).toHaveAttribute("href", "https://game.example.com/play");
@@ -1346,7 +1389,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     return asked.saved[count - 1]?.activity as { pageUrl?: string };
   };
 
-  test("判定器带的标题和说明（judge-square §4.1）：挑了就替你填好，说明自己展开；判定器页写默认标题，自带说明悬停看全文", async ({
+  test("判定器带的标题和说明（judge-square §4.1）：挑了就替你填好，说明自己展开；判定器页写默认标题，默认说明悬停看全文", async ({
     page,
   }) => {
     await mockCarried(page, member);
@@ -1358,7 +1401,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await openApp(page, `/judges/${GUESS}`);
     await expect(page.getByText("默认标题：猜数字红包")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "自带说明" }),
+      page.getByRole("button", { name: "默认说明" }),
     ).toHaveAccessibleDescription(
       "猜 1 到 100 之间的数。 [打开网页参与游戏](#附带网页)",
     );

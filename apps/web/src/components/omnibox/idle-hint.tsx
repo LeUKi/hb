@@ -1,4 +1,3 @@
-import { useAwake } from "../../lib/awake";
 import { useClockCycle } from "../../lib/clock-cycle";
 import { useReducedMotionPref } from "../../lib/motion";
 import type { SchemeKind } from "../../lib/scheme";
@@ -32,15 +31,13 @@ const HINT_PERIOD = 2000;
 /**
  * The hint to show now while the box is empty and free (`active`), or null
  * when it stays still: typing, scoped, or the system asking for less motion.
- * With nobody here (lib/awake.ts) or the page in the back it stays on the
- * one it shows: an idle start page draws nothing (09-idle-frames, sweep
- * 2026-11-21).
+ * It goes on with nobody here too (the user, 2026-11-22: the start page
+ * draws little; 09-idle-frames); only a page in the back holds it.
  */
 export function useIdleHint(active: boolean): IdleHint | null {
   const reduced = useReducedMotionPref();
-  const awake = useAwake();
   const running = active && !reduced;
-  const index = useClockCycle(idleHints.length, HINT_PERIOD, running, !awake);
+  const index = useClockCycle(idleHints.length, HINT_PERIOD, running);
   return running ? (idleHints[index] ?? null) : null;
 }
 

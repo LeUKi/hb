@@ -142,6 +142,7 @@ export function SaveButtons({
           paused={busy}
           onClick={() => onSave(true)}
           menuLabel="更多开放方式"
+          menuSide="above"
           items={
             scheduled
               ? [

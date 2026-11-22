@@ -35,6 +35,7 @@ import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
 import { JudgeHelpLinks, networkWords, statsLine } from "../judges/judge-bits";
 import { NoticeSettings } from "../judges/judge-notice";
+import { SendWithJudge } from "../judges/send-with-judge";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -404,7 +405,7 @@ function SquareSettings({
 /**
  * 参数和试一试 (§16.2): the newest version that passed — the one 用它发红包
  * takes — as a sender gets it: its params with their defaults, to change
- * and try; what it sets on 发多少; 试一试 on a 红包 of its defaults. A new
+ * and try; the defaults it fills in (发红包时的默认值); 试一试 on a 红包 of its defaults. A new
  * one that passes takes its place, from its own defaults.
  */
 function TryVersion({ judge }: { judge: MyJudgeDetail }) {
@@ -512,7 +513,7 @@ function Trying({
       </div>
       {(rules.length > 0 || hongbao?.note || page) && (
         <div className="grid gap-2">
-          <p className="px-1 text-xs text-ink-3">发多少</p>
+          <p className="px-1 text-xs text-ink-3">发红包时的默认值</p>
           {(rules.length > 0 || hongbao?.note) && (
             <RulesList rules={rules} note={hongbao?.note} />
           )}
@@ -923,7 +924,12 @@ function JudgePage({
           </>
         }
         actions={
-          judge.usable && (
+          // Its link copied too while others can use it (广场, §17): a
+          // link to a 判定器 only one's own takes would lead others nowhere.
+          judge.usable &&
+          (others !== null ? (
+            <SendWithJudge judgeId={judge.id} signedIn />
+          ) : (
             <ButtonLink
               variant="primary"
               href={`/new?judge=${encodeURIComponent(judge.id)}`}
@@ -933,7 +939,7 @@ function JudgePage({
             >
               用它发红包
             </ButtonLink>
-          )
+          ))
         }
         refreshable
       />

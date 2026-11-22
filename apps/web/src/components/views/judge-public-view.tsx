@@ -50,7 +50,11 @@ const ldc = (minor: number) =>
 
 const units = { minutes: "分钟", hours: "小时", days: "天" } as const;
 
-/** The ranges and defaults it sets on 发多少, a line each (§15.4). */
+/**
+ * What it fills in for a sender (§15.4), a line each: the 总奖池's range
+ * and default, the 截止, its suggestions, the title. Not all 发多少: shown
+ * as 发红包时的默认值 (the user, 2026-11-22).
+ */
 export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
   if (!rules) return [];
   const span = (
@@ -90,8 +94,9 @@ export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
 }
 
 /**
- * 发多少 as a version sets it (§15.4), a line each, and its 说明 to start
- * with (§4.1) whole on a hint; one's own 判定器页 shows it too (§16.2).
+ * 发红包时的默认值 as a version sets them (§15.4), a line each, and its
+ * 说明 to start with (§4.1) whole on a hint; one's own 判定器页 shows it
+ * too (§16.2).
  */
 export function RulesList({
   rules,
@@ -117,7 +122,7 @@ export function RulesList({
             width={360}
             className="cursor-help text-ink underline decoration-dotted underline-offset-4"
           >
-            自带说明
+            默认说明
           </TagHint>
         </li>
       )}
@@ -581,7 +586,7 @@ export function PublicJudgePage({
         </PageSection>
       )}
       {(rules.length > 0 || note) && (
-        <PageSection title="发多少">
+        <PageSection title="发红包时的默认值">
           <RulesList rules={rules} note={note} />
         </PageSection>
       )}

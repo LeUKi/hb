@@ -10,10 +10,11 @@ export const sendWithJudgePath = (judgeId: string) =>
   `/new?judge=${encodeURIComponent(judgeId)}`;
 
 /**
- * 用它发红包 ▾ on the 广场's cards and a 判定器's page (the user,
- * 2026-11-21): the arrow has 复制链接, /new?judge=<编号>, to pass the way in
- * on; the button says 已复制链接 for a moment. A guest signs in first; the
- * link copies all the same.
+ * 用它发红包 ▾ on the 广场's cards and a 判定器's page, one's own too while
+ * others can use it (the user, 2026-11-21, 2026-11-22): the arrow has
+ * 复制用它发红包的链接, /new?judge=<编号> (not the page's own link: 复制链接
+ * alone read as that), to pass the way in on; the button says 已复制 for a
+ * moment. A guest signs in first; the link copies all the same.
  */
 export function SendWithJudge({
   judgeId,
@@ -55,13 +56,13 @@ export function SendWithJudge({
           else openAccount();
         }}
         menuLabel="用它发红包的更多做法"
-        items={[{ label: "复制链接", onSelect: copy }]}
+        items={[{ label: "复制用它发红包的链接", onSelect: copy }]}
       >
         {/* Pieces, as share-dialog's copyFace: the words morph. */}
         {[
           copied === "done" ? <Check key="done" aria-hidden="true" /> : null,
           copied === "done"
-            ? "已复制链接"
+            ? "已复制"
             : copied === "failed"
               ? "复制失败"
               : "用它发红包",

@@ -6,23 +6,14 @@ const at = (count: number, period: number) =>
 /**
  * Which of `count` things to show now, by the clock: it moves on at every
  * whole `period`, so every window on every device whose clock is right
- * shows the same one at the same moment. 0 while not `running`.
- *
- * 闲着不画 (docs/redesign/09-idle-frames.md): while `paused` (nobody here,
- * lib/awake.ts) or the page is in the back it keeps the one it shows and
- * sets no timer, so nothing on the page changes; going on, it catches up
- * with the clock at once (sweep 2026-11-21: the start page's hint still
- * changed every 2 s with nobody there).
+ * shows the same one at the same moment. 0 while not `running`. While the
+ * page is in the back it keeps the one it shows and sets no timer; back in
+ * front, it catches up with the clock at once.
  */
-export function useClockCycle(
-  count: number,
-  period: number,
-  running: boolean,
-  paused = false,
-) {
+export function useClockCycle(count: number, period: number, running: boolean) {
   const [index, setIndex] = useState(() => at(count, period));
   useEffect(() => {
-    if (!running || paused) return;
+    if (!running) return;
     let timer: number | undefined;
     const tick = () => {
       window.clearTimeout(timer);
@@ -42,6 +33,6 @@ export function useClockCycle(
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [count, period, running, paused]);
+  }, [count, period, running]);
   return running ? index : 0;
 }

@@ -151,9 +151,10 @@ test("闲着的红包页（旁边开着附带网页）不画：8 秒没人动以
 });
 
 // The start page's empty box says in turn what it takes, one each 2 s by
-// the clock (02 §6); each change rolls its two words' widths, so it moved
-// with nobody there (sweep 2026-11-21). Asleep it stays on the one it shows.
-test("闲着的起始页不画：8 秒没人动以后输入框的提示停在那一句，没有一直循环的动画；一动又接着轮换", async ({
+// the clock (02 §6). It goes on with nobody there (the user, 2026-11-22:
+// the start page draws little); the 背景's glows under the window's glass
+// still stop (09-idle-frames).
+test("闲着的起始页：8 秒没人动以后背景的光停下，没有一直循环的动画；输入框的提示照常轮换", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -168,14 +169,17 @@ test("闲着的起始页不画：8 秒没人动以后输入框的提示停在那
   await page.waitForTimeout(9_500);
   expect(await awake(page)).toBe(false);
   expect(await loops(page)).toEqual([]);
+  const glows = () =>
+    page
+      .locator(".desktop-glow")
+      .evaluateAll((spans) =>
+        spans.map((span) => (span as HTMLElement).style.transform),
+      );
+  const before = await glows();
+  expect(before).toHaveLength(3);
+  // The hint goes on by the clock: within one period it moves on.
   const still = await hint.textContent();
-  expect(await changesPerSecond(page, 3_000)).toBeLessThanOrEqual(5);
-  // Read once, not waited for: in any 3 s the hint, still going, would have
-  // moved on once or twice (never back round to the same one).
-  expect(await hint.textContent()).toBe(still);
-  // Someone moves the pointer: awake again, the hint goes on by the clock.
-  await page.mouse.move(200, 300);
-  await page.mouse.move(240, 320);
-  await expect.poll(() => awake(page)).toBe(true);
-  await expect(hint).not.toHaveText(still ?? "");
+  await expect(hint).not.toHaveText(still ?? "", { timeout: 3_000 });
+  expect(await awake(page)).toBe(false);
+  expect(await glows()).toEqual(before);
 });

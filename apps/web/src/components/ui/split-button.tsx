@@ -28,10 +28,11 @@ export type SplitItem = { label: string; onSelect: () => void };
 /**
  * A button with a menu beside its action (04 §4, 保存并开放 ▾): one face in
  * two halves, a thin line between them; the arrow opens a few more ways to
- * do it. The menu hangs in the window layer above the button (below when
- * there is no room), follows it, and goes with Esc (focus back on the
- * arrow), a press elsewhere or Tab (on from the arrow; Shift+Tab stops on
- * it).
+ * do it. The menu hangs in the window layer under the button, as menus
+ * do (above it when there is no room, or on `menuSide` "above": a bar at
+ * the bottom of a window), follows it, and goes with Esc (focus back on
+ * the arrow), a press elsewhere or Tab (on from the arrow; Shift+Tab stops
+ * on it).
  */
 export function SplitButton({
   variant = "primary",
@@ -43,6 +44,7 @@ export function SplitButton({
   menuLabel,
   items,
   href,
+  menuSide = "below",
 }: {
   variant?: "primary" | "secondary";
   size?: Exclude<ButtonSize, `icon${string}`>;
@@ -61,6 +63,9 @@ export function SplitButton({
    * modified click opens a new tab; a plain one is `onClick`.
    */
   href?: string;
+  /** Where the menu opens when there is room: under the button, or above
+   * it for a bar at the bottom of a window (保存并开放 ▾). */
+  menuSide?: "above" | "below";
 }) {
   const r = buttonRadius[size];
   const shape = useButtonShape(r, buttonHeight[size]);
@@ -142,6 +147,7 @@ export function SplitButton({
         anchor={face}
         arrow={arrow}
         items={items}
+        side={menuSide}
         onClose={() => setOpen(false)}
       />
     </>
@@ -154,6 +160,7 @@ function SplitMenu({
   anchor,
   arrow,
   items,
+  side,
   onClose,
 }: {
   id: string;
@@ -161,6 +168,7 @@ function SplitMenu({
   anchor: RefObject<HTMLFieldSetElement | null>;
   arrow: RefObject<HTMLButtonElement | null>;
   items: SplitItem[];
+  side: "above" | "below";
   onClose: () => void;
 }) {
   const reduced = useReducedMotionPref();
@@ -172,7 +180,8 @@ function SplitMenu({
     above: boolean;
   }>();
 
-  // Its right edge on the button's, above it unless there is no room; it
+  // Its right edge on the button's, on its side unless there is no room
+  // there (the user, 2026-11-22: a page's 用它发红包 ▾ opened upwards); it
   // follows the button while the page scrolls or the window changes (a
   // step's scroll may still be easing as it opens).
   useLayoutEffect(() => {
@@ -184,7 +193,9 @@ function SplitMenu({
       setHost(layer);
       const box = layer.getBoundingClientRect();
       const at = target.getBoundingClientRect();
-      const above = at.top - box.top > 160;
+      const roomAbove = at.top - box.top > 160;
+      const roomBelow = box.bottom - at.bottom > 160;
+      const above = side === "above" ? roomAbove || !roomBelow : !roomBelow;
       setPlace({
         right: box.right - at.right,
         y: above ? at.top - box.top - 8 : at.bottom - box.top + 8,
@@ -198,7 +209,7 @@ function SplitMenu({
       document.removeEventListener("scroll", measure, true);
       window.removeEventListener("resize", measure);
     };
-  }, [open, anchor]);
+  }, [open, anchor, side]);
 
   // The first item takes focus; arrows move between them.
   useEffect(() => {
