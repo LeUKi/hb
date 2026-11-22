@@ -116,7 +116,7 @@ export function HelpPointsView() {
       <PageHeader
         back={{ label: "帮助", href: "/help" }}
         title="三方积分 · 接入说明"
-        description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。红包作者从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
+        description="让大家用你网站的积分发红包：做好三个接口，通过接口测试，站长审核通过后，大家发红包时就能选它。红包里的积分从红包作者在你网站的账户转出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。"
       />
       <HelpChapters chapters={pointsFaq} />
       <PageSection
@@ -221,7 +221,7 @@ export function HelpPointsView() {
       <PageSection
         id="balance"
         title="3. 查余额"
-        description="这把密钥的账户和可用。红包作者填密钥、开放红包、限时开奖开奖前都会查。"
+        description="返回这把密钥对应的账户和可用余额。红包作者填密钥、开放红包时，以及限时开奖的红包开奖前，红包站都会来查。"
       >
         <Block
           label="POST {接口地址}/balance，请求体 {}"

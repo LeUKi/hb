@@ -42,7 +42,7 @@ const notes: {
     key: "afterClaimInfo",
     id: "hb-after-claim-info",
     label: "领取后附言",
-    hint: "只有领到的人能看到；限时开奖是中奖的人。支持 Markdown。",
+    hint: "只有领到的人能看到，限时开奖只给中奖的人看。支持 Markdown。",
     placeholder: "例如：谢谢捧场！",
   },
   {
@@ -626,7 +626,7 @@ export function SettingsSheet({
                   <div className="pt-2">
                     <Switch
                       label="打开红包页时自动打开"
-                      description={`进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。${pageLockNote}${pageAutoOpenSuggested ? "这个判定器建议打开。" : ""}`}
+                      description={`第一次打开某个网站前，仍会先问看的人。看的人自己关掉过，下次就不再自动打开。${pageLockNote}${pageAutoOpenSuggested ? "这个判定器建议打开。" : ""}`}
                       checked={form.pageAutoOpen}
                       disabled={pageLocked}
                       onChange={(pageAutoOpen) =>

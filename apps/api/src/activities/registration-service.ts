@@ -302,7 +302,7 @@ export async function registerForDraw(
         throw new ActivityError(
           409,
           "REAL_LDC_CLAIMS_PAUSED",
-          "新报名暂时关闭，请保留原提交稍后重试。",
+          "报名暂时关闭，请稍后再试。",
         );
       await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;

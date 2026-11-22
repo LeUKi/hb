@@ -444,15 +444,15 @@ export function AmountFields({
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
             {stepRule(money)}
-            每个人赢多少、什么时候结算由判定器定；红包结束时，还没结算的人按各自的待结算发，剩下的
+            什么时候结算由判定器决定。红包结束时，还没结算的人按各自待结算的金额发放，剩下的
             {form.funding === "balance" ? "退回你的🐟额" : "不再发放"}。
-            {fundingNote(form, money)}
+            {fundingNote(form)}
           </p>
         ) : (
           <p className="text-xs text-ink-3">
             最多 1,000 份，每份至少 {amountText(money.step, money)}，
             {stepRule(money)}填的是每份发出的金额。
-            {fundingNote(form, money)}
+            {fundingNote(form)}
           </p>
         )}
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
@@ -474,12 +474,15 @@ export function AmountFields({
   );
 }
 
-/** Where a share goes once taken, by 从哪发. */
-const fundingNote = (form: FormState, money: AmountUnit) =>
+/**
+ * Where a share goes once taken, by 从哪发. 三方积分 says none: its card
+ * and key line above already say where the points come from and go.
+ */
+const fundingNote = (form: FormState) =>
   form.funding === "balance"
     ? "领到的直接存进领取者的🐟额。"
     : form.funding === "points"
-      ? `领到的${money.unit}直接存进领取者在那个网站的账户，从你在那边的账户扣。`
+      ? null
       : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。";
 
 /** How amounts are written in this unit (§2). */
@@ -682,7 +685,7 @@ export function PaidByRow({ merchantId }: { merchantId: string }) {
         </div>
       </Squircle>
       <p className="text-xs text-ink-3">
-        开放时用的商户，之后不能更换；账号换了当前商户，这个红包仍由它付款。
+        这个红包一直由开放时用的商户付款，之后你换了商户也不影响它。
       </p>
     </div>
   );

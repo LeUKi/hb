@@ -277,7 +277,9 @@ test.describe("兑奖", () => {
     ]);
     await openApp(page);
     await lookUp(page, "测试口令2100");
-    await expect(shown(page, "查找结果未确认，请再次确认。")).toBeVisible();
+    await expect(
+      shown(page, "还没收到查找结果，请按“再次确认”再查一次。"),
+    ).toBeVisible();
     await page.getByRole("button", { name: "再次确认" }).click();
     await expectNoMatch(page);
     expect(sent).toHaveLength(2);

@@ -352,12 +352,12 @@ function EditorForm({
             {
               value: "simple",
               title: "简洁",
-              description: "一行，个人页这种窄地方用",
+              description: "只占一行，适合个人页这样的窄地方",
             },
             {
               value: "standard",
               title: "标准",
-              description: "数额摆出来，能开目标和名单",
+              description: "列出几个数额，还能显示目标、最近打赏和总榜",
             },
           ]}
         />
@@ -478,7 +478,7 @@ function EditorForm({
           )}
         </div>
         <Switch
-          label="允许看客填其他数额"
+          label="允许打赏的人自己填数额"
           description="1 到 2000 LDC"
           checked={form.allowOther}
           onChange={(allowOther) => edit({ allowOther })}
@@ -489,7 +489,7 @@ function EditorForm({
           </span>
           <Switch
             label="目标"
-            description="写一个目标数额，卡片上显示已到多少，从开的时候算起"
+            description="定一个目标，卡片上显示定好以后收到了多少"
             checked={standard && form.goalOn}
             disabled={!standard}
             onChange={(goalOn) => edit({ goalOn })}

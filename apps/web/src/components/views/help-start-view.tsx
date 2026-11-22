@@ -153,7 +153,7 @@ export function HelpStartView() {
                 要写的：
                 <Marked text={row.write} />
               </span>
-              <span className="text-ink-3">费用：{row.cost}</span>
+              <span className="text-ink-3">谁出费用：{row.cost}</span>
               <span className="text-ink-3">
                 接着读：
                 <Reading text={row.read} />

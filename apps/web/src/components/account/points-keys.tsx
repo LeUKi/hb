@@ -75,7 +75,7 @@ export function PointsKeysSection({ user }: { user: SessionUser }) {
         <PageSection
           title="三方积分密钥"
           id="me-points-keys"
-          description="你填在三方积分里、发红包时用来扣积分的密钥。换或删到那个积分的页面。"
+          description="发红包时从这些密钥的账户扣积分。要换密钥或删掉，点开那一行。"
         >
           <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
             {items.map((item) => (

@@ -427,7 +427,7 @@ export function useOmniboxController() {
           });
           store.set(messageAtom, {
             tone: "warning",
-            text: "查找结果未确认，请再次确认。",
+            text: "还没收到查找结果，请按“再次确认”再查一次。",
           });
           return;
         }
@@ -907,7 +907,7 @@ export function useOmniboxController() {
           );
           say({
             tone: "warning",
-            text: `尚未确认${verb}结果，请重试原提交以确认结果。`,
+            text: `还没收到这次${verb}的结果。按“重试原提交”再发一次，不会重复${verb}。`,
           });
           return;
         }
@@ -1257,11 +1257,16 @@ export function useOmniboxController() {
       const known = queryClient.getQueryData<ActivityPasswords>(
         passwordKey(account.id, activityId),
       );
-      if (known?.passwords.some((item) => item.text === password)) {
+      const same = known?.passwords.find((item) => item.text === password);
+      if (same) {
         store.set(messageAtom, {
           activityId,
           tone: "neutral",
-          text: "你已经知道这个口令。",
+          text: same.isRegistrationPassword
+            ? "你已经用这个口令报过名了。"
+            : same.isClaimPassword
+              ? "你已经用这个口令领过了。"
+              : "这个口令你已经解出了。",
         });
         return;
       }

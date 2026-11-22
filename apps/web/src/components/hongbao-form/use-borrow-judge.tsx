@@ -67,7 +67,9 @@ export function useBorrowJudge() {
       if (page.own) return { own: page };
       // 在更新 (judge-square §17): none picks it anew meanwhile.
       if (page.updating !== undefined) {
-        setError("作者在更新这个判定器，新版本发过红包后才能用。");
+        setError(
+          "作者正在更新这个判定器，要等作者用新版本开放一个红包后才能用。",
+        );
         return { failed: true };
       }
       const version = page.version;

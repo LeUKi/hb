@@ -231,13 +231,13 @@ export function BalanceSettingsSection({
           />
           <Switch
             label="打赏"
-            description="开着时，大家能建打赏卡、通过打赏卡打赏。关掉后打赏卡都显示“打赏暂停”，不能新打赏；已经在等付款的照常查单。"
+            description="开着时，大家能建打赏卡、通过打赏卡打赏。关掉后打赏卡都显示“打赏暂停”，这期间不能打赏；已经在等付款的照常查单。"
             checked={values.tipEnabled}
             onChange={(tipEnabled) => edit({ tipEnabled })}
           />
           <Switch
             label="免密打赏"
-            description="开着时，看客能从自己的 LDC 商户直接打赏，开通🐟额 PLUS 的人还能用🐟额打赏，都不用输 Credit 站的密码。关掉后只能去 Credit 站付。"
+            description="开着时，打赏的人能从自己的 LDC 商户直接打赏，开通🐟额 PLUS 的人还能用🐟额打赏，都不用输 Credit 站的密码。关掉后只能去 Credit 站付。"
             checked={values.tipPasswordFreeEnabled}
             onChange={(tipPasswordFreeEnabled) =>
               edit({ tipPasswordFreeEnabled })

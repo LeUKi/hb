@@ -203,7 +203,7 @@ export function FishLine({ total }: { total: number | null }) {
     loading: "正在读你的🐟额",
     error: "读不到你的🐟额，请稍后再试",
     off: "🐟额红包暂时关闭，换个来源才能发",
-    none: "🐟额里没有可用",
+    none: "🐟额里没有可用的🐟",
     short: `可用只有 ${ldc(available)} 🐟，不够发这个红包`,
     ok: `可用 ${ldc(available)} 🐟`,
   }[state];

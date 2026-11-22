@@ -62,7 +62,7 @@ export const NOTICE_SWITCHES: {
     id: "payout_stuck",
     group: "send",
     title: "奖励发放暂停",
-    hint: "有人领取后，因你的 Credit 余额不足或今日额度已用完，奖励暂未发放。余额不足时写明自动重试到何时；每次暂停只提醒一次。",
+    hint: "有人领取后，因你的 Credit 余额不足或今日额度已用完，奖励暂未发放。余额不足时，私信里会写明自动重试到什么时候。每次暂停只提醒一次。",
   },
   {
     id: "payout_stopped",

@@ -87,7 +87,7 @@ function PaymentStatus({ state }: { state: PaymentState }) {
 // no reason (or one with no words of its own). 发放失败's are in
 // failedPaymentNote, beside the sender's.
 const paymentReasons: Partial<Record<PaymentState, string>> = {
-  reconciling: "发放结果尚未明确，系统正在核对原订单。",
+  reconciling: "还不确定这笔奖励有没有发出，系统正在核对。",
   waiting: "奖励暂未发放，系统将自动重试。",
   attention: "发放已暂停，等待红包作者处理。",
 };
@@ -574,7 +574,7 @@ function TicketNote({
     return (
       <p className="text-sm text-ink-2">
         <MorphLabel fit={false}>
-          {drawNote ?? "正在抽取中奖名单并创建付款，结果出来后显示在这里。"}
+          {drawNote ?? "正在抽取中奖名单，结果出来后显示在这里。"}
         </MorphLabel>
       </p>
     );
@@ -587,9 +587,9 @@ function TicketNote({
 
 /** 代码判定: why a share is not what the code asked (05 §13). */
 const judgeNotes = {
-  cap: "按上限发",
-  floor: "按每份至少发",
-  last: "最后一份，发完剩下的",
+  cap: "判定器给的超过了这一份能发的上限，按上限发给你。",
+  floor: "判定器给的少于每份至少，按每份至少发给你。",
+  last: "这是最后一份，奖池剩下的全部发给你。",
 } as const;
 
 /**

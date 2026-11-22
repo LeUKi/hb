@@ -427,7 +427,7 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     for (const line of [
       "总奖池默认 5 LDC",
-      "截止默认 3 天",
+      "默认开放 3 天后截止",
       "建议打开领取前人机验证",
     ])
       await expect(page.getByText(line, { exact: true })).toBeVisible();
@@ -516,7 +516,7 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     await expect(
       page.getByText(
-        "部署时用来检查代码，不会公开。原作者的测试不公开，要自己写。",
+        "部署时会用这些测试检查代码，只有你自己看得到。原作者的测试不会复制过来，要自己写。",
       ),
     ).toBeVisible();
     const tests = page.getByRole("textbox", { name: /^tests\.json/ });
@@ -621,7 +621,9 @@ test.describe("判定器广场", () => {
       page.getByRole("heading", { name: "参数和试一试" }),
     ).toBeVisible();
     await expect(
-      page.getByText("第 1 版测试全过，用它发红包时是这样。"),
+      page.getByText(
+        "用它发红包时用的是第 1 版。下面是这一版的参数和默认值，可以先试一试。",
+      ),
     ).toBeVisible();
     await expect(page.locator("#hb-try-param-max")).toHaveValue("100");
     await expect(page.locator("#hb-try-param-answer")).toHaveValue("");
@@ -739,7 +741,7 @@ test.describe("判定器广场", () => {
     await openApp(page, `/judges/${MINE}/edit`);
     await expect(
       page.getByText(
-        "别人现在用不了：最新的第 3 版还没开放过红包。用它开放一个红包后，别人就用第 3 版。",
+        "别人暂时用不了：你用第 3 版开放一个红包后，别人就能用这一版。",
       ),
     ).toBeVisible();
     const row = (n: number) =>
@@ -868,7 +870,7 @@ test.describe("判定器广场", () => {
     await openApp(page, "/judges/new");
     await expect(
       page.getByText(
-        "新判定器要是和你别的判定器共用服务器或附带网页，改它们时要让旧的也照样能用：开放过的红包会一直用它们开放时的那一版。",
+        "开放过的红包会一直用开放时的那一版判定器。这个判定器要是和你别的判定器共用服务器或附带网页，改服务器或网页时，要让旧版也照样能用，不然那些红包会领不到。",
       ),
     ).toBeVisible();
   });
@@ -891,20 +893,18 @@ test.describe("判定器广场", () => {
     });
     await openApp(page, "/judges");
     const card = page.getByRole("article").filter({ hasText: "猜数字" });
-    await expect(card).toContainText("作者在更新，新版本发过红包后才能用");
+    await expect(card).toContainText("作者正在更新，暂时用不了");
     await expect(card.getByText("用它发红包")).toHaveCount(0);
     await card.getByRole("link", { name: "查看" }).click();
     await expect(
       page.getByText(
-        "作者部署了第 3 版，还没用它开放过红包。作者用第 3 版发过红包以后，大家就能用第 3 版。",
+        "作者部署了新的第 3 版，用它开放一个红包以后，大家才能再用这个判定器。",
       ),
     ).toBeVisible();
     const header = page.locator("header").filter({
       has: page.getByRole("heading", { name: "猜数字", level: 1 }),
     });
-    await expect(
-      header.getByText("作者在更新，新版本发过红包后才能用"),
-    ).toBeVisible();
+    await expect(header.getByText("作者正在更新，暂时用不了")).toBeVisible();
     await expect(header.getByRole("link", { name: "用它发红包" })).toHaveCount(
       0,
     );
@@ -915,7 +915,7 @@ test.describe("判定器广场", () => {
     const square = page.getByRole("dialog", { name: "判定器广场" });
     await square.getByRole("button", { name: "大家做的" }).click();
     const picked = square.getByRole("article").filter({ hasText: "猜数字" });
-    await expect(picked).toContainText("作者在更新，新版本发过红包后才能用");
+    await expect(picked).toContainText("作者正在更新，暂时用不了");
     await expect(picked.getByRole("button", { name: "用这个" })).toHaveCount(0);
   });
 
@@ -978,7 +978,7 @@ test.describe("判定器广场", () => {
     await join.click();
     const leave = page.getByRole("dialog", { name: "退出判定器广场？" });
     await expect(leave).toContainText(
-      "新的红包不能再选它；已经开放的照旧，已经选进草稿的照样能开放。代码照旧一直公开。",
+      "新的红包不能再选它；已经开放的红包不受影响，已经选进草稿的照样能开放。代码还是一直公开。",
     );
     await leave.getByRole("button", { name: "退出" }).click();
     await expect(leave).toBeHidden();
@@ -1052,7 +1052,7 @@ test.describe("判定器广场", () => {
     expect(asked.saved[0]?.activity.judge).not.toHaveProperty("name");
   });
 
-  test("密钥参数（judge-key）：判定器页写发给哪；表单里是密码框，标不公开，写发给哪、代码看不到、结束后删除；没填不能下一步；存草稿时密钥单独发，不在参数里", async ({
+  test("密钥参数（judge-key）：判定器页写发给哪；表单里是密码框，标不公开，写发给哪、代码读不到、结束后删除；没填不能下一步；存草稿时密钥单独发，不在参数里", async ({
     page,
   }) => {
     const { asked } = await mockSquare(page, member);
@@ -1100,11 +1100,11 @@ test.describe("判定器广场", () => {
     await expect(
       page.getByRole("button", { name: "不公开" }),
     ).toHaveAccessibleDescription(
-      `判定器代码看不到，也不会公开；只会发给 ${AI}，红包结束后删除。`,
+      `判定器的代码读不到它，也不会公开；只会发给 ${AI}，红包结束后删除。`,
     );
     await expect(
       page.getByText(
-        `只会发给 ${AI}，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。`,
+        `只会发给 ${AI}，判定器的代码读不到。保存后不再显示，红包结束后删除。调用产生的费用算在这个密钥的账户上。`,
       ),
     ).toBeVisible();
     await expect(
@@ -1466,7 +1466,9 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     const card = page.getByRole("article").filter({ hasText: "猜数字" });
     await expect(
       card.getByRole("button", { name: "带附带网页" }),
-    ).toHaveAccessibleDescription("用它发红包时，判定器带的网页一起带上。");
+    ).toHaveAccessibleDescription(
+      "用它发红包时，红包会带上这个判定器的附带网页。",
+    );
     await card.getByRole("link", { name: "查看" }).click();
     const link = page.getByRole("link", { name: "game.example.com ↗" });
     await expect(link).toHaveAttribute("href", carried);
@@ -1534,7 +1536,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(byItself).toBeChecked();
     await expect(
       sheet.getByText(
-        "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后到结束前不能改。这个判定器建议打开。",
+        "第一次打开某个网站前，仍会先问看的人。看的人自己关掉过，下次就不再自动打开。开放后到结束前不能改。这个判定器建议打开。",
       ),
     ).toBeVisible();
     await byItself.click();
@@ -1547,7 +1549,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     });
     await openApp(page, `/judges/${GUESS}`);
     await expect(
-      page.getByText("建议打开红包页时自动打开附带网页", { exact: true }),
+      page.getByText("建议进入红包页时自动打开附带网页", { exact: true }),
     ).toBeVisible();
   });
 });

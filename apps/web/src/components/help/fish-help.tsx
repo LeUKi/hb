@@ -326,7 +326,7 @@ const plusUnseen: HelpChapter["questions"][number] = {
       开通后会多出几项功能。点
       <HelpLink to="/balance">🐟额</HelpLink>
       页标题旁的 PLUS
-      标签，能看到你现在能做的，和开通后多出几项；开通以后那里写着是什么。
+      标签，能看到你现在能用的功能，以及开通后会多出几项；具体是哪几项，开通以后那里才会写出来。
     </p>
   ),
 };

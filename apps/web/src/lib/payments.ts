@@ -209,7 +209,7 @@ export function paymentSteps(
         payment.config?.canRepairCredentials
           ? {
               at: latest,
-              title: "等待更新原订单密钥",
+              title: "等待更新原来集市应用的密钥",
               detail: "这笔付款用的是更换前的应用，更新它现在的密钥后继续",
               tone: "now",
             }
@@ -271,8 +271,8 @@ export function paymentAttempts(
         attempt.outcome === "succeeded"
           ? attempt.operation === "send"
             ? payment.externalOrderId
-              ? `LDC 已建单，上游交易号 ${payment.externalOrderId}`
-              : "LDC 已建单"
+              ? `已在 Credit 站下单，Credit 订单号 ${payment.externalOrderId}`
+              : "已在 Credit 站下单"
             : "订单已返回"
           : (paymentReason(attempt.reason) ?? attempt.diagnosticSummary ?? "");
       const status =

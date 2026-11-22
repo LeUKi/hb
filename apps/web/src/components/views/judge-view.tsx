@@ -274,7 +274,7 @@ function SquareSettings({
   const [featurable, setFeaturable] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
-  const hint = "站长可以原样选入，或者改进后选入，署名保留。";
+  const hint = "站长可以原样或改进后选入精选，都会保留你的署名。";
   const answer = (listed: boolean, allow: boolean) => {
     if (write.isPending) return;
     setAskError(null);
@@ -320,7 +320,7 @@ function SquareSettings({
             description={
               judge.featured === null
                 ? hint
-                : `${hint}取消只影响以后，已经选入的留着。`
+                : `${hint}关掉后站长不能再选入，已经选入精选的不受影响。`
             }
             onChange={(allow) => {
               if (write.isPending) return;
@@ -379,7 +379,7 @@ function SquareSettings({
         onClose={() => setAsking(null)}
         busy={write.isPending}
         title="退出判定器广场？"
-        text="新的红包不能再选它；已经开放的照旧，已经选进草稿的照样能开放。代码照旧一直公开。"
+        text="新的红包不能再选它；已经开放的红包不受影响，已经选进草稿的照样能开放。代码还是一直公开。"
         error={askError}
         actions={
           <>
@@ -415,7 +415,9 @@ function TryVersion({ judge }: { judge: MyJudgeDetail }) {
     <PageSection
       title="参数和试一试"
       description={
-        usable ? `第 ${usable.n} 版测试全过，用它发红包时是这样。` : undefined
+        usable
+          ? `用它发红包时用的是第 ${usable.n} 版。下面是这一版的参数和默认值，可以先试一试。`
+          : undefined
       }
     >
       <Swap id={usable ? `n${usable.n}` : "none"}>
@@ -487,7 +489,7 @@ function Trying({
         <p className="px-1 text-xs text-ink-3">参数</p>
         <Panel className="p-4">
           {params.length === 0 ? (
-            <p className="text-sm text-ink-2">没有参数，挑了就能发。</p>
+            <p className="text-sm text-ink-2">没有要填的参数。</p>
           ) : (
             <div className="grid gap-4">
               <ParamsFields
@@ -1031,7 +1033,7 @@ function standingOf(judge: MyJudgeDetail) {
   if (!judge.listed || judge.takenDown) return null;
   if (judge.featured !== null) return `站长精选了第 ${judge.featured} 版。`;
   if (judge.updating !== null)
-    return `别人现在用不了：最新的第 ${judge.updating} 版还没开放过红包。用它开放一个红包后，别人就用第 ${judge.updating} 版。`;
+    return `别人暂时用不了：你用第 ${judge.updating} 版开放一个红包后，别人就能用这一版。`;
   if (judge.publicN !== null) return `别人用的是第 ${judge.publicN} 版。`;
   return "还没有开放过红包的版本，广场上暂时看不到它。";
 }

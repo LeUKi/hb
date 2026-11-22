@@ -249,7 +249,7 @@ function DetailBody({
             value: <span className="font-mono text-xs">{payment.id}</span>,
           },
           {
-            label: "上游交易号",
+            label: "Credit 订单号",
             value: payment.externalOrderId ? (
               <span className="font-mono text-xs">
                 {payment.externalOrderId}
@@ -373,7 +373,7 @@ function Detail({ item }: { item: AdminPaymentListItem }) {
 
 /**
  * /admin/payments 付款: every payment on the site. Search by the numbers
- * people quote (本站业务号, 任务 ID, 上游交易号); narrow by state, by mode or
+ * people quote (本站业务号, 任务 ID, Credit 订单号); narrow by state, by mode or
  * by one of the overview's checks. The detail is the sender's 付款详情 plus
  * the fields only an admin needs. No actions: retries and checks run by
  * themselves (production keeps recovery grants in a CLI).
@@ -462,7 +462,7 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
               value={query}
               onChange={setQuery}
               maxLength={2048}
-              placeholder="本站业务号、任务 ID、上游交易号、红包或商户 ID"
+              placeholder="本站业务号、任务 ID、Credit 订单号、红包或商户 ID"
             />
           </div>
           <Segmented

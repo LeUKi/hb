@@ -72,7 +72,7 @@ function TestsBox({
   value: string;
   error?: string;
   disabled: boolean;
-  /** One more sentence after its own (复制一份来改: 原作者的测试不公开). */
+  /** One more sentence after its own (复制一份来改: 原作者的测试不会复制过来). */
   note?: string;
   /**
    * Saving, or waiting on 重试原提交: the step's fieldset stops native
@@ -120,7 +120,7 @@ function TestsBox({
                 测试
               </span>
               <span id={noteId} className="hb-judge-quiet text-xs text-pretty">
-                部署时用来检查代码，不会公开。{note}
+                部署时会用这些测试检查代码，只有你自己看得到。{note}
               </span>
             </span>
           </div>
@@ -299,7 +299,7 @@ function NetworkNote({
         </p>
         <ul className="grid gap-1 text-xs text-ink-2">
           <li>领的人提交的内容可能被发到这些地址。</li>
-          <li>结束后代码公开，写在代码里的令牌也会公开，结束后请作废。</li>
+          <li>代码公开后，写在代码里的令牌谁都能看到，到时记得把它作废。</li>
           <li>
             红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。
           </li>
@@ -372,8 +372,8 @@ function DeployArea({
           <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="min-w-0 flex-1">
               {judge.upgraded
-                ? `判定器 第 ${judge.version.n} 版 是按旧规则（有份数）写的：按新规则重新跑一遍测试才能开放。不算部署，不扣次数。`
-                : `tests.json 改过了：在判定器 第 ${judge.version.n} 版 上重新跑一遍才能开放。不算部署，不扣次数。`}
+                ? `第 ${judge.version.n} 版是按旧规则（有份数）写的，要按新规则重新跑一遍测试，才能用来发红包。重新跑不算部署次数。`
+                : `tests.json 改过了，要在第 ${judge.version.n} 版上重新跑一遍测试，才能用来发红包。重新跑不算部署次数。`}
             </span>
             <Button
               size="xs"
@@ -424,7 +424,7 @@ function DeployArea({
                   "先给判定器起个名字"
                 ) : (
                   <>
-                    {failed && "改出新版本才能再部署"}
+                    {failed && "改了代码才能再部署"}
                     {failed && quotaText(judge) && " · "}
                     {quotaText(judge)}
                   </>
@@ -433,15 +433,16 @@ function DeployArea({
             </div>
             {unseen && (
               <p className="text-xs text-ink-3">
-                没过的是哪几条没留下：重新跑测试就能看到，不算部署。
+                上次是哪几条测试没过，这里没有记下来。重新跑一遍测试就能看到，不算部署次数。
               </p>
             )}
             {/* Stopped by 保存并开放, the red line below says why instead. */}
-            {fresh && !(gated && judge.gate) && (
+            {/* Used up: only a version to put back (换回) still helps. */}
+            {fresh && !(gated && judge.gate) && (!used || judge.restore) && (
               <p className="text-xs text-ink-3">
                 {used
-                  ? "已经部署过的判定器换回去照样能开放。"
-                  : "部署：把这一版代码做成判定器，在线上跑你的测试。开放前谁也领不到；只改测试再跑，不算部署。"}
+                  ? "换回已经部署过的版本不用部署，照样能用来发红包。"
+                  : "部署会把这份代码存成判定器的新一版，并在线上跑一遍你的测试。以后只改测试的话，重新跑不算部署次数。"}
               </p>
             )}
           </div>
@@ -1088,7 +1089,7 @@ export function CodeStep({
                 : !borrowed.source.listed
                   ? {
                       tone: "quiet",
-                      text: "作者已经不在广场提供它，已经选好的照样能开放。",
+                      text: "作者已经让它退出判定器广场，不影响你用它开放这个红包。",
                     }
                   : undefined
             }

@@ -756,7 +756,7 @@ function SideWindow({
                   </BarButton>
                 </Fold>
                 <Fold shown={!full}>
-                  <BarButton label="隐藏（不会卸载）" onClick={onHide}>
+                  <BarButton label="隐藏（网页不会关闭）" onClick={onHide}>
                     <X />
                   </BarButton>
                 </Fold>

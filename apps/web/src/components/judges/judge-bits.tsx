@@ -135,7 +135,7 @@ export function JudgeTags({ judge }: { judge: SquareJudge }) {
       {judge.page && (
         <Squircle radius={radius.tag}>
           <TagHint
-            hint="用它发红包时，判定器带的网页一起带上。"
+            hint="用它发红包时，红包会带上这个判定器的附带网页。"
             className={cn(tagClass, "gap-1 bg-fill-2 text-ink-2")}
           >
             <Globe className="size-3" aria-hidden="true" />
@@ -177,7 +177,7 @@ export function JudgeHelpLinks({ className }: { className?: string }) {
 
 /** 结束后公开 (docs/judge-key-design.md §0): what the tag says on its hint. */
 export const REVEAL_HINT =
-  "红包进行中不公开，结束后公开；开放时公布的参数封存值能核对它没被换过。回复里会不会透露它，要看判定器的代码。";
+  "红包进行中不公开，结束后公开，谁都能核对它开放后没被换过。判定器的回复会不会透露它，要看代码怎么写。";
 
 /** An 地址参数's name, as the code wrote it. */
 export const addressLabel = (params: readonly JudgeParam[], key: string) =>
@@ -217,7 +217,7 @@ export function networkWords(
 
 /** 密钥 (docs/judge-key-design.md §3): what its tag says on its hint. */
 export const keyHint = (to: string) =>
-  `判定器代码看不到，也不会公开；只会发给${to.startsWith("https://") ? " " : ""}${to}，红包结束后删除。`;
+  `判定器的代码读不到它，也不会公开；只会发给${to.startsWith("https://") ? " " : ""}${to}，红包结束后删除。`;
 
 /**
  * When a param is shown (docs/judge-key-design.md §0): 结束后公开, or 不公开

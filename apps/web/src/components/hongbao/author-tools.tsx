@@ -125,9 +125,9 @@ export function AuthorTools({
   const credential =
     scheduled !== undefined
       ? activity.openingBlocked === "MERCHANT_CREDENTIALS_REJECTED"
-        ? "凭证认证未通过"
+        ? "rejected"
         : activity.openingBlocked === "MERCHANT_CREDENTIALS_UNAVAILABLE"
-          ? "暂时无法检查凭证"
+          ? "unavailable"
           : null
       : null;
   // Saved from /new a moment ago: said once, here where saving landed.
@@ -168,16 +168,21 @@ export function AuthorTools({
       {credential && (
         <Callout tone="warning" icon={AlertTriangle}>
           <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            {/* Not reachable is tried again at its time by itself (schedule.ts
+                PASSING): nothing to update then. */}
             <span>
-              开放前检查商户凭证没有通过：{credential}
-              。到点前更新密钥，还能按时开放。
+              {credential === "rejected"
+                ? "商户的 Client ID 或密钥没通过检查。到点前换好，还能按时开放。"
+                : "暂时查不了商户的密钥，到点时会再查。"}
             </span>
-            <MoreLink
-              href="/merchant"
-              onGo={() => void navigate({ to: "/merchant" })}
-            >
-              去更新密钥
-            </MoreLink>
+            {credential === "rejected" && (
+              <MoreLink
+                href="/merchant"
+                onGo={() => void navigate({ to: "/merchant" })}
+              >
+                去更新密钥
+              </MoreLink>
+            )}
           </span>
         </Callout>
       )}
@@ -302,7 +307,7 @@ export function AuthorTools({
       {code && ended && (
         <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="min-w-0 flex-1 text-sm text-ink-2">
-            每份领到时交给判定器的数据，含输入和状态，用本地开发包重放。
+            每次判定时交给判定器的数据，包括输入和状态。下载后可以用开发包在自己电脑上重放。
           </p>
           <a
             href={judgeRecordsUrl(activity.id)}

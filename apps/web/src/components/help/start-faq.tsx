@@ -64,7 +64,7 @@ export const startFaq: HelpChapter[] = [
             <ul className="grid gap-1.5">
               <li>
                 <b className={label}>判定器</b>
-                ：一段代码（judge.js），在红包站的沙箱里跑，决定给谁多少。奖励只经过它，代码判定红包都要有。
+                ：一段代码（judge.js），在红包站的沙箱里运行，谁领多少只由它决定。每个代码判定红包都要有一个判定器。
               </li>
               <li>
                 <b className={label}>附带网页</b>
@@ -153,7 +153,7 @@ export const startFaq: HelpChapter[] = [
               不公开。
             </p>
             <p>
-              参数分三种：普通参数开放时就列在红包页上；标了结束后公开的（revealAtEnd），开放时只公布封存值，结束后公开；密钥参数代码读不到，永远不公开。见
+              参数分三种：普通参数开放时就列在红包页上；标了“结束后公开”的（revealAtEnd），开放时只公布它们的封存值，结束后再公开；密钥参数连判定器的代码也读不到，永远不公开。见
               <HelpLink to="/help/code#params">参数</HelpLink>。
             </p>
           </>

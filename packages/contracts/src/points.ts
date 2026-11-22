@@ -273,7 +273,7 @@ export function pointsRemark(title: string) {
 
 /** The fixed words on every detail page (§9). */
 export const POINTS_EXPLAINER =
-  "三方积分是其他网站的积分，红包站不保管。发红包的人从他在那个网站的账户里出，领到的直接进你在那个网站的账户。积分能做什么、值多少，由那个网站决定，红包站不核对，也不兑换。";
+  "三方积分是其他网站的积分，红包站不保管。红包里的积分从发红包的人在那个网站的账户转出，你领到的直接进你在那个网站的账户。积分能做什么、值多少，由那个网站决定，红包站不核对，也不兑换。";
 
 /** The hint on the 三方｜名称 tag (§9). */
 export function pointsTagHint(host: string) {

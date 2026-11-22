@@ -155,7 +155,7 @@ async function findUser(env: ApiBindings, username: string) {
 
 async function requireInviter(env: ApiBindings, inviter: Inviter) {
   if (!(await balanceAccessFor(env, inviter.id, inviter.isAdmin)).invite)
-    balanceError(403, "BALANCE_NOT_INVITED", "部分功能仅对受邀用户开放。");
+    balanceError(403, "BALANCE_NOT_INVITED", "开通🐟额 PLUS 才能邀请别人。");
 }
 
 /**
@@ -322,7 +322,11 @@ export async function acceptInvite(
       .bind(viewer.id)
       .first()
   )
-    balanceError(409, "INVITE_ALREADY_MEMBER", "你已经可以转入了。");
+    balanceError(
+      409,
+      "INVITE_ALREADY_MEMBER",
+      "你已经开通🐟额 PLUS 了，不用再接受邀请。",
+    );
   const now = Date.now();
   await env.DB.batch([
     env.DB.prepare(
@@ -344,7 +348,11 @@ export async function acceptInvite(
   if (member?.invite_id !== row.id) {
     // Someone else's acceptance, or another invitation, got there first.
     if (member)
-      balanceError(409, "INVITE_ALREADY_MEMBER", "你已经可以转入了。");
+      balanceError(
+        409,
+        "INVITE_ALREADY_MEMBER",
+        "你已经开通🐟额 PLUS 了，不用再接受邀请。",
+      );
     balanceError(409, "INVITE_USED", "这个邀请已经用过了。");
   }
   console.info(
@@ -368,7 +376,12 @@ function refuseLink(row: InviteRow, viewerId: string, member: boolean) {
       "INVITE_OWN",
       "这是以你的名义生成的通用链接，发给要邀请的人就好。",
     );
-  if (member) balanceError(409, "INVITE_ALREADY_MEMBER", "你已经可以转入了。");
+  if (member)
+    balanceError(
+      409,
+      "INVITE_ALREADY_MEMBER",
+      "你已经开通🐟额 PLUS 了，不用再接受邀请。",
+    );
 }
 
 /**

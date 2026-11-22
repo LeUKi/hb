@@ -639,7 +639,7 @@ export async function borrowedVersion(
     throw new ActivityError(
       409,
       "JUDGE_UPDATING",
-      "作者在更新这个判定器，新版本发过红包后才能用。",
+      "作者正在更新这个判定器，要等作者用新版本开放一个红包后才能用。",
     );
   const usable =
     judge &&

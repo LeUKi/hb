@@ -103,12 +103,12 @@ export function PointsChoice({
               )}
             >
               {system
-                ? `从你在 ${system.host} 的账户发，领到的进领取者在那边的账户`
+                ? `每有人领取，就从你在 ${system.host} 的账户直接发给领的人`
                 : chosen
                   ? loaded
                     ? "选的积分现在不能用了，换一个"
                     : "正在读选的积分"
-                  : "用别的网站的积分发：点这里选是哪一种"}
+                  : "用其他网站的积分发红包"}
             </span>
           </span>
           {chosen ? (
@@ -309,7 +309,6 @@ export function KeyDialog({
   const [key, setKey] = useState("");
   const actions = usePointsKeyActions(user?.id ?? "", system.id);
   const save = actions.save;
-  const unit = { unit: system.unit, step: system.step };
   // The server's reason when it turned the key down. Its 503s about the
   // issuer (连不上, 回复看不懂) are answers too: the key is checked before
   // anything is saved. No answer, or another 5xx, says only that it did
@@ -390,8 +389,8 @@ export function KeyDialog({
         </Field>
         <p className="text-xs text-ink-3">
           保存时会向 {system.host}{" "}
-          查一次余额，确认密钥能用；密钥加密保存，只用来发你的「{system.name}
-          」红包。每份至少 {amountText(system.step, unit)}。
+          查一次余额，确认密钥能用。密钥加密保存，只用来发你的「{system.name}
+          」红包。
         </p>
         <Reveal show={save.isPending}>
           <p className="loading-sheen text-sm text-ink-2">

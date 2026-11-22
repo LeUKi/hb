@@ -514,7 +514,7 @@ export async function prepareClaimSubmission(
         throw new ActivityError(
           409,
           "REAL_LDC_CLAIMS_PAUSED",
-          "新领取暂时关闭，请保留原提交稍后重试。",
+          "领取暂时关闭，请稍后再试。",
         );
       await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;

@@ -30,12 +30,12 @@ import { radius, Squircle } from "../ui/squircle";
 type Tab = "featured" | "all" | "mine";
 type Sort = "recent" | "used";
 
-/** 第 3 版 · 10月28日部署 · 开放过 2 个 */
+/** 第 3 版 · 10月28日部署 · 开放过 2 个红包 */
 function lineOf(judge: MyJudge) {
   return [
     judge.latest &&
       `第 ${judge.latest.n} 版 · ${dayLabel(Date.parse(judge.latest.deployedAt))}部署`,
-    judge.opened > 0 && `开放过 ${judge.opened} 个`,
+    judge.opened > 0 && `开放过 ${judge.opened} 个红包`,
   ]
     .filter(Boolean)
     .join(" · ");

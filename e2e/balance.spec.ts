@@ -788,7 +788,7 @@ test.describe("🐟额", () => {
     await name.fill("lafish");
     await expect(
       dialog.getByText(
-        "不能发到 Credit：站长的 Credit 账户收不了平台应用的发放",
+        "不能发到 Credit：站长的 Credit 账户收不了本站发出的 LDC",
       ),
     ).toBeVisible();
     await name.fill("@friend");

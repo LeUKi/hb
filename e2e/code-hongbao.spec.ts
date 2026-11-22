@@ -1075,7 +1075,7 @@ test.describe("代码判定红包", () => {
     const standing = page.locator("[data-hb-part=standing]");
     await expect(standing).toContainText("手里 3 张牌");
     await expect(standing).toContainText(
-      "待结算 0.30 LDC · 判定器结算或红包结束时发",
+      "待结算 0.30 LDC，判定器结算或红包结束时发给你",
     );
     // 我的记录: each move; another's, whose and what it told them.
     const mine = page.locator("[data-hb-part=my-judgments]");
@@ -1573,7 +1573,7 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText("https://api.example.com/hb/")).toBeVisible();
     await expect(dialog.getByText("不联网", { exact: true })).toHaveCount(0);
     await expect(dialog).toContainText(
-      "判定时判定器会请求这些地址，你的提交（数字 ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。",
+      "判定时，判定器会访问这些网址，可能把你的数字 ID、用户名、等级和输入发给这些网站。判定结果取决于这些网站的回复；红包开放后它们的回复也可能变，本站没法核对。",
     );
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
@@ -1615,7 +1615,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
-    const toggle = mine.getByRole("button", { name: "联网返回 · 2 个" });
+    const toggle = mine.getByRole("button", { name: "联网收到的回复 · 2 条" });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -2471,7 +2471,7 @@ test.describe("发红包 · 代码判定", () => {
     await mockDeploys(page);
     await toWriter(page);
     await expect(card(page)).toContainText(
-      "在本地开发包里写好 judge.js，跑过 npm test 再贴过来。贴上就是一个新的判定器，部署以后才能开放。",
+      "在本地开发包里写好 judge.js，跑过 npm test 再贴过来。",
     );
     await expect(card(page).getByRole("button")).toHaveText([
       "粘贴代码",
@@ -2482,7 +2482,7 @@ test.describe("发红包 · 代码判定", () => {
       "今天还能部署 7 次",
     );
     await expect(page.locator("#hb-code-check")).not.toContainText(
-      "把这一版代码做成判定器",
+      "存成判定器的新一版",
     );
   });
 
@@ -2507,7 +2507,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(lines).toHaveText(["1", "2", "3", "4", "5", "6"]);
     await expect(card(page)).not.toContainText("代码指纹");
     await expect(page.locator("#hb-code-check")).toContainText(
-      "部署：把这一版代码做成判定器，在线上跑你的测试。开放前谁也领不到；只改测试再跑，不算部署。",
+      "部署会把这份代码存成判定器的新一版，并在线上跑一遍你的测试。以后只改测试的话，重新跑不算部署次数。",
     );
     await expect(page.locator("#hb-code-check")).toContainText(
       "今天还能部署 7 次",
@@ -2561,7 +2561,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(area).toContainText("联网：https://api.example.com/hb/");
     await expect(area).toContainText("领的人提交的内容可能被发到这些地址。");
     await expect(area).toContainText(
-      "结束后代码公开，写在代码里的令牌也会公开，结束后请作废。",
+      "代码公开后，写在代码里的令牌谁都能看到，到时记得把它作废。",
     );
     await expect(area).toContainText(
       "红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。",
@@ -2636,7 +2636,7 @@ test.describe("发红包 · 代码判定", () => {
     await typeTests(page, changedTests);
     const area = page.locator("#hb-code-check");
     await expect(area).toContainText(
-      "tests.json 改过了：在判定器 第 1 版 上重新跑一遍才能开放。不算部署，不扣次数。",
+      "tests.json 改过了，要在第 1 版上重新跑一遍测试，才能用来发红包。重新跑不算部署次数。",
     );
     await expect(deployButton(page)).toHaveCount(0);
     // The version's own last run still shows on the card.
@@ -2687,7 +2687,7 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(0);
   });
 
-  test("今天的部署次数用完了：新代码部署不了，写明天再来，部署过的判定器换回去照样能开放", async ({
+  test("今天的部署次数用完了：新代码部署不了，写明天再来；没有部署过的版本时不提换回去", async ({
     page,
     context,
   }) => {
@@ -2698,8 +2698,8 @@ test.describe("发红包 · 代码判定", () => {
     const area = page.locator("#hb-code-check");
     await expect(deployButton(page)).toBeDisabled();
     await expect(area).toContainText("今天的 10 次部署用完了，明天再来");
-    await expect(area).toContainText("已经部署过的判定器换回去照样能开放。");
-    await expect(area).not.toContainText("把这一版代码做成判定器");
+    await expect(area).not.toContainText("换回已经部署过的版本");
+    await expect(area).not.toContainText("存成判定器的新一版");
     expect(server.requests).toHaveLength(0);
   });
 
@@ -2775,7 +2775,7 @@ test.describe("发红包 · 代码判定", () => {
       "judge.js · 现在是猜数字 · 第 1 版（已部署 · 测试全过）",
     );
     await expect(dialog).toContainText(
-      "改完就是一个新的判定器：要重新部署才能开放，今天还能部署 6 次。在本地开发包里改、跑过测试再贴回来，更省次数。",
+      "改过的代码要部署，测试全过才能用来发红包，今天还能部署 6 次。在本地开发包里改好并跑过测试，再贴回来，能少用几次部署。",
     );
     // The window itself has focus (no keyboard yet): its warning first.
     await expect(dialog).toBeFocused();
@@ -2792,7 +2792,7 @@ test.describe("发红包 · 代码判定", () => {
       .getByText("小了")
       .click();
     await page.keyboard.type("一点");
-    await expect(dialog).toContainText("改了 1 行 · 会是新的判定器");
+    await expect(dialog).toContainText("改了 1 行");
     await dialog.getByRole("button", { name: "取消" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(open).toBeFocused();
@@ -2817,7 +2817,7 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(1);
   });
 
-  test("部署了测试没过：到它的判定器页，卡上写已部署 · 测试没过，折起的代码也露出标红的行号；按钮灰着，写改出新版本才能再部署", async ({
+  test("部署了测试没过：到它的判定器页，卡上写已部署 · 测试没过，折起的代码也露出标红的行号；按钮灰着，写改了代码才能再部署", async ({
     page,
     context,
   }) => {
@@ -2867,7 +2867,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(button).toHaveAttribute("aria-disabled", "true");
     await expect(page.locator("#hb-code-check")).toBeFocused();
     await expect(page.locator("#hb-code-check")).toContainText(
-      "改出新版本才能再部署 · 今天还能部署 6 次",
+      "改了代码才能再部署 · 今天还能部署 6 次",
     );
     // Pressed anyway (it is only greyed): nothing is sent.
     await button.click({ force: true });
@@ -2897,7 +2897,7 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
     await expect(page.getByText(/要部署这一版才能开放/)).toHaveCount(0);
     await expect(page.locator("#hb-code-check")).toContainText(
-      "改出新版本才能再部署",
+      "改了代码才能再部署",
     );
     await expect(
       page.getByRole("button", { name: "换回第 1 版" }),
@@ -3094,7 +3094,9 @@ test.describe("发红包 · 代码判定", () => {
       page.getByText("判定器会请求这个地址，领的人看得到它。开放后不能改。"),
     ).toBeVisible();
     await expect(
-      page.getByText("你的 LINUX DO 数字 ID 是 24680，部署说明要你填时用它。"),
+      page.getByText(
+        "你的 LINUX DO 数字 ID 是 24680，部署说明里要填 ID 时就填这个。",
+      ),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "怎么填 ↗" })).toHaveAttribute(
       "href",
@@ -3323,7 +3325,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(cardState(page)).toHaveText("已部署 · 测试没过");
     const area = page.locator("#hb-code-check");
     await expect(area).toContainText(
-      "没过的是哪几条没留下：重新跑测试就能看到，不算部署。",
+      "上次是哪几条测试没过，这里没有记下来。重新跑一遍测试就能看到，不算部署次数。",
     );
     await expect(page.getByRole("list", { name: "测试结果" })).toHaveCount(0);
     await area.getByRole("button", { name: "重新跑测试" }).click();
@@ -3413,7 +3415,7 @@ test.describe("发红包 · 代码判定", () => {
       .getByText("小了")
       .click();
     await page.keyboard.type("x");
-    await expect(dialog).toContainText("改了 1 行 · 会是新的判定器");
+    await expect(dialog).toContainText("改了 1 行");
     await page.keyboard.press("Backspace");
     await expect(dialog).toContainText("没有改动");
     await expect(
@@ -3689,7 +3691,7 @@ test.describe("发红包 · 代码判定", () => {
       page.getByRole("button", { name: /^去判定器广场挑一个/ }),
     ).toContainText("站长精选、大家做的，还有我的判定器");
     await expect(page.getByRole("link", { name: /^自己写一个/ })).toContainText(
-      "在新页面写好、部署，再回来挑",
+      "写好并部署以后，回到这里选它",
     );
     // 下一步 with none picked: said under the two.
     await page.getByRole("button", { name: "下一步" }).first().click();
@@ -3708,7 +3710,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.locator("#hb-param-max")).toHaveValue("100");
     const tag = page.getByRole("button", { name: "结束后公开" });
     await expect(tag).toHaveAccessibleDescription(
-      "红包进行中不公开，结束后公开；开放时公布的参数封存值能核对它没被换过。回复里会不会透露它，要看判定器的代码。",
+      "红包进行中不公开，结束后公开，谁都能核对它开放后没被换过。判定器的回复会不会透露它，要看代码怎么写。",
     );
     // 下一步: its own rules first, then its check().
     await page.getByRole("button", { name: "下一步" }).first().click();
@@ -3826,7 +3828,7 @@ test.describe("发红包 · 代码判定", () => {
     const day = `${new Date(openedAt).getMonth() + 1}月${new Date(openedAt).getDate()}日`;
     const row = page.getByRole("link", { name: /猜数字/ });
     await expect(row).toContainText("猜中的领");
-    await expect(row).toContainText(`第 3 版 · ${day}部署 · 开放过 2 个`);
+    await expect(row).toContainText(`第 3 版 · ${day}部署 · 开放过 2 个红包`);
     await row.click();
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
     // Its 判定器页 as others see it, with 编辑 (2026-11-22).

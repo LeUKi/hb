@@ -96,7 +96,7 @@ export function SquareJudgeCard({
  * it is a 旧判定器 (multi-prize §3.6); null when they can.
  */
 export function waitingWords(judge: Pick<SquareJudge, "old" | "updating">) {
-  if (judge.updating !== undefined) return "作者在更新，新版本发过红包后才能用";
+  if (judge.updating !== undefined) return "作者正在更新，暂时用不了";
   if (judge.old) return "作者还没按新规则更新";
   return null;
 }

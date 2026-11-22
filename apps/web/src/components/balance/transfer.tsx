@@ -66,8 +66,8 @@ const transferStatusTone = {
 const notSentText = {
   recipient:
     "Credit 站里找不到对方的账户：对方要先用同一个 LINUX DO 账号登录一次 Credit 站。",
-  self_payment: "Credit 站不能分发给平台应用自己的账户。",
-  configuration: "平台应用在 Credit 站的配置有问题，请稍后再试。",
+  self_payment: "这个 Credit 账户是本站发 LDC 用的账户，不能发给它。",
+  configuration: "本站在 Credit 站的设置出了问题，请稍后再试。",
   validation: "Credit 站没有接受这个数量，换个数量再试。",
 } as const;
 
@@ -375,7 +375,7 @@ export function TransferDialog({
     settings.transferToCreditBlock === "TRANSFER_CREDIT_UNAVAILABLE"
       ? creditBlockText[settings.transferToCreditBlock]
       : known?.owner
-        ? "站长的 Credit 账户收不了平台应用的发放"
+        ? "站长的 Credit 账户收不了本站发出的 LDC"
         : null;
   // Once the recipient is found: whether their 收银台 can take it.
   const checkoutBlock = shown ? (known?.checkoutBlock ?? null) : null;
@@ -662,9 +662,8 @@ export function TransferDialog({
                     <CheckoutReceipts minor={minor} />
                     <p>本站看不到对方的等级，付之前先和对方确认好。</p>
                     <p>
-                      在 Credit 站收银台确认，需要登录 Credit
-                      站并输入安全密码。流转费由 Credit
-                      站从对方实收里扣，本站不另外收费。
+                      在 Credit 站收银台确认，要登录 Credit
+                      站并输入安全密码。本站不另外收费。
                     </p>
                   </div>
                 ) : (
@@ -677,7 +676,8 @@ export function TransferDialog({
               </Swap>
               <Reveal show={credit}>
                 <p className="text-xs text-ink-3">
-                  对方需要先登录过一次 Credit 站；当天额度用完时顺延到第二天。
+                  对方需要先登录过一次 Credit 站。本站每天能发出的 LDC
+                  有上限，当天发完了就顺延到第二天。
                 </p>
               </Reveal>
               <Reveal show={bound !== null}>

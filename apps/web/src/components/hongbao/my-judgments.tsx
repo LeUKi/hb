@@ -32,9 +32,9 @@ import { useHongbaoPageData } from "./use-hongbao-data";
 const ON_PAGE = 3;
 
 const notes: Record<JudgeNote, string> = {
-  cap: "按上限发",
-  floor: "按每份至少发",
-  last: "最后一份，发完剩下的",
+  cap: "判定器给的超过了这一份能发的上限，按上限发给你。",
+  floor: "判定器给的少于每份至少，按每份至少发给你。",
+  last: "这是最后一份，奖池剩下的全部发给你。",
 };
 
 const failed: Record<NonNullable<JudgeFetchAnswer["error"]>, string> = {
@@ -60,7 +60,7 @@ function FetchAnswers({ answers }: { answers: JudgeFetchAnswer[] }) {
         onClick={() => setOpen((current) => !current)}
         className="-ml-0.5 inline-flex items-center gap-0.5 justify-self-start text-xs text-ink-3 hover:text-ink-2"
       >
-        联网返回 · {answers.length} 个
+        联网收到的回复 · {answers.length} 条
         <ChevronDown
           aria-hidden="true"
           className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}

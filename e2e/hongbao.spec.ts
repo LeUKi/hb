@@ -1370,7 +1370,7 @@ test.describe("红包页", () => {
     await page.getByRole("button", { name: "验证其他口令" }).click();
     await omniboxInput(page).fill(passwordOf.mine);
     await page.keyboard.press("Enter");
-    await expect(shown(page, "你已经知道这个口令。")).toBeVisible();
+    await expect(shown(page, "你已经用这个口令领过了。")).toBeVisible();
     expect(state.solves).toHaveLength(0);
     await omniboxInput(page).fill(passwordOf.other);
     await page.keyboard.press("Enter");
@@ -1662,7 +1662,7 @@ test.describe("红包页", () => {
     const dialog = page.getByRole("dialog", { name: "人机验证" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(
-      "浏览器在后台算一小会儿题，不用操作，一两秒就好。",
+      "浏览器正在自动验证，不用操作，一两秒就好。",
     );
     await expect(
       page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),

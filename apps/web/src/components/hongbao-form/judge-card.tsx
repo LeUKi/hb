@@ -205,8 +205,8 @@ function EditCodeBody({
       </header>
       <div className="view-scroll grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-3 overflow-y-auto overscroll-contain px-5">
         <Callout tone="warning" icon={AlertTriangle}>
-          改完就是一个新的判定器：要重新部署才能开放{left}
-          。在本地开发包里改、跑过测试再贴回来，更省次数。
+          改过的代码要部署，测试全过才能用来发红包{left}
+          。在本地开发包里改好并跑过测试，再贴回来，能少用几次部署。
         </Callout>
         <CodeEditor
           id="hb-code-edit"
@@ -224,7 +224,7 @@ function EditCodeBody({
           aria-live="polite"
           className="mr-auto text-xs text-ink-3 tabular-nums"
         >
-          {changed > 0 ? `改了 ${changed} 行 · 会是新的判定器` : "没有改动"}
+          {changed > 0 ? `改了 ${changed} 行` : "没有改动"}
         </span>
         <Button onClick={onClose}>取消</Button>
         <Button
@@ -346,8 +346,6 @@ export function JudgeCard({
               <p className="hb-judge-quiet max-w-[26rem] text-sm leading-6">
                 在本地开发包里写好 judge.js，跑过{" "}
                 <span className="font-mono">npm test</span> 再贴过来。
-                <br />
-                贴上就是一个新的判定器，部署以后才能开放。
               </p>
               {!locked && (
                 <div className="flex flex-wrap justify-center gap-2">

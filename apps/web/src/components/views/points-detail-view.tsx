@@ -175,7 +175,7 @@ export function PointsDetailView({ id }: { id: string }) {
                   {data?.key
                     ? data.key.status === "ok"
                       ? `已填，从 @${data.key.accountUsername ?? "?"} 的账户扣（${clockLabel(data.key.checkedAt)} 核对）`
-                      : `${system.host} 上次说这把密钥无效，换一把才能开放`
+                      : `${system.host} 上次说这把密钥无效，换一把才能开放红包`
                     : `还没填你在 ${system.host} 的密钥`}
                 </span>
                 <span className="flex gap-2">

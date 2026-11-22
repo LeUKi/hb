@@ -26,7 +26,7 @@ const endpoints = [
   ["POST /redemptions/discover", "口令兑换：只找，不领"],
   ["POST /redemptions", "口令兑换：找到一个就领"],
   ["GET /redemptions/{id}", "口令兑换的结果"],
-  ["POST /activities/{id}/page-identity", "附带网页认人"],
+  ["POST /activities/{id}/page-identity", "附带网页确认身份"],
 ] as const;
 
 const errors = [
@@ -221,7 +221,7 @@ for claim in page["items"]:
             按账号算，一个账号的所有令牌合在一起，每分钟最多：读取{" "}
             {PERSONAL_TOKEN_RATE_LIMITS.read} 次，红包广场{" "}
             {PERSONAL_TOKEN_RATE_LIMITS.square} 次，领取和口令兑换合计{" "}
-            {PERSONAL_TOKEN_RATE_LIMITS.claim} 次，附带网页认人{" "}
+            {PERSONAL_TOKEN_RATE_LIMITS.claim} 次，附带网页确认身份{" "}
             {PERSONAL_TOKEN_RATE_LIMITS.identity} 次。
           </p>
           <p>

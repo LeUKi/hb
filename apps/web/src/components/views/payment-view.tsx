@@ -134,7 +134,7 @@ export function Attempts({
   if (rows.length === 0)
     return (
       <Panel className="px-4 py-3 text-sm text-ink-3">
-        还没有向 LDC 发出请求。
+        本站还没有向 Credit 站发出请求。
       </Panel>
     );
   return (
@@ -229,7 +229,10 @@ function StateNoteBody({
   if (payment.status === "failed")
     return (
       <Callout icon={UserRoundX} title="发放失败">
-        {failedPaymentNote(payment)}这笔 LDC 未付出，仍在付款的商户中。
+        {failedPaymentNote(payment)}
+        {admin
+          ? "这笔 LDC 没有付出去，还在红包作者的商户里。"
+          : "这笔 LDC 没有付出去，还在你的商户里。"}
       </Callout>
     );
   if (payment.status === "waiting" && payment.config?.canRepairCredentials)
@@ -237,8 +240,8 @@ function StateNoteBody({
       <Callout tone="warning" icon={KeyRound} title={reason}>
         这笔付款用的是更换前的集市应用，它的密钥失效了。
         {admin
-          ? "要等红包作者在付款详情里更新原订单密钥后继续。"
-          : "在下面“更新原订单密钥”填写它现在的密钥后继续。"}
+          ? "要等红包作者在付款详情里填上它现在的密钥后继续。"
+          : "在下面填上它现在的密钥后继续。"}
       </Callout>
     );
   // The current merchant's 密钥 failed its check: the sender fixes it on
@@ -271,13 +274,13 @@ function StateNoteBody({
     );
   return (
     <Callout tone="warning" icon={Clock3} title={reason ?? "正在发放"}>
-      系统会自动发给 LDC，不会重复付款。
+      本站会自动通过 Credit 站发出这笔 LDC，不会重复付款。
     </Callout>
   );
 }
 
 /**
- * 更新原订单密钥: the order went out through the merchant's previous app
+ * 更新原来集市应用的密钥: the order went out through the merchant's previous app
  * (Client ID changed since), and that app's 密钥 was rejected. Giving its
  * current 密钥 lets the site check and send the original order — never a
  * new one (production: canRepairCredentials).
@@ -323,23 +326,23 @@ function RepairCredential({
               ? "尝试过于频繁，请稍后再试。"
               : refused(failure) && failure.message
                 ? failure.message
-                : "保存没有完成：网络或服务出了问题，原订单密钥没有更新。可以再试一次。",
+                : "保存没有完成：网络或服务出了问题，原来集市应用的密钥没有更新。可以再试一次。",
           ),
       },
     );
   };
   return (
     <PageSection
-      title="更新原订单密钥"
+      title="更新原来集市应用的密钥"
       description="只用于这笔付款原来的集市应用，不会改动当前商户。"
     >
       <LeaveGuard
         when={secret.length > 0 && !busy}
-        message="原订单密钥还没保存，离开后要重新填写。"
+        message="原来集市应用的密钥还没保存，离开后要重新填写。"
       />
       <Panel>
         <form className="grid gap-4 p-5" onSubmit={save} noValidate>
-          <Field label="原订单 Client ID" htmlFor={ids.client}>
+          <Field label="原来的 Client ID" htmlFor={ids.client}>
             <TextInput
               id={ids.client}
               mono
@@ -348,7 +351,7 @@ function RepairCredential({
             />
           </Field>
           <Field
-            label="原订单商户密钥"
+            label="原来的密钥"
             htmlFor={ids.secret}
             hint="在 Credit 站的这个应用里查看现在的密钥。保存后自动检查，密钥不会显示出来。"
           >
@@ -370,7 +373,7 @@ function RepairCredential({
               aria-disabled={!secret || busy || undefined}
               data-disabled={!secret || undefined}
             >
-              {busy ? "正在保存…" : "保存原订单密钥"}
+              {busy ? "正在保存…" : "保存密钥"}
             </Button>
           </div>
         </form>
@@ -403,7 +406,7 @@ function Payment({
   const queryClient = useQueryClient();
   const { identity } = useMerchantIdentity(user.id);
   const query = useAccountPayment(user.id, id);
-  // After 保存原订单密钥 its section is gone: focus (and reading) moves to
+  // After 保存密钥 its section is gone: focus (and reading) moves to
   // the payment's new state.
   const stateRef = useRef<HTMLDivElement>(null);
   const present = useIsPresent();
@@ -573,7 +576,7 @@ function PaymentPage({
               ),
             },
             {
-              label: "上游交易号",
+              label: "Credit 订单号",
               value: payment.externalOrderId ? (
                 <span className="font-mono text-sm">
                   {payment.externalOrderId}
@@ -584,7 +587,7 @@ function PaymentPage({
               action: payment.externalOrderId ? (
                 <CopyButton
                   value={payment.externalOrderId}
-                  label="上游交易号"
+                  label="Credit 订单号"
                 />
               ) : undefined,
             },
@@ -627,8 +630,8 @@ function PaymentPage({
         title="处理记录"
         description={
           payment.nextAttemptsCursor
-            ? "本站每次向 LDC 发出的请求和查单（最近 20 条）。"
-            : "本站每次向 LDC 发出的请求和查单。"
+            ? "本站每次向 Credit 站发出的付款请求和查单（最近 20 条）。"
+            : "本站每次向 Credit 站发出的付款请求和查单。"
         }
       >
         <Attempts payment={payment} />

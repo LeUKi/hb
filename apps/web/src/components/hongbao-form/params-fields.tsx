@@ -519,7 +519,7 @@ function KeyField({
           <>
             只会发给{typeof item.to === "string" && " "}
             <span className="break-all">{to}</span>
-            ，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。
+            ，判定器的代码读不到。保存后不再显示，红包结束后删除。调用产生的费用算在这个密钥的账户上。
           </>,
           item.guide && <Guide item={item} />,
         )}
@@ -711,7 +711,7 @@ export function ParamsFields({
                               : ""
                           }领的人看得到它。开放后不能改。`,
                           ownId &&
-                            `你的 LINUX DO 数字 ID 是 ${ownId}，部署说明要你填时用它。`,
+                            `你的 LINUX DO 数字 ID 是 ${ownId}，部署说明里要填 ID 时就填这个。`,
                         ]
                       : [];
                   if (item.type === "switch")

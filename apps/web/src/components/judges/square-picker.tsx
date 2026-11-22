@@ -54,7 +54,7 @@ export function SquarePicker({
   const shown = tab === "mine" ? mine : square;
   const empty =
     tab === "mine"
-      ? "还没有判定器"
+      ? "还没有测试全过的判定器"
       : tab === "featured"
         ? "还没有精选的判定器"
         : "广场上还没有判定器";

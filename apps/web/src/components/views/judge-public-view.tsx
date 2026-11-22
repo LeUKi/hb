@@ -86,9 +86,9 @@ export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
       total?.default === undefined ? null : `${ldc(total.default)} LDC`,
     ),
     rules.deadline &&
-      `截止默认 ${rules.deadline.value} ${units[rules.deadline.unit]}`,
+      `默认开放 ${rules.deadline.value} ${units[rules.deadline.unit]}后截止`,
     rules.humanCheck && "建议打开领取前人机验证",
-    rules.pageAutoOpen && "建议打开红包页时自动打开附带网页",
+    rules.pageAutoOpen && "建议进入红包页时自动打开附带网页",
     rules.title && `默认标题：${rules.title}`,
   ].filter((item): item is string => Boolean(item));
 }
@@ -457,9 +457,8 @@ export function PublicJudgePage({
             {/* 在更新 (judge-square §17): why, and until when. */}
             {judge.updating !== undefined && !judge.own && (
               <span className="mt-2 block text-ink-2">
-                作者部署了第 {judge.updating} 版，还没用它开放过红包。作者用第{" "}
-                {judge.updating} 版发过红包以后，大家就能用第 {judge.updating}{" "}
-                版。
+                作者部署了新的第 {judge.updating}{" "}
+                版，用它开放一个红包以后，大家才能再用这个判定器。
               </span>
             )}
           </>
@@ -554,7 +553,7 @@ export function PublicJudgePage({
         <PageSection title="参数">
           <Panel className="grid px-4">
             {params.length === 0 ? (
-              <p className="py-3 text-sm text-ink-2">没有参数，挑了就能发。</p>
+              <p className="py-3 text-sm text-ink-2">没有要填的参数。</p>
             ) : (
               params.map((item) => (
                 <div

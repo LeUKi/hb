@@ -398,7 +398,7 @@ function DrawPage({ data }: { data: DrawData }) {
         description={
           open
             ? "按报名先后排好。截止时冻结，算出名单哈希。"
-            : "截止时冻结，按报名先后排好。名单哈希在截止时就推送出去。"
+            : "截止时冻结名单，按报名先后排好。名单哈希在截止那一刻就公布了。"
         }
       >
         <div className="grid gap-3">

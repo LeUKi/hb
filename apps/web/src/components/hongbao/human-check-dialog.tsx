@@ -25,7 +25,7 @@ function problemText(code: string) {
 /** Said while Turnstile's script loads (shown, and in the status line). */
 const TURNSTILE_WAIT = "正在加载人机验证…";
 /** Said while Cap works (shown, and in the status line). */
-const CAP_WAIT = "浏览器在后台算一小会儿题，不用操作，一两秒就好。";
+const CAP_WAIT = "浏览器正在自动验证，不用操作，一两秒就好。";
 
 /** The widget: Turnstile draws its own spinner, then passes on its own. */
 function TurnstileWidget({

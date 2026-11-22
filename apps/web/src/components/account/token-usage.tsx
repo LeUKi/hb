@@ -25,15 +25,15 @@ function detail(bucket: PersonalTokenUsageBucket, span: "hours" | "days") {
     `读取 ${bucket.read}`,
     `红包广场 ${bucket.square}`,
     `领取和口令 ${bucket.claim}`,
-    `认人 ${bucket.identity}`,
+    `确认身份 ${bucket.identity}`,
   ];
   if (bucket.limited) parts.push(`限流 ${bucket.limited}`);
-  if (bucket.paused) parts.push(`总开关关着时 ${bucket.paused}`);
+  if (bucket.paused) parts.push(`站长关闭令牌时被拒 ${bucket.paused}`);
   return `${label(bucket.at, span)}：${parts.join("，")}`;
 }
 
-/** “每分钟最多：读取 60，红包广场 20，领取和口令 20，认人 20”. */
-export const limitsLine = `每个账号每分钟最多：读取 ${PERSONAL_TOKEN_RATE_LIMITS.read} 次，红包广场列表 ${PERSONAL_TOKEN_RATE_LIMITS.square} 次，领取和口令兑换合计 ${PERSONAL_TOKEN_RATE_LIMITS.claim} 次，附带网页认人 ${PERSONAL_TOKEN_RATE_LIMITS.identity} 次。`;
+/** “每分钟最多：读取 60，红包广场 20，领取和口令 20，确认身份 20”. */
+export const limitsLine = `每个账号每分钟最多：读取 ${PERSONAL_TOKEN_RATE_LIMITS.read} 次，红包广场列表 ${PERSONAL_TOKEN_RATE_LIMITS.square} 次，领取和口令兑换合计 ${PERSONAL_TOKEN_RATE_LIMITS.claim} 次，附带网页确认身份 ${PERSONAL_TOKEN_RATE_LIMITS.identity} 次。`;
 
 export function TokenUsageChart({ usage }: { usage: PersonalTokenUsage }) {
   const [span, setSpan] = useState<"hours" | "days">("hours");

@@ -256,7 +256,9 @@ test.describe("判定记录", () => {
     await dialog.getByRole("button", { name: "关闭" }).click();
     await page.getByRole("button", { name: "按内容" }).click();
     await expect(
-      page.getByText("按次数从多到少。发没发按那一次判定器的判定。"),
+      page.getByText(
+        "同样的内容合成一行，按提交次数从多到少排。每一次提交发没发，看的是判定器那一次的判定。",
+      ),
     ).toBeVisible();
     await expect(page.getByText("没发 1 次")).toBeVisible();
   });

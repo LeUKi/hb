@@ -360,7 +360,7 @@ function Payments({
                 <Callout
                   tone="warning"
                   icon={KeyRound}
-                  title={`有 ${summary.repairableCount} 笔付款等你更新原订单密钥`}
+                  title={`有 ${summary.repairableCount} 笔付款等你更新原来集市应用的密钥`}
                 >
                   <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span>商户换过 Client ID，原应用的密钥失效了。</span>

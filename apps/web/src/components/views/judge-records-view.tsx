@@ -361,7 +361,7 @@ function ContentList({
   return (
     <PageSection
       title="提交的内容"
-      description="按次数从多到少。发没发按那一次判定器的判定。"
+      description="同样的内容合成一行，按提交次数从多到少排。每一次提交发没发，看的是判定器那一次的判定。"
     >
       <ResultLoad
         id="content"

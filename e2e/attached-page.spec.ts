@@ -511,7 +511,7 @@ test.describe("附带网页", () => {
     expect(decodeURI(referrers[0] ?? "")).toContain(path);
 
     // Hidden, it stays loaded: back again, the same page, not read again.
-    await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
+    await page.getByRole("button", { name: "隐藏（网页不会关闭）" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(frame).toHaveCount(1);
@@ -673,7 +673,12 @@ test.describe("附带网页", () => {
     expect(title?.y ?? 99).toBeLessThan(32);
     // Only what is for the page itself: 刷新 and 退出全屏.
     await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
-    for (const name of ["在新标签页打开", "收窄", "放宽", "隐藏（不会卸载）"])
+    for (const name of [
+      "在新标签页打开",
+      "收窄",
+      "放宽",
+      "隐藏（网页不会关闭）",
+    ])
       await expect(page.getByRole("button", { name })).toHaveCount(0);
     await expect(page.getByRole("separator")).toHaveCount(0);
     // The 红包 window under it, as it was, out of reach: none of its parts
@@ -700,7 +705,7 @@ test.describe("附带网页", () => {
     await expect.poll(box).toEqual(beside);
     await expect(main).not.toHaveAttribute("inert");
     await expect(page.getByRole("separator")).toBeVisible();
-    for (const name of ["在新标签页打开", "收窄", "隐藏（不会卸载）"])
+    for (const name of ["在新标签页打开", "收窄", "隐藏（网页不会关闭）"])
       await expect(page.getByRole("button", { name })).toBeVisible();
 
     // And with its button; not kept: reloaded, the windows side by side.
@@ -729,7 +734,7 @@ test.describe("附带网页", () => {
     await page.locator("button.hb-chip-hit", { hasText: "附带网页" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     await expect.poll(() => loads).toEqual([pageUrl]);
-    await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
+    await page.getByRole("button", { name: "隐藏（网页不会关闭）" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
     // `[打开谜题](#附带网页)` in the 说明 is a button, not a link.
     await expect(page.getByRole("link", { name: "打开谜题" })).toHaveCount(0);
@@ -806,7 +811,7 @@ test.describe("附带网页", () => {
         .getByText("今日第 3 题"),
     ).toBeVisible();
     expect(loads).toEqual([pageUrl]);
-    await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
+    await page.getByRole("button", { name: "隐藏（网页不会关闭）" }).click();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await page.reload();
     await expect(toggle).toBeVisible();

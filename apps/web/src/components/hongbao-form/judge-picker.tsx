@@ -53,7 +53,7 @@ export function JudgeEntries({
     {
       key: "write",
       title: "自己写一个",
-      line: "在新页面写好、部署，再回来挑",
+      line: "写好并部署以后，回到这里选它",
       icon: PenLine,
       lacquer: false,
       href: "/judges/new",

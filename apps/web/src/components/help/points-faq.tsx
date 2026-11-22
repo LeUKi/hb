@@ -25,7 +25,7 @@ export const pointsFaq: HelpChapter[] = [
         a: (
           <>
             <p>
-              三方积分是别的网站发行、自己记账的积分。接进来以后，大家发红包时可以选它：红包作者从他在你网站的账户里出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。
+              三方积分是别的网站发行、自己记账的积分。接进来以后，大家发红包时可以选它：红包里的积分从红包作者在你网站的账户转出，领到的直接进领取者在你网站的账户。红包站不保管、不兑换这些积分。
             </p>
             <p>
               适合自己记着积分账本、用户绑定了 LINUX DO 数字
@@ -53,7 +53,7 @@ export const pointsFaq: HelpChapter[] = [
             <ul className="grid gap-1.5">
               <li>
                 <b className={label}>查余额</b>（<Code>/balance</Code>
-                ）：回这把密钥的账户和可用。
+                ）：回这把密钥的账户和可用余额。
               </li>
               <li>
                 <b className={label}>发放</b>（<Code>/transfer</Code>

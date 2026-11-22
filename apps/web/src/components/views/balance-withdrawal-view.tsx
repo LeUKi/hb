@@ -32,9 +32,9 @@ export function withdrawalWaitText(withdrawal: BalanceWithdrawal) {
         ? `平台今天的额度用完了，${clockLabel(withdrawal.resumeAt)} 后继续发。`
         : "平台今天的额度用完了，0 点后继续发。";
     case "funds":
-      return "在等平台账户：LDC 暂时不够，补足后接着发。";
+      return "本站的 LDC 暂时不够，站长补足后接着发。";
     case "credentials":
-      return "在等平台应用的凭证重新检查通过，之后接着发。";
+      return "本站在 Credit 站的密钥要重新检查，通过后接着发。";
     case "checking":
       return "正在向 Credit 站确认…";
     case "attention":
@@ -47,8 +47,8 @@ export function withdrawalWaitText(withdrawal: BalanceWithdrawal) {
 const failureText = {
   recipient:
     "Credit 站里找不到你的账户。先用同一个 LINUX DO 账号登录一次 Credit 站，再转出一次。",
-  self_payment: "Credit 站不能分发给平台应用自己的账户。",
-  configuration: "平台应用在 Credit 站的配置有问题，请稍后再试。",
+  self_payment: "这个 Credit 账户是本站发 LDC 用的账户，不能发给它。",
+  configuration: "本站在 Credit 站的设置出了问题，请稍后再试。",
   validation: "Credit 站没有接受这个数量，换个数量再试。",
 } as const;
 

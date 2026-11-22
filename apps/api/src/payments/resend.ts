@@ -91,7 +91,7 @@ export async function resendClaimPayment(
     throw new ActivityError(
       409,
       "PAYMENT_RESEND_CLOSED",
-      "红包作者已更换收款配置，这笔不能重新发送。",
+      "红包作者换了 LDC 商户，这笔不能重新发送。",
     );
   if (
     !allowsRealSending(env, await readPlatformControls(env)) ||

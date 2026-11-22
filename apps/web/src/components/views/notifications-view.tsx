@@ -87,7 +87,7 @@ function Notifications({ view }: { view: NoticeSettingsView }) {
         ))}
       {view.availability !== "owner" && (
         <p className="px-1 text-sm text-ink-3">
-          红包上的“开放时提醒我”和红包广场上的“下一个红包开放时提醒我”，设一次提醒一次，不在这里开关。
+          红包上的“开放时提醒我”和红包广场上的“下一个红包开放时提醒我”都只提醒一次，要在那两处设置，这里没有开关。
         </p>
       )}
       {view.availability !== "owner" && (

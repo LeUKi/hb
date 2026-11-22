@@ -26,7 +26,7 @@ function blockedText(page: InvitePage) {
     return invite.username === null
       ? "这是以你的名义生成的通用链接，发给要邀请的人就好。"
       : `这是你发出的邀请，把链接发给 @${invite.username} 就好。`;
-  if (viewer.member) return "你已经可以转入了。";
+  if (viewer.member) return "你已经开通🐟额 PLUS 了，不用再接受邀请。";
   if (!viewer.matches)
     return `这个邀请是给 @${invite.username} 的，你现在登录的是 @${viewer.username}。用那个账号登录后再打开这个链接。`;
   return null;
@@ -120,7 +120,7 @@ export function InviteView({ token }: { token: string }) {
                 %）全部由 Credit 站收取，本站没有任何收益；转出会自动发回你的
                 Credit 账户。
               </p>
-              <p>🐟额在头像打开的用户卡片里，也可以输入 /balance。</p>
+              <p>🐟额的入口在头像菜单里，也可以输入 /balance。</p>
             </div>
             {blocked ? (
               <div className="grid gap-3">

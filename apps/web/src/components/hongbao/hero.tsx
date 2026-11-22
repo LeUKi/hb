@@ -218,8 +218,8 @@ function ActionHint({
             <p className="text-sm text-ink-2">
               <RollingText
                 text={`待结算 ${amountText(standing.pending, activity.unit)}`}
-              />{" "}
-              · 判定器结算或红包结束时发
+              />
+              ，判定器结算或红包结束时发给你
             </p>
           </div>
         )}

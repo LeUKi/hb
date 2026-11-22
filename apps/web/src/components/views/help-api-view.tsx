@@ -144,7 +144,7 @@ const errors = [
   ["DAILY_LIMIT_EXCEEDED", "409", "已超过这个密钥的每日上限"],
   ["OUT_TRANSFER_NO_CONFLICT", "409", "单号已用过（内容不一样）"],
   ["AMOUNT_OUT_OF_RANGE", "400", "发到 Credit 的数量不在范围里"],
-  ["RECIPIENT_IS_OWNER", "400", "站长的 Credit 账户收不了平台应用的发放"],
+  ["RECIPIENT_IS_OWNER", "400", "站长的 Credit 账户收不了本站发出的 LDC"],
   ["TRANSFER_DISABLED", "403", "转账暂时关闭"],
   ["TRANSFER_NOT_ALLOWED", "403", "密钥的主人不能转账（要开通🐟额 PLUS）"],
   ["WITHDRAW_DISABLED", "403", "转出暂停中，不能发到 Credit"],

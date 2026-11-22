@@ -121,7 +121,7 @@ export async function createTopup(
 ): Promise<{ topup: BalanceTopup; cashierUrl: string | null }> {
   // 转入 is for those invited (docs/balance-design.md §13).
   if (!(await balanceAccessFor(env, userId, false)).topup)
-    balanceError(403, "BALANCE_NOT_INVITED", "部分功能仅对受邀用户开放。");
+    balanceError(403, "BALANCE_NOT_INVITED", "开通🐟额 PLUS 才能转入。");
   const digest = await sha256Hex(
     `balance-topup:${JSON.stringify({ settingsVersion: input.settingsVersion, by: input.by, amount: input.amount })}`,
   );

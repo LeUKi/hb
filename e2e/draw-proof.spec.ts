@@ -431,9 +431,7 @@ test.describe("开奖证明", () => {
     // The round fetched: the next read (every second while drawing) says so.
     fetched();
     await expect(
-      page.getByText(
-        "已取到随机数，正在算中奖名单并创建付款，结果出来后显示在这里。",
-      ),
+      page.getByText("已取到随机数，正在算中奖名单，结果出来后显示在这里。"),
     ).toBeVisible({ timeout: 3_000 });
   });
 
@@ -455,7 +453,7 @@ test.describe("开奖证明", () => {
       timeout: 6_000,
     });
     fetched();
-    await expect(page.getByText("已取到随机数，正在创建付款…")).toBeVisible({
+    await expect(page.getByText("已取到随机数，正在出结果…")).toBeVisible({
       timeout: 3_000,
     });
   });

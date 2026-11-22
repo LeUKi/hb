@@ -54,7 +54,7 @@ type Made = {
   featurable: boolean;
 };
 
-const FEATURABLE_HINT = "站长可以原样选入，或者改进后选入，署名保留。";
+const FEATURABLE_HINT = "站长可以原样或改进后选入精选，都会保留你的署名。";
 
 /**
  * 代码公开 and 加入判定器广场 before there is a 判定器, asked as on its
@@ -320,13 +320,13 @@ function NewJudge({
           frozen={false}
           judge={deploy}
           gated={false}
-          testsNote={seed ? "原作者的测试不公开，要自己写。" : undefined}
+          testsNote={seed ? "原作者的测试不会复制过来，要自己写。" : undefined}
           beforeDeploy={
             <>
               <NewSettings value={settings} onChange={setSettings} />
               {reachesOut && (
                 <p className="text-sm text-ink-2">
-                  新判定器要是和你别的判定器共用服务器或附带网页，改它们时要让旧的也照样能用：开放过的红包会一直用它们开放时的那一版。
+                  开放过的红包会一直用开放时的那一版判定器。这个判定器要是和你别的判定器共用服务器或附带网页，改服务器或网页时，要让旧版也照样能用，不然那些红包会领不到。
                 </p>
               )}
             </>

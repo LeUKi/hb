@@ -284,7 +284,7 @@ function MyTips({ user }: { user: SessionUser }) {
           />
           {!data.enabled && (
             <Callout tone="warning" title="打赏暂时关闭">
-              打赏卡都显示“打赏暂停”，不能新打赏，也不能新建打赏卡。
+              所有打赏卡都显示“打赏暂停”，这期间不能打赏，也不能新建打赏卡。
             </Callout>
           )}
           <ReceivingNotice receiving={data.receiving} />

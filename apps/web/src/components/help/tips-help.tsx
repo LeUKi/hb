@@ -109,7 +109,7 @@ export const tipsChapters: HelpChapter[] = [
             </li>
             <li>
               <b className="font-medium text-ink">目标</b>
-              ：标准样式才有。卡上显示从开目标（或改目标数额）起这张卡收到了多少，到了以后照常能打赏。
+              ：标准样式才有。卡上显示从打开目标（或改了目标数额）以后这张卡收到了多少；达到目标后照样能打赏。
             </li>
             <li>
               <b className="font-medium text-ink">最近和总榜</b>

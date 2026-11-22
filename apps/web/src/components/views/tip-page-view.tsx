@@ -26,7 +26,7 @@ export function TipCardPageView({ code }: { code: string }) {
     return (
       <MessageView
         title="没有找到这张打赏卡"
-        text="链接不对，或者它的主人已经不在了。"
+        text="链接不对，或者这张打赏卡已经不能用了。"
       />
     );
   return (

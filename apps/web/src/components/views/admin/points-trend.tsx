@@ -109,7 +109,7 @@ export function PointsTrend({ days }: { days: PointsTrendDay[] }) {
             className="min-h-5 text-xs text-ink-2 tabular-nums"
             aria-live="polite"
           >
-            {current ? readout(current) : "指向或选中一天，看那天的数。"}
+            {current ? readout(current) : null}
           </p>
         </>
       )}

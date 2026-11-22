@@ -598,7 +598,7 @@ describe("在更新 and 撤回 (§17)", () => {
     });
     await expect(borrow(judge.id, await sender())).rejects.toMatchObject({
       code: "JUDGE_UPDATING",
-      message: "作者在更新这个判定器，新版本发过红包后才能用。",
+      message: "作者正在更新这个判定器，要等作者用新版本开放一个红包后才能用。",
     });
     // Picked before: saved again and opened, as it was.
     await openActivity(bindings, kept.id, keeper.id, kept.version);

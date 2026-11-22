@@ -24,7 +24,8 @@ import { PasswordText } from "./password-text";
 import { TitleBadges } from "./title-badge";
 
 /** What the key on a 名单 row means (docs/personal-token-design.md §8). */
-const TOKEN_HINT = "用个人令牌领的：脚本或客户端，不是在网页上点的。";
+const TOKEN_HINT =
+  "用个人令牌领的，也就是通过脚本或客户端领取，不是在网页上点的。";
 
 const paymentText = {
   success: "text-success",

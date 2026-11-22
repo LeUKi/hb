@@ -197,7 +197,7 @@ export function RosterPanel({
         {data.author && (
           <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">
             <span>
-              你发的红包：每行多一行
+              这是你发的红包，每个人下面会多显示
               {activity.participation === "password"
                 ? "口令和"
                 : activity.participation === "code"

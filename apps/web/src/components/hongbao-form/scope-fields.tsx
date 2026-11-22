@@ -71,7 +71,7 @@ function PersonChip({
         "inline-flex h-8 items-center gap-1.5 rounded-full bg-fill pl-1.5 text-sm",
         onRemove ? "pr-1" : "pr-3",
       )}
-      title={unknown ? "还没来过本站，按用户名认" : undefined}
+      title={unknown ? "还没来过本站，登录时按用户名认出来" : undefined}
     >
       <Avatar
         name={person.displayName ?? person.username}
@@ -219,7 +219,7 @@ function BatchPeopleDialog({
         <div className="grid gap-1 text-xs">
           <Reveal show={unknown > 0}>
             <p className="text-ink-3">
-              灰色的 {unknown} 人还没来过本站，按用户名认。
+              灰色的 {unknown} 人还没来过本站，等对方登录时按用户名认出来。
             </p>
           </Reveal>
           <Reveal show={already > 0}>
@@ -347,7 +347,7 @@ function ScopePeople({
             <PersonLine person={found} />
           ) : (
             <p className="text-xs text-ink-3">
-              这个人还没来过本站，按用户名认。
+              这个人还没来过本站，等对方登录时按用户名认出来。
             </p>
           )}
         </Reveal>

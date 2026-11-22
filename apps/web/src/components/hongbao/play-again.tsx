@@ -244,7 +244,7 @@ function HongbaoSquareLine() {
 function AuthorLine({ activity }: { activity: HongbaoActivity }) {
   const note =
     activity.participation === "code"
-      ? "判定器和公开的参数照旧，结束后公开的参数要重新填"
+      ? "照这个红包填好，结束后公开的参数要重新填"
       : activity.participation === "password"
         ? "照这个红包填好，口令要重新写"
         : "照这个红包填好，改改就能发";

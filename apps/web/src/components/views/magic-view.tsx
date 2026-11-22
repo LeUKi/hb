@@ -48,7 +48,7 @@ function whatOf(hop: Hop) {
     case "tips":
       return "你的打赏卡和收到的打赏";
     case "credit":
-      return "打赏的付款页在 credit.linux.do，几分钟内有效";
+      return "打赏的付款页（在 credit.linux.do，几分钟内有效）";
     case "page":
       return `红包站的 ${decodeURI(hop.to)}`;
   }
@@ -230,7 +230,7 @@ function Countdown({ hop }: { hop: Hop }) {
             {verb}。
           </>
         ) : (
-          `${whatOf(hop)}。已停下，需要时点“${verb}”。`
+          `已停止倒计时。要${verb}${whatOf(hop)}，点“${verb}”。`
         )
       }
       actions={
@@ -317,7 +317,7 @@ function NothingAsked({
       route="broken"
       title="没有要打开的页面"
       text="社区小程序打开红包站时，会经过这里。"
-      note={`刚在社区点过的话，可能这里登录的 @${username}，不是社区里那个账号。`}
+      note={`如果你刚在社区里点过，可能是这里登录的 @${username} 和社区里的不是同一个账号。`}
       actions={
         <>
           <HomeButton />

@@ -39,8 +39,8 @@ export function useDrawStep(view: PublicView) {
   if (!frozen) return null;
   if (frozen.randomness)
     return {
-      hint: "已取到随机数，正在创建付款…",
-      note: "已取到随机数，正在算中奖名单并创建付款，结果出来后显示在这里。",
+      hint: "已取到随机数，正在出结果…",
+      note: "已取到随机数，正在算中奖名单，结果出来后显示在这里。",
       beat: "random",
     };
   const roster =

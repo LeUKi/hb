@@ -461,8 +461,8 @@ function Balance({ user }: { user: SessionUser }) {
           </Panel>
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">
-              有 {summary.openTopups} 笔转入还没到账。在 Credit
-              确认过的，打开它就会去 Credit 站查。
+              有 {summary.openTopups} 笔转入还没到账。如果已经在 Credit
+              站付过，点开明细里的那一笔，本站就会去 Credit 站查。
             </Callout>
           </Reveal>
           {/* Above 明细: the list loads on as it is scrolled, never ending. */}
@@ -872,7 +872,8 @@ function WithdrawDialog({
         />
       </Field>
       <p className="text-xs text-ink-3">
-        需要先登录过一次 Credit；当天额度用完时顺延到第二天。
+        你需要先登录过一次 Credit 站。本站每天能发出的 LDC
+        有上限，当天发完了就顺延到第二天。
       </p>
       {/* Only once an amount is out of bounds, and which bound. */}
       <Reveal show={bound !== null}>

@@ -596,7 +596,7 @@ test.describe("发红包", () => {
     await input.blur();
     await expect(byItself).not.toBeChecked();
     await expect(field).toContainText(
-      "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后到结束前不能改。",
+      "第一次打开某个网站前，仍会先问看的人。看的人自己关掉过，下次就不再自动打开。开放后到结束前不能改。",
     );
     await byItself.click();
     await expect(byItself).toBeChecked();
@@ -870,7 +870,9 @@ test.describe("发红包", () => {
     await expect(scope).toContainText("小满 @XiaoMan");
     await field.press("Enter");
     await field.fill("newcomer");
-    await expect(scope).toContainText("这个人还没来过本站，按用户名认。");
+    await expect(scope).toContainText(
+      "这个人还没来过本站，等对方登录时按用户名认出来。",
+    );
     await scope.getByRole("button", { name: "添加", exact: true }).click();
     await expect(scope.getByRole("button", { name: /^去掉 @/ })).toHaveCount(2);
     await expect(scope).toContainText(
@@ -926,7 +928,9 @@ test.describe("发红包", () => {
       .fill(
         "@XiaoMan, newcomer\nhttps://linux.do/u/third/summary 张三 xiaoman",
       );
-    await expect(batch).toContainText("灰色的 2 人还没来过本站，按用户名认。");
+    await expect(batch).toContainText(
+      "灰色的 2 人还没来过本站，等对方登录时按用户名认出来。",
+    );
     await expect(batch).toContainText("这些不是用户名，不会加：张三");
     // All of them in one request.
     expect(asked).toEqual([["newcomer", "third", "xiaoman"]]);

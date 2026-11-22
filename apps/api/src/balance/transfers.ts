@@ -275,7 +275,7 @@ async function checkTransfer(
       balanceError(
         400,
         "RECIPIENT_IS_OWNER",
-        "站长的 Credit 账户收不了平台应用的发放",
+        "站长的 Credit 账户收不了本站发出的 LDC",
       );
     const hour = await env.DB.prepare(
       `SELECT COUNT(*) AS count,MIN(created_at) AS oldest FROM balance_withdrawals

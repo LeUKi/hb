@@ -202,7 +202,9 @@ test.describe("付款记录", () => {
         .getByText("1 笔，其中 1 笔已暂停")
         .or(page.getByText("2 笔，其中 1 笔已暂停")),
     ).toBeVisible();
-    await expect(page.getByText("有 1 笔付款等你更新原订单密钥")).toBeVisible();
+    await expect(
+      page.getByText("有 1 笔付款等你更新原来集市应用的密钥"),
+    ).toBeVisible();
     await expect(page.getByText("有 1 笔付款发送已暂停")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "周末红包", level: 2 }),
@@ -296,7 +298,7 @@ test.describe("付款记录", () => {
     await expect(one).toBeVisible();
   });
 
-  test("付款详情：更新原订单密钥后转为核对中", async ({ page }) => {
+  test("付款详情：更新原来集市应用的密钥后转为核对中", async ({ page }) => {
     await mockSession(page, viewer);
     let repaired = false;
     const id = "11111111-2222-4333-8444-555555555551";
@@ -333,15 +335,15 @@ test.describe("付款记录", () => {
         "订单用的是更换前的 Client ID；商户现在是 new_client_2026。",
       ),
     ).toBeVisible();
-    await expect(page.getByLabel("原订单 Client ID")).toHaveValue(
+    await expect(page.getByLabel("原来的 Client ID")).toHaveValue(
       "old_client_2025",
     );
-    await page.getByLabel("原订单商户密钥").fill("local-test-only");
-    await page.getByRole("button", { name: "保存原订单密钥" }).click();
+    await page.getByLabel("原来的密钥").fill("local-test-only");
+    await page.getByRole("button", { name: "保存密钥" }).click();
     await expect(
       page.getByText("付款结果尚未明确，正在核对原订单。").first(),
     ).toBeVisible();
-    await expect(page.getByLabel("原订单商户密钥")).toBeHidden();
+    await expect(page.getByLabel("原来的密钥")).toBeHidden();
     expect(sent[0]).toMatchObject({ version: 3, secret: "local-test-only" });
   });
 });

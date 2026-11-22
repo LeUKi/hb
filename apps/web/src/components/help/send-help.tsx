@@ -368,7 +368,7 @@ export const sendChapters: HelpChapter[] = [
               有上线的三方积分时，“发多少”的“从哪发”里多一项“三方积分”：选好用哪一种，再填你在那个网站生成的密钥。有人领取时，本站用这把密钥从你在那个网站的账户直接转给领取者，不预先扣下。
             </p>
             <p>
-              开放时要你在那边的余额够发这个红包（加上同一把密钥下别的红包还没发出的部分）；之后余额不够或密钥失效，红包会立刻结束。代码判定红包要用声明了支持三方积分的判定器。
+              开放时要你在那边的余额够发这个红包（加上同一把密钥下别的红包还没发出的部分）；之后余额不够或密钥失效，红包会立刻结束。代码判定红包只能用支持三方积分的判定器。
             </p>
           </>
         ),
@@ -458,7 +458,7 @@ export const sendChapters: HelpChapter[] = [
             <ul className="grid gap-1.5">
               <li>
                 <Label>在看人数</Label>
-                ：红包页左上角，点开能看同时最多、来看过的人数和曲线。只算登录后开着这一页的人。
+                ：红包页左上角。点开能看到最多同时有几人在看、一共来看过几人，还有人数曲线。
               </li>
               <li>
                 <Label>尝试统计</Label>
@@ -513,7 +513,7 @@ export const sendChapters: HelpChapter[] = [
       // source: docs/redesign/07-pages.md §8 (更新原订单密钥), apps/web/src/components/views/payment-view.tsx, apps/web/src/components/views/payments-view.tsx
       {
         id: "q-order-key",
-        q: "什么时候要更新原订单密钥？",
+        q: "什么时候要更新原来集市应用的密钥？",
         a: (
           <>
             <p>
@@ -521,7 +521,7 @@ export const sendChapters: HelpChapter[] = [
               ID，而一笔还没确认的付款用的是换之前的集市应用，那个应用的密钥又失效了。这时
               <HelpLink to="/payments">付款记录</HelpLink>
               顶上会写“有 N
-              笔付款等你更新原订单密钥”，点进那一笔，在“更新原订单密钥”里填旧应用现在的密钥，系统会接着核对原订单。
+              笔付款等你更新原来集市应用的密钥”，点进那一笔，在“更新原来集市应用的密钥”里填旧应用现在的密钥，系统会接着核对原订单。
             </p>
             <p>
               它只用于那一笔原来的应用，不改动当前商户。当前商户的密钥没通过检查时，到
