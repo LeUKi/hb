@@ -16,13 +16,16 @@ import {
 } from "./page-url";
 import {
   amountToMinor,
+  formatAmount,
   type LdcOpeningBlockedReason,
   type Merchant,
   type MerchantPayment,
   type MerchantPaymentDetail,
   moneySchema,
+  PAYOUT_SAFE_SHARE_MINOR,
   type PaymentMode,
   type PaymentView,
+  payoutShareCap,
 } from "./payments";
 import { type ActivityPoints, pointsSnapshotSchema } from "./points";
 import type { PublicUserProfile } from "./profile";
@@ -258,6 +261,15 @@ const baseActivitySchema = z.strictObject({
   pageAutoOpen: z.boolean().optional(),
 });
 
+/**
+ * 每人上限 (docs/payout-cap-design.md §1) as saved: the most one share of
+ * a 拼手气 or 限时开奖 can be, or one person can get from a 代码判定红包.
+ * Written by the server from funding and 「单份可以超过 800 LDC」
+ * (withShareCap); absent on everything saved before it, and on 🐟额 and
+ * 三方积分 红包, which nothing caps. The split reads it, so 开奖证明 does.
+ */
+const maxEachSchema = moneySchema.optional();
+
 export const ldcMoneySchema = z.discriminatedUnion("mode", [
   z
     .strictObject({
@@ -304,6 +316,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
       algorithm: z.enum(["double_mean_v1", "bounded_mean_v1"]),
       totalAmount: moneySchema,
       count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards),
+      maxEach: maxEachSchema,
     })
     .superRefine((value, ctx) => {
       if (!moneySchema.safeParse(value.totalAmount).success) return;
@@ -333,6 +346,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         .max(MAX_DRAW_COUNTDOWN_SECONDS)
         .optional(),
       distributeFullPool: z.boolean(),
+      maxEach: maxEachSchema,
     })
     .superRefine((value, ctx) => {
       if (!moneySchema.safeParse(value.totalAmount).success) return;
@@ -354,6 +368,7 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
     totalAmount: moneySchema,
     count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards).optional(),
     minEach: moneySchema.optional(),
+    maxEach: maxEachSchema,
   }),
 ]);
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
@@ -388,6 +403,11 @@ const ldcActivitySchema = baseActivitySchema.extend({
   pointsSystemId: z.uuid().optional(),
   /** Its system's name, unit, 最小单位 and host, written by the server. */
   points: pointsSnapshotSchema.optional(),
+  /**
+   * 「单份可以超过 800 LDC」 (docs/payout-cap-design.md §1): a 商户直发
+   * 红包's 每人上限 is 2000 LDC instead of 800. Absent: off.
+   */
+  largeShares: z.boolean().optional(),
   money: ldcMoneySchema,
   /** 代码判定 only: stored apart and encrypted, like the passwords. */
   judge: judgeInputSchema.optional(),
@@ -527,6 +547,113 @@ function validateActivity(
 
 export const activityInputSchema =
   ldcActivitySchema.superRefine(validateActivity);
+
+type ShareCapInput = Pick<
+  LdcActivityInput,
+  "funding" | "largeShares" | "money"
+>;
+
+/**
+ * 每人上限 (docs/payout-cap-design.md §1): the most one person can get from
+ * a 商户直发 红包, in 分; null for 🐟额 and 三方积分, which nothing caps.
+ */
+export function shareCapOf(
+  input: Pick<ShareCapInput, "funding" | "largeShares">,
+) {
+  return fundingOf(input) === "merchant"
+    ? payoutShareCap(input.largeShares)
+    : null;
+}
+
+/**
+ * The input with 每人上限 written into its money as saved (maxEach): the
+ * split of a 拼手气 or 限时开奖 and a 代码判定红包's pool read it from there.
+ */
+export function withShareCap<T extends ShareCapInput>(input: T): T {
+  const money = input.money;
+  if (money.mode === "fixed" || money.mode === "custom") return input;
+  const { maxEach: _saved, ...rest } = money;
+  const cap = shareCapOf(input);
+  return {
+    ...input,
+    money: cap === null ? rest : { ...rest, maxEach: formatAmount(cap) },
+  };
+}
+
+/** `money` with the 每人上限 `saved` has (an opened 红包 keeps its own). */
+export function keepMaxEach(money: LdcMoney, saved: LdcMoney): LdcMoney {
+  if (money.mode === "fixed" || money.mode === "custom") return money;
+  const { maxEach: _sent, ...rest } = money;
+  const cap = maxEachOf(saved);
+  return cap === null ? rest : { ...rest, maxEach: formatAmount(cap) };
+}
+
+/** The most one share may be as saved (分), or none. */
+export function maxEachOf(money: LdcMoney) {
+  return "maxEach" in money && money.maxEach !== undefined
+    ? amountToMinor(money.maxEach)
+    : null;
+}
+
+/**
+ * Where a 红包's shares go over 每人上限: which field, the cap, and for a
+ * split the most its total can be. Null when they do not, or nothing caps
+ * them. A 代码判定红包 has no shares: its people are capped as they play.
+ */
+export function shareCapProblem(input: ShareCapInput): {
+  path: (string | number)[];
+  cap: number;
+  maxTotal: number | null;
+} | null {
+  const cap = shareCapOf(input);
+  if (cap === null) return null;
+  const money = input.money;
+  if (!moneyIsValid(money)) return null;
+  if (money.mode === "fixed")
+    return amountToMinor(money.totalAmount) > cap * money.count
+      ? { path: ["money", "totalAmount"], cap, maxTotal: null }
+      : null;
+  if (money.mode === "custom") {
+    const index = money.amounts.findIndex(
+      (amount) => amountToMinor(amount) > cap,
+    );
+    return index < 0
+      ? null
+      : { path: ["money", "amounts", index], cap, maxTotal: null };
+  }
+  if (money.mode === "random" || money.mode === "timed_draw")
+    return amountToMinor(money.totalAmount) > cap * money.count
+      ? {
+          path: ["money", "totalAmount"],
+          cap,
+          maxTotal: cap * money.count,
+        }
+      : null;
+  return null;
+}
+
+function moneyIsValid(money: LdcMoney) {
+  if (money.mode === "custom")
+    return money.amounts.every(
+      (amount) => moneySchema.safeParse(amount).success,
+    );
+  return moneySchema.safeParse(money.totalAmount).success;
+}
+
+/** 每人上限 in words, for a 红包 whose shares go over it (API errors). */
+export function shareCapMessage(problem: {
+  cap: number;
+  maxTotal: number | null;
+}) {
+  const cap = formatAmount(problem.cap).replace(/\.00$/u, "");
+  const total =
+    problem.maxTotal === null
+      ? ""
+      : `，这样分总额最多 ${formatAmount(problem.maxTotal).replace(/\.00$/u, "")} LDC`;
+  return problem.cap > PAYOUT_SAFE_SHARE_MINOR
+    ? `每份最多 ${cap} LDC${total}。Credit 站每天最多只能发出这么多。`
+    : `每份最多 ${cap} LDC${total}。要发更多，打开“单份可以超过 800 LDC”。`;
+}
 /**
  * A saved 红包's settings as they read back: the shape only. The rules
  * check what is written; one added later must not lock out a 红包 saved
@@ -545,6 +672,15 @@ export const historicalActivityInputSchema = ldcActivitySchema
 /** Apply only after resolving a new create request's idempotency key. */
 export const newActivityInputSchema = activityInputSchema.superRefine(
   (value, context) => {
+    // 每人上限 (docs/payout-cap-design.md §1): new 红包 only, so one saved
+    // before it still opens and edits as it was.
+    const capped = shareCapProblem(value);
+    if (capped)
+      context.addIssue({
+        code: "custom",
+        path: capped.path,
+        message: shareCapMessage(capped),
+      });
     if (value.passwords.length > ACTIVITY_LIMITS.passwords)
       context.addIssue({
         code: "custom",
@@ -614,6 +750,8 @@ export function sameLdcMoney(left: LdcMoney, right: LdcMoney): boolean {
     left.mode === right.mode &&
     left.count === right.count &&
     amountToMinor(left.totalAmount) === amountToMinor(right.totalAmount) &&
+    // 每人上限 changes the split (docs/payout-cap-design.md §1).
+    maxEachOf(left) === maxEachOf(right) &&
     (left.mode !== "random" ||
       (right.mode === "random" && left.algorithm === right.algorithm)) &&
     // 代码判定's 每份至少 no longer counts (protocol 5): the pool alone.
@@ -628,7 +766,12 @@ export function sameLdcMoney(left: LdcMoney, right: LdcMoney): boolean {
 }
 
 /** Integer bounds, tightened only where total conservation makes a bound unreachable. */
-export function boundedMeanLimits(totalMinor: number, count: number) {
+export function boundedMeanLimits(
+  totalMinor: number,
+  count: number,
+  /** 每人上限 in the same units, when the split has one. */
+  cap: number | null = null,
+) {
   if (
     !Number.isSafeInteger(totalMinor) ||
     !Number.isInteger(count) ||
@@ -640,7 +783,8 @@ export function boundedMeanLimits(totalMinor: number, count: number) {
   const total = BigInt(totalMinor);
   const n = BigInt(count);
   const lower = total / (2n * n) > 1n ? total / (2n * n) : 1n;
-  const upper = (3n * total + 2n * n - 1n) / (2n * n);
+  const uncapped = (3n * total + 2n * n - 1n) / (2n * n);
+  const upper = cap !== null && BigInt(cap) < uncapped ? BigInt(cap) : uncapped;
   const feasibleMin = total - (n - 1n) * upper;
   const feasibleMax = total - (n - 1n) * lower;
   return {

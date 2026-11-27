@@ -63,6 +63,9 @@ const ruleOf = (algorithm: string) => {
   const split = splitOf(algorithm);
   return split ? ruleNames[split] : algorithm;
 };
+/** 每人上限, when the split has one (docs/payout-cap-design.md §1). */
+const capWords = (money: { maxEach?: string }) =>
+  money.maxEach ? `，每份不超过 ${money.maxEach}` : "";
 
 /** A file the viewer saves, made here. */
 function download(name: string, text: string, type: string) {
@@ -501,7 +504,7 @@ function DrawPage({ data }: { data: DrawData }) {
                   : open
                     ? "份数等于中奖人数"
                     : `${winners} 份`
-              }，合计 ${money.totalAmount}`,
+              }，合计 ${money.totalAmount}${capWords(money)}`,
             },
             { title: "分配：从金额里抽位置再洗牌，按序号从小到大对到中奖者" },
           ]}
@@ -656,7 +659,7 @@ function QueuePage({ data }: { data: QueueData }) {
             },
             random
               ? {
-                  title: `生成金额：${ruleOf(money.algorithm)}，${count} 份，合计 ${total}`,
+                  title: `生成金额：${ruleOf(money.algorithm)}，${count} 份，合计 ${total}${capWords(money)}`,
                 }
               : { title: `金额：红包作者填的 ${count} 份，合计 ${total}` },
             {

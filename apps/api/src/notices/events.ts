@@ -598,3 +598,59 @@ export function noticeSquareOpened(env: ApiBindings, activityId: string) {
     );
   });
 }
+
+/**
+ * 一份超过每日额度 (docs/payout-cap-design.md §3): a share over 800 LDC
+ * ended failed. Its sender hears which, the claimant that it stopped.
+ */
+export function noticePayoutOverLimit(env: ApiBindings, taskId: string) {
+  return quietly("payout_over_limit", async () => {
+    const row = await env.DB.prepare(
+      `SELECT a.id AS activityId, a.title, a.author_id AS authorId, c.user_id AS userId,
+          t.amount_minor AS minor, COALESCE(t.recipient_username, u.username) AS recipient
+        FROM payment_tasks t JOIN claims c ON c.id=t.claim_id
+        JOIN activities a ON a.id=c.activity_id
+        JOIN users u ON u.id=c.user_id
+        WHERE t.id=? AND t.status='failed' AND t.reason='quota'`,
+    )
+      .bind(taskId)
+      .first<{
+        activityId: string;
+        title: string;
+        authorId: string;
+        userId: string;
+        minor: number;
+        recipient: string;
+      }>();
+    if (!row) return;
+    const amount = formatAmountWithUnit(row.minor, LDC_UNIT);
+    await notify(env, [
+      {
+        userId: row.authorId,
+        kind: "payout_stopped",
+        key: `payout_over_limit:${taskId}`,
+        ...notice.payoutOverLimit(env, {
+          activityId: row.activityId,
+          title: row.title,
+          amount,
+          recipient: row.recipient,
+        }),
+      },
+      ...(row.userId === row.authorId
+        ? []
+        : [
+            {
+              userId: row.userId,
+              kind: "payout_failed" as const,
+              key: `payout_failed:${row.activityId}:${row.userId}`,
+              ...notice.payoutFailed(env, {
+                activityId: row.activityId,
+                title: row.title,
+                amount,
+                reason: "quota",
+              }),
+            },
+          ]),
+    ]);
+  });
+}

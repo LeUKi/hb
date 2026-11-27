@@ -7,6 +7,7 @@ import {
   CLAIM_SCOPE_LIMITS,
   type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
+  formatAmount,
   type HumanCheckMethod,
   JUDGE_LIMITS,
   JUDGE_NAME_LIMITS,
@@ -20,7 +21,9 @@ import {
   type ManagedActivity,
   normalizePageUrl,
   normalizeTopicLink,
+  PAYOUT_SAFE_SHARE_MINOR,
   pageUrlProblem,
+  payoutShareCap,
   sameLdcMoney,
   TRUST_LEVEL_MAX,
   TRUST_LEVEL_MIN,
@@ -132,6 +135,11 @@ export type FormState = {
   listed: boolean;
   /** 允许用令牌领 (docs/personal-token-design.md §8): on unless turned off. */
   allowTokens: boolean;
+  /**
+   * 「单份可以超过 800 LDC」 (docs/payout-cap-design.md §1): a 商户直发
+   * 红包's 每人上限 is 2000 LDC instead of 800.
+   */
+  largeShares: boolean;
   quantity: "exact" | "fuzzy";
   /** 领取前人机验证: a check in a dialog before each claim or sign-up. */
   humanCheck: boolean;
@@ -267,6 +275,7 @@ export function emptyForm(now = Date.now()): FormState {
     allowTokens: true,
     humanCheck: false,
     humanCheckMethod: "cap",
+    largeShares: false,
     quantity: "exact",
     scope: {
       limited: false,
@@ -421,11 +430,18 @@ export function randomRange(
   algorithm: Algorithm,
   /** 三方积分's 最小单位 in 分: split as so many steps (§2). */
   step = 1,
+  /** 每人上限 in 分, when the split has one (docs/payout-cap-design.md §1). */
+  cap: number | null = null,
 ): [number, number] | null {
   if (shares === 1) return [total, total];
   if (algorithm !== "bounded_mean") return null;
   if (total % step !== 0 || total / step < shares) return null;
-  const { min, max } = boundedMeanLimits(total / step, shares);
+  if (cap !== null && total > cap * shares) return null;
+  const { min, max } = boundedMeanLimits(
+    total / step,
+    shares,
+    cap === null ? null : Math.floor(cap / step),
+  );
   return [min * step, max * step];
 }
 
@@ -503,6 +519,8 @@ export function issuesOf(
   now = Date.now(),
   /** LDC, or the chosen 三方积分's (docs/third-party-points-design.md §2). */
   money: AmountUnit = LDC_UNIT,
+  /** Opened or timed: its amounts are as saved, 每人上限 or not. */
+  fixed = false,
 ): Issue[] {
   const issues: Issue[] = [];
   const add = (field: string, message: string) =>
@@ -662,6 +680,36 @@ export function issuesOf(
     if (scope.users.length > CLAIM_SCOPE_LIMITS.users)
       add("hb-scope-user", `最多指定 ${CLAIM_SCOPE_LIMITS.users} 人`);
   }
+  // 每人上限 (docs/payout-cap-design.md §1), on amounts that are otherwise
+  // fine; one opened or timed keeps what it saved.
+  const cap = fixed ? null : formShareCap(form);
+  const free = (field: string) =>
+    !issues.some((issue) => issue.field === field);
+  if (cap !== null) {
+    if (form.mode === "fixed") {
+      const unit = cents(form.fixed.unit);
+      if (unit !== null && unit > cap && free("hb-fixed-unit"))
+        add("hb-fixed-unit", shareCapWords(cap, null));
+    } else if (form.mode === "custom") {
+      const over = customLines(form).findIndex(
+        (line) => (cents(line) ?? 0) > cap,
+      );
+      if (over >= 0 && free("hb-custom-lines"))
+        add(
+          "hb-custom-lines",
+          `第 ${over + 1} 行：${shareCapWords(cap, null)}`,
+        );
+    } else if (form.mode === "random" || form.mode === "timed_draw") {
+      const field = form.mode === "random" ? "hb-random-total" : "hb-draw-pool";
+      if (
+        total !== null &&
+        shares !== null &&
+        total > cap * shares &&
+        free(field)
+      )
+        add(field, shareCapWords(cap, cap * shares));
+    }
+  }
   return issues;
 }
 
@@ -815,6 +863,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     pageAutoOpen: config.pageAutoOpen === true,
     listed: config.joinSquare,
     allowTokens: config.allowTokens !== false,
+    largeShares: config.largeShares === true,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
     // One turned on before there was a choice is Turnstile.
@@ -1004,6 +1053,10 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
         }
       : {}),
     ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
+    // 每人上限 raised: 商户直发 only, left out when off (idempotency).
+    ...(form.largeShares && form.funding === "merchant"
+      ? { largeShares: true }
+      : {}),
     rewardType: "ldc",
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
     ...(form.funding === "balance"
@@ -1161,6 +1214,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       // 允许用令牌领: a refused save that changed only this must not read
       // as saved (sweep 2026-11-21).
       allowTokens: input.allowTokens !== false,
+      largeShares: input.largeShares === true,
       // What a save sends of its code (its versions come back with it).
       judge: input.judge
         ? {
@@ -1182,10 +1236,72 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
           }
         : null,
     });
+  // 每人上限 as saved comes of funding and largeShares, compared above.
   return (
     comparable(savedRest) === comparable(sentRest) &&
-    sameLdcMoney(savedMoney, sentMoney)
+    sameLdcMoney(withoutMaxEach(savedMoney), withoutMaxEach(sentMoney))
   );
+}
+
+function withoutMaxEach(money: ActivityInput["money"]): ActivityInput["money"] {
+  if (!("maxEach" in money)) return money;
+  const { maxEach: _saved, ...rest } = money;
+  return rest;
+}
+
+/**
+ * 每人上限 (docs/payout-cap-design.md §1): the most one person can get, in
+ * 分; null where nothing caps it (🐟额, 三方积分).
+ */
+export function formShareCap(form: FormState) {
+  return form.funding === "merchant" ? payoutShareCap(form.largeShares) : null;
+}
+
+/**
+ * Whether, with no cap, one person could get more than 800 LDC from these
+ * amounts: 「单份可以超过 800 LDC」 is offered then (and while it is on).
+ */
+export function wantsLargeShares(form: FormState) {
+  if (form.funding !== "merchant") return false;
+  const safe = PAYOUT_SAFE_SHARE_MINOR;
+  const { total, shares, unit } = plan(form);
+  switch (form.mode) {
+    case "fixed":
+      return unit !== null && unit > safe;
+    case "custom":
+      return customLines(form).some((line) => (cents(line) ?? 0) > safe);
+    case "code":
+      return total !== null && total > safe;
+    case "random":
+    case "timed_draw": {
+      if (total === null || shares === null) return false;
+      // Fewer winners than shares take the whole pool (人数不足时发完奖池).
+      if (shares === 1 || (form.mode === "timed_draw" && form.draw.fillPool))
+        return total > safe;
+      const algorithm =
+        form.mode === "random" ? form.random.algorithm : form.draw.algorithm;
+      const most =
+        algorithm === "bounded_mean"
+          ? Math.ceil((3 * total) / (2 * shares))
+          : Math.floor((2 * total) / shares);
+      return most > safe;
+    }
+  }
+}
+
+/** An amount in 分 as whole LDC where it is whole: 800, 2000. */
+export function wholeLdc(minor: number) {
+  return formatAmount(minor).replace(/\.00$/u, "");
+}
+
+/** 每人上限 in words, for amounts over it (the form's own, with the switch). */
+function shareCapWords(cap: number, maxTotal: number | null) {
+  const whole = wholeLdc;
+  const total =
+    maxTotal === null ? "" : `，这样分总额最多 ${whole(maxTotal)} LDC`;
+  return cap > PAYOUT_SAFE_SHARE_MINOR
+    ? `每份最多 ${whole(cap)} LDC${total}。Credit 站每天最多只能发出这么多。`
+    : `每份最多 ${whole(cap)} LDC${total}。要发更多，打开下面的“单份可以超过 800 LDC”。`;
 }
 
 /**

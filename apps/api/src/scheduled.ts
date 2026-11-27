@@ -7,6 +7,7 @@ import { refreshJudgeStats } from "./judge/square";
 import { pruneJudgeUsage } from "./judge/usage";
 import { sweepNotices } from "./notices/outbox";
 import { sweepFundsWaits } from "./payments/funds-stop";
+import { sweepQuotaFailures } from "./payments/quota";
 import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
@@ -61,6 +62,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
     { name: "payment_resends", run: () => endLapsedResends(env) },
     // A merchant short of funds: its wait, and three days on its stop.
     { name: "payment_funds", run: () => sweepFundsWaits(env) },
+    // A share over 800 LDC the day's limit refused on two days.
+    { name: "payment_quota", run: () => sweepQuotaFailures(env) },
     // 三方积分's payouts: due, stale leases, lapsed resends.
     { name: "points_payments", run: () => sweepPointsPayments(env) },
     { name: "credentials", run: () => recoverCredentialChecks(env) },

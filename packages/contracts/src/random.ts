@@ -7,7 +7,7 @@ import {
   type RandomLdcMoney,
   type TimedDrawMoney,
 } from "./index";
-import { amountToMinor } from "./payments";
+import { amountToMinor, formatAmount } from "./payments";
 
 export type RandomBytes = (bytes: Uint8Array<ArrayBuffer>) => void;
 
@@ -57,11 +57,19 @@ export function generateRandomAmounts(
     total < money.count
   )
     throw new Error("Invalid random amount configuration");
+  // 每人上限 (docs/payout-cap-design.md §1), in steps: no share above it.
+  // Absent on what was saved before it, which splits as it always did.
+  const capMinor =
+    money.maxEach === undefined ? null : amountToMinor(money.maxEach);
+  const cap = capMinor === null ? null : BigInt(Math.floor(capMinor / step));
+  if (cap !== null && (cap < 1n || BigInt(total) > cap * BigInt(money.count)))
+    throw new Error("Invalid random amount configuration");
   const totalMinor = BigInt(total);
   const twiceCount = 2n * BigInt(money.count);
   const halfMean = totalMinor / twiceCount;
   const lower = halfMean > 1n ? halfMean : 1n;
-  const upper = (3n * totalMinor + twiceCount - 1n) / twiceCount;
+  const uncapped = (3n * totalMinor + twiceCount - 1n) / twiceCount;
+  const upper = cap !== null && cap < uncapped ? cap : uncapped;
   let remaining = totalMinor;
   const amounts: number[] = [];
   for (let count = BigInt(money.count); count > 0n; count--) {
@@ -77,6 +85,12 @@ export function generateRandomAmounts(
           : reservingMinimum < twiceMean
             ? reservingMinimum
             : twiceMean;
+      if (cap !== null && count > 1n) {
+        // Leave the rest no more than the cap each, and take no more.
+        const reservingCap = remaining - (count - 1n) * cap;
+        if (reservingCap > minimum) minimum = reservingCap;
+        if (cap < maximum) maximum = cap;
+      }
     } else if (money.algorithm === "bounded_mean_v1") {
       const reservingMaximum = remaining - (count - 1n) * upper;
       const reservingMinimum = remaining - (count - 1n) * lower;
@@ -145,12 +159,23 @@ export function drawAmounts(
   if (count === 0) return { amounts: [], assignedPositions: [] };
   const poolCount =
     money.distributeFullPool && count < money.count ? count : money.count;
+  // 每人上限: fewer winners than shares take the whole pool only up to the
+  // cap each; what is over it is not paid (docs/payout-cap-design.md §1).
+  const capMinor =
+    money.maxEach === undefined ? null : amountToMinor(money.maxEach);
+  const capPool =
+    capMinor === null ? null : Math.floor(capMinor / step) * step * poolCount;
+  const pool = amountToMinor(money.totalAmount);
   const amounts = generateRandomAmounts(
     {
       mode: "random",
       algorithm: money.algorithm,
-      totalAmount: money.totalAmount,
+      totalAmount:
+        capPool !== null && capPool < pool
+          ? formatAmount(capPool)
+          : money.totalAmount,
       count: poolCount,
+      ...(money.maxEach === undefined ? {} : { maxEach: money.maxEach }),
     },
     fillRandom,
     step,

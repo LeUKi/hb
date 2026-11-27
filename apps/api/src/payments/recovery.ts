@@ -39,7 +39,7 @@ import {
   usablePaymentRetryGrant,
   withdrawalPaymentIdentitySql,
 } from "./policy";
-import { quotaResumeAt } from "./quota";
+import { quotaOpenSql, quotaRefusalStatement, quotaResumeOf } from "./quota";
 import { paymentRemark } from "./remark";
 import type { CycleResult } from "./scheduler";
 
@@ -252,9 +252,13 @@ async function selectTask(env: ApiBindings, merchant: MerchantRow) {
   const localAcceptances =
     policy.appEnv === "local" &&
     (policy.networkMode === "verify" || policy.networkMode === "acceptance");
+  // On a day the limit refused one, only what may still go that day
+  // (quota.ts); the refused ones wait for the day to turn.
+  const open = quotaOpenSql("p", "m", Date.now());
   const row = await env.DB.prepare(
-    `SELECT p.id FROM payment_tasks p LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
-     WHERE p.merchant_id=? AND p.mode='real'
+    `SELECT p.id FROM payment_tasks p JOIN merchants m ON m.id=p.merchant_id
+     LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
+     WHERE p.merchant_id=? AND p.mode='real' AND ${open}
        AND ((${ordinaryPaymentSql("p")} AND p.status IN ('pending','waiting','reconciling','sending') AND ((?=1 AND p.first_send_at IS NOT NULL) OR ?=1))
          OR (?=1 AND p.source='acceptance' AND ((p.status IN ('pending','waiting','reconciling','sending') AND (a.send_consumed_at IS NOT NULL OR a.id=?))
            OR (p.status='confirmed' AND EXISTS(SELECT 1 FROM payment_duplicate_probes d WHERE d.task_id=p.id AND d.status IN ('pending','sending','reconciling','awaiting_evidence'))))))
@@ -271,7 +275,9 @@ async function selectTask(env: ApiBindings, merchant: MerchantRow) {
   if (row) return loadTask(env, row.id);
   // Keep the existing fail-closed behavior for a directly invoked initial send.
   const fallback = await env.DB.prepare(
-    "SELECT id FROM payment_tasks WHERE merchant_id=? AND status IN ('pending','waiting','reconciling','sending') ORDER BY created_at,id LIMIT 1",
+    `SELECT p.id FROM payment_tasks p JOIN merchants m ON m.id=p.merchant_id
+      WHERE p.merchant_id=? AND p.status IN ('pending','waiting','reconciling','sending') AND ${open}
+      ORDER BY p.created_at,p.id LIMIT 1`,
   )
     .bind(merchant.id)
     .first<{ id: string }>();
@@ -423,7 +429,12 @@ export async function realMerchantNextDue(
   if (merchant.leaseUntil && merchant.leaseUntil > Date.now())
     return merchant.leaseUntil;
   const task = await selectTask(env, merchant);
-  if (!task) return null;
+  // Nothing it may try today: what the day's limit keeps back goes as the
+  // day turns for it (quota.ts).
+  if (!task)
+    return merchant.quotaUntil !== null && merchant.quotaUntil > Date.now()
+      ? merchant.quotaUntil
+      : null;
   if (task.status === "confirmed") {
     const probe = await loadProbe(env, task.id);
     return probe ? probeDue(env, task, probe) : null;
@@ -775,7 +786,10 @@ async function finishAttempt(
         result.reason === "funds"
           ? now + Math.max(300_000, backoff(sendBackoff, "send"))
           : result.reason === "quota"
-            ? Math.max(quotaResumeAt(now), now + backoff(sendBackoff, "send"))
+            ? Math.max(
+                quotaResumeOf(merchant, now),
+                now + backoff(sendBackoff, "send"),
+              )
             : null;
     } else if (result.kind === "throttled") {
       sendBlock = "throttled";
@@ -947,7 +961,21 @@ async function finishAttempt(
       ? (nextSend ?? nextQuery)
       : Math.max(nextQuery, queryRetryAfter ?? 0);
   const cipher = await diagnostic(env, task.id, attemptId, result);
+  // Refused by the day's limit with no order made (Credit's refusal on
+  // record, or a lookup since that found none): it waits for the day to
+  // turn by itself, and the merchant goes on with smaller ones (quota.ts).
+  const refusedForQuota =
+    operation === "send" &&
+    result.kind === "waiting" &&
+    result.reason === "quota" &&
+    noOrderEvidence !== null;
+  const quotaHeld =
+    !unknown &&
+    status === "waiting" &&
+    reason === "quota" &&
+    (refusedForQuota || (operation === "query" && result.kind === "not_found"));
   const retain =
+    !quotaHeld &&
     status !== "confirmed" &&
     status !== "failed" &&
     (unknown || status !== "attention");
@@ -1009,6 +1037,18 @@ async function finishAttempt(
       merchant.id,
       token,
     ),
+    ...(refusedForQuota && nextSend !== null
+      ? [
+          quotaRefusalStatement(
+            env,
+            merchant.id,
+            token,
+            task.amountMinor,
+            nextSend,
+            now,
+          ),
+        ]
+      : []),
     env.DB.prepare(
       "UPDATE merchants SET active_task_id=?,lease_token=NULL,lease_until=NULL,paused_reason=?,updated_at=? WHERE id=? AND lease_token=?",
     ).bind(

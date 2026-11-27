@@ -16,7 +16,7 @@ import {
 import { databaseNow } from "../activities/lifecycle";
 import type { ApiBindings } from "../env";
 import { claimPaymentParameterDigest } from "../payments/identity";
-import { quotaHolds } from "../payments/quota";
+import { heldByQuota, quotaHolds } from "../payments/quota";
 import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
@@ -124,7 +124,7 @@ export async function readWithdrawalPayment(
   withdrawalId: string,
 ) {
   const row = await env.DB.prepare(
-    `SELECT id,status,reason,unknown_outcome,external_order_id,next_send_at,next_run_at,merchant_id
+    `SELECT id,status,reason,unknown_outcome,external_order_id,next_send_at,next_run_at,merchant_id,amount_minor
     FROM payment_tasks WHERE withdrawal_id=?`,
   )
     .bind(withdrawalId)
@@ -137,6 +137,7 @@ export async function readWithdrawalPayment(
       next_send_at: number | null;
       next_run_at: number;
       merchant_id: string;
+      amount_minor: number;
     }>();
   if (!row) return null;
   return {
@@ -150,15 +151,23 @@ export async function readWithdrawalPayment(
       nextRunAt: row.next_run_at,
     } satisfies WithdrawalPayment,
     merchantId: row.merchant_id,
+    amountMinor: row.amount_minor,
   };
 }
 
 /** One 转出 with what its payment is waiting on. */
 export async function withdrawalDetail(env: ApiBindings, row: WithdrawalRow) {
   const found = await readWithdrawalPayment(env, row.id);
-  const hold =
+  const quota =
     row.status === "sending" && found
       ? (await quotaHolds(env, [found.merchantId])).get(found.merchantId)
+      : undefined;
+  // Kept back by the day's limit (quota.ts): a smaller one may still go.
+  const hold =
+    found &&
+    quota &&
+    heldByQuota({ ...found.payment, amountMinor: found.amountMinor }, quota)
+      ? quota.resumeAt
       : undefined;
   return withdrawalView(row, found?.payment ?? null, hold);
 }

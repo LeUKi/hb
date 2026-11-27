@@ -357,6 +357,26 @@ export const PAYMENT_LABELS: Record<PaymentState, string> = {
 export const PAYOUT_FUNDS_WAIT_DAYS = 3;
 export const PAYOUT_FUNDS_WAIT_MS = PAYOUT_FUNDS_WAIT_DAYS * 86_400_000;
 
+/**
+ * 每人上限 (docs/payout-cap-design.md §1): what one person can get from a
+ * 商户直发 LDC 红包. Credit lets an account pay out 800–2000 LDC a day, by
+ * its level: 800 goes through on every level, 2000 on none above it. A
+ * 红包 that turns on 「单份可以超过 800 LDC」 (`largeShares`) may go up to
+ * the second; one share over the first that Credit refuses for the day's
+ * limit is tried once more the next day, then ends failed (§3).
+ */
+export const PAYOUT_SAFE_SHARE_MINOR = 80_000;
+export const PAYOUT_MAX_SHARE_MINOR = 200_000;
+/** The cap of one share, in 分, with 「单份可以超过 800 LDC」 or without. */
+export function payoutShareCap(largeShares: boolean | undefined) {
+  return largeShares ? PAYOUT_MAX_SHARE_MINOR : PAYOUT_SAFE_SHARE_MINOR;
+}
+/**
+ * After the day's limit refuses a payment, a merchant tries at most this
+ * many more that day, each smaller than the smallest refused (§2).
+ */
+export const QUOTA_MORE_TRIES = 5;
+
 export function paymentLabel(mode: PaymentMode, status: PaymentState): string {
   if (status === "confirmed") {
     return mode === "simulation" ? "模拟发放已确认" : "已发放";

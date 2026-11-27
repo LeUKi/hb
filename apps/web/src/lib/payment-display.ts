@@ -9,10 +9,12 @@ import { openingLabel } from "./roster-time";
 /**
  * 发放失败, and why: one sentence for each page that shows it (sweep
  * 2026-11-21, A3; docs/payout-stop-design.md §3, §4). A claim's payment
- * ends so in two ways (migration 0070's trigger): its merchant short of
- * funds through the whole wait, or no Credit account by the end of its
- * 重新发送. The claimant reads of the 红包作者's merchant and their own
- * account; the sender and the 站长, of the 商户 and the 收款人.
+ * ends so in three ways (migrations 0070 and 0076): its merchant short of
+ * funds through the whole wait, no Credit account by the end of its
+ * 重新发送, or a share over 800 LDC the day's limit refused on two days
+ * (docs/payout-cap-design.md §3). The claimant reads of the 红包作者's
+ * merchant and their own account; the sender and the 站长, of the 商户
+ * and the 收款人.
  */
 export function failedPaymentNote(
   payment: Pick<PaymentView, "reason">,
@@ -23,6 +25,10 @@ export function failedPaymentNote(
     return claimant
       ? `红包作者的 LDC 商户余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，本次奖励发放已终止。`
       : `商户余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，本次发放已终止。`;
+  if (payment.reason === "quota")
+    return claimant
+      ? "这一份超过了红包作者在 Credit 站每天能发出的额度，第二天重试仍未成功，本次奖励发放已终止。"
+      : "这一份超过了商户在 Credit 站每天能发出的额度，第二天重试仍未成功，本次发放已终止。";
   if (payment.reason === "recipient")
     return claimant
       ? "LINUX DO Credit 站未找到你的账户，重新发送期限已过，本次奖励发放已终止。"

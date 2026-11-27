@@ -22,7 +22,7 @@ import type { PaymentAdapter } from "../src/payments/adapter";
 import { readMerchantImpact } from "../src/payments/configuration";
 import { loadMerchantSecret } from "../src/payments/credentials";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
-import { nextQuotaReset } from "../src/payments/quota";
+import { nextQuotaReset, sweepQuotaFailures } from "../src/payments/quota";
 import {
   flushPaymentOutbox,
   runMerchantCycle,
@@ -42,7 +42,12 @@ async function user() {
   });
   return id;
 }
-async function fixture(count = 2, scenario: SimulationScenario = "normal") {
+async function fixture(
+  count = 2,
+  scenario: SimulationScenario = "normal",
+  /** Each share, in LDC; 1 when left out. */
+  each = 1,
+) {
   const owner = await user();
   const recipient = await user();
   const merchant = await createMerchant(env, owner, {
@@ -63,7 +68,8 @@ async function fixture(count = 2, scenario: SimulationScenario = "normal") {
     title: "付款测试",
     passwords: ["Correct123"],
     merchantId: merchant.id,
-    money: { mode: "fixed", count, totalAmount: String(count) },
+    money: { mode: "fixed", count, totalAmount: String(count * each) },
+    ...(each > 800 ? { largeShares: true } : {}),
   };
   const draft = await createActivity(env, owner, {
     requestId: crypto.randomUUID(),
@@ -92,11 +98,17 @@ async function task(id: string) {
   return result;
 }
 async function due(id: string) {
-  await env.DB.prepare(
-    `UPDATE payment_tasks SET next_run_at=0,next_query_at=0 WHERE id=?`,
-  )
-    .bind(id)
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE payment_tasks SET next_run_at=0,next_query_at=0 WHERE id=?`,
+    ).bind(id),
+    // Its time has come: so has its merchant's next day, if the day's
+    // limit refused it (docs/payout-cap-design.md §2).
+    env.DB.prepare(
+      `UPDATE merchants SET quota_until=0 WHERE quota_until IS NOT NULL
+        AND id=(SELECT merchant_id FROM payment_tasks WHERE id=?)`,
+    ).bind(id),
+  ]);
 }
 async function scenario(id: string, value: SimulationScenario) {
   await env.DB.prepare(
@@ -310,7 +322,7 @@ describe("durable simulated payments", () => {
     expect(result.businessNo).toBe(original.businessNo);
     expect(result.amountMinor).toBe(original.amountMinor);
   });
-  it("a daily limit holds the whole merchant until the day turns, and its queued claimants see why", async () => {
+  it("a daily limit holds what is no smaller until the day turns, and its queued claimants see why", async () => {
     const f = await fixture(2, "daily_limit");
     const later = await user();
     const second = await f.claim(later);
@@ -344,6 +356,87 @@ describe("durable simulated payments", () => {
     expect((await task(f.taskId)).status).toBe("confirmed");
     await runMerchantCycle(env, f.merchant.id);
     expect((await task(second)).status).toBe("confirmed");
+  });
+  it("goes on the same day with what is smaller than the one refused, five more at most", async () => {
+    // docs/payout-cap-design.md §2.
+    const f = await fixture(1, "daily_limit", 5);
+    // Claims on the same merchant, each smaller than the last: a 红包 of
+    // seven shares under 5 LDC by the same sender, paid in that order.
+    const config: LdcActivityInput = {
+      ...emptyActivityInput(),
+      rewardType: "ldc",
+      title: "小额",
+      passwords: ["Correct123"],
+      merchantId: f.merchant.id,
+      allocation: "sequential",
+      money: {
+        mode: "custom",
+        amounts: ["4.00", "3.50", "3.00", "2.50", "2.00", "1.50", "1.00"],
+      },
+    };
+    const draft = await createActivity(env, f.owner, {
+      requestId: crypto.randomUUID(),
+      activity: config,
+    });
+    const opened = await openActivity(env, draft.id, f.owner, draft.version);
+    const small: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const result = await claimActivity(env, opened.id, await user(), {
+        submissionId: crypto.randomUUID(),
+        password: "Correct123",
+      });
+      if (!("claim" in result) || result.claim.rewardType !== "ldc")
+        throw new Error("Missing LDC claim");
+      small.push(result.claim.payment?.id ?? "");
+    }
+    await runMerchantCycle(env, f.merchant.id);
+    expect(await task(f.taskId)).toMatchObject({
+      status: "waiting",
+      reason: "quota",
+    });
+    // Each smaller one is tried the same day, five more in all; all refused
+    // here, so the last two wait for the day to turn.
+    for (let i = 0; i < 8; i++) await runMerchantCycle(env, f.merchant.id);
+    const tried = await Promise.all(small.map(task));
+    expect(tried.map((row) => row.attemptCount)).toEqual([1, 1, 1, 1, 1, 0, 0]);
+    expect(await orders()).toBe(0);
+    const merchantRow = await env.DB.prepare(
+      "SELECT quota_refusals FROM merchants WHERE id=?",
+    )
+      .bind(f.merchant.id)
+      .first<{ quota_refusals: number }>();
+    expect(merchantRow?.quota_refusals).toBe(6);
+  });
+  it("ends a share over 800 LDC the limit refused on two days, and goes on", async () => {
+    // docs/payout-cap-design.md §3.
+    const f = await fixture(2, "daily_limit", 1000);
+    await runMerchantCycle(env, f.merchant.id);
+    expect(await task(f.taskId)).toMatchObject({
+      status: "waiting",
+      reason: "quota",
+    });
+    // Once: it waits for the next day.
+    expect(await sweepQuotaFailures(env)).toBe(0);
+    await due(f.taskId);
+    await runMerchantCycle(env, f.merchant.id);
+    expect(await task(f.taskId)).toMatchObject({
+      status: "waiting",
+      reason: "quota",
+    });
+    expect(await sweepQuotaFailures(env)).toBe(1);
+    expect(await task(f.taskId)).toMatchObject({
+      status: "failed",
+      reason: "quota",
+    });
+    expect(await orders()).toBe(0);
+    // Its sender and the claimant hear it.
+    const notes = await env.DB.prepare(
+      "SELECT kind FROM notifications WHERE dedupe_key LIKE 'payout_over_limit:%' OR dedupe_key LIKE 'payout_failed:%'",
+    ).all<{ kind: string }>();
+    expect(notes.results.map((row) => row.kind).sort()).toEqual([
+      "payout_failed",
+      "payout_stopped",
+    ]);
   });
   it("later business rejection cannot erase an earlier unknown send", async () => {
     const f = await fixture();

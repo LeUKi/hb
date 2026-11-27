@@ -137,7 +137,9 @@ export const sendChapters: HelpChapter[] = [
               LDC（按你在 Credit 站的等级）。总额超过 800 LDC
               时表单会提醒，超出的部分可能顺延到第二天发放，见
               <HelpLink to="/help/send#q-daily-quota">每日额度用完了</HelpLink>
-              。
+              。每人最多拿 800 LDC；你的等级能发更多时，打开“单份可以超过 800
+              LDC”，每人最多 2000 LDC。超过 800
+              的一份当天额度不够时，第二天再试一次，还发不出就发放失败。
             </li>
             <li>
               <Label>🐟额</Label>：不占 Credit
@@ -504,11 +506,11 @@ export const sendChapters: HelpChapter[] = [
           </>
         ),
       },
-      // source: apps/api/src/payments/quota.ts, apps/web/src/lib/payment-display.ts (merchantPause), apps/web/src/components/hongbao-form/fields.tsx
+      // source: apps/api/src/payments/quota.ts, apps/web/src/lib/payment-display.ts (merchantPause), apps/web/src/components/hongbao-form/fields.tsx, docs/payout-cap-design.md
       {
         id: "q-daily-quota",
         q: "提示每日额度用完了",
-        a: "Credit 站每天最多能发 800–2000 LDC（按你在 Credit 站的等级）。当天发满以后，这个商户的奖励暂停发放，排在后面的一起等，北京时间第二天 0 点后自动继续，不用操作。领取不受影响；🐟额红包不经过 Credit 站，没有这个额度。",
+        a: "Credit 站每天最多能发 800–2000 LDC（按你在 Credit 站的等级）。当天额度不够发某一笔时，这一笔等到北京时间第二天 0 点后自动再发，不用操作；比它小的几笔当天还会接着试。超过 800 LDC 的一笔第二天还发不出，就发放失败。领取不受影响；🐟额红包不经过 Credit 站，没有这个额度。",
       },
       // source: docs/redesign/07-pages.md §8 (更新原订单密钥), apps/web/src/components/views/payment-view.tsx, apps/web/src/components/views/payments-view.tsx
       {

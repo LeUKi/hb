@@ -726,13 +726,20 @@ describe("durable same-business-number recovery", () => {
     expect(resume).toBeLessThan(midnight + 30 * 60_000);
     expect(waiting.nextQueryAt).toBe(resume);
     expect(waiting.nextRunAt).toBe(resume);
+    // The merchant lets go of it and keeps the day's refusal itself
+    // (docs/payout-cap-design.md §2): smaller ones may still go today.
     expect(
       await env.DB.prepare(
-        "SELECT active_task_id,paused_reason FROM merchants WHERE id=?",
+        "SELECT active_task_id,quota_until,quota_below,quota_refusals FROM merchants WHERE id=?",
       )
         .bind(f.merchant.id)
         .first(),
-    ).toEqual({ active_task_id: f.taskId, paused_reason: "quota" });
+    ).toEqual({
+      active_task_id: null,
+      quota_until: resume,
+      quota_below: waiting.amountMinor,
+      quota_refusals: 1,
+    });
     // Nothing goes out before then, not even a lookup.
     now = midnight + 4 * 60_000;
     await cycle(f, a);

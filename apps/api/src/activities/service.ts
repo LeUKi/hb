@@ -16,6 +16,7 @@ import {
   formatAmount,
   formatSignedAmount,
   fundingOf,
+  keepMaxEach,
   type LdcActivityInput,
   type LdcOpeningBlockedReason,
   ldcAmounts,
@@ -30,8 +31,12 @@ import {
   type PublicQuantity,
   readClaimScope,
   sameLdcMoney,
+  shareCapMessage,
+  shareCapOf,
+  shareCapProblem,
   storedActivitySchema,
   type UpdateActivityInput,
+  withShareCap,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { seedCommitment } from "../../../../kit/runtime/index.mjs";
@@ -796,6 +801,9 @@ export async function createActivity(
   const checked = newActivityInputSchema.safeParse(input.activity);
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新红包的配置");
+  // 每人上限 written into its money (docs/payout-cap-design.md §1), on a
+  // copy: the request as sent is what its digest was taken of.
+  input = { ...input, activity: withShareCap(input.activity) };
   const balance = fundingOf(input.activity) === "balance";
   const points = fundingOf(input.activity) === "points";
   if (input.activity.money.mode === "code")
@@ -930,6 +938,24 @@ export async function updateActivity(
     input.activity.quantityVisibility !== "fuzzy"
   )
     invalidActivity("数量展示仅支持精确或模糊");
+  // 每人上限 (docs/payout-cap-design.md §1): a draft is held to it and has
+  // it written into its money; one opened or timed keeps what it saved, so
+  // one from before it edits as it was.
+  if (fixed) {
+    const saved = configuration(row);
+    input = {
+      ...input,
+      activity: {
+        ...input.activity,
+        largeShares: saved.largeShares,
+        money: keepMaxEach(input.activity.money, saved.money),
+      },
+    };
+  } else {
+    const capped = shareCapProblem(input.activity);
+    if (capped) invalidActivity(shareCapMessage(capped));
+    input = { ...input, activity: withShareCap(input.activity) };
+  }
   const config = storedConfig(input.activity);
   // 领取范围 is fixed once opened (docs/claim-scope-design.md §1).
   const storedScope = configuration(row).scope;
@@ -1304,7 +1330,17 @@ export async function openActivity(
     ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
   });
   if (!checked.success) invalidActivity("红包配置不完整，无法开放");
+  // 每人上限 (docs/payout-cap-design.md §1), for a draft saved before it
+  // too: over it, or split before it was kept, it is saved again first.
+  const capped = shareCapProblem(checked.data);
+  if (capped) invalidActivity(shareCapMessage(capped));
   const inventory = (await privateRows(env, id)).inventory;
+  const shareCap = shareCapOf(checked.data);
+  if (
+    shareCap !== null &&
+    inventory.some((item) => (item.amountMinor ?? 0) > shareCap)
+  )
+    invalidActivity("有一份超过了每人上限，请重新保存后再开放");
   const timed = checked.data.money.mode === "timed_draw";
   // 代码判定: each share is made when it is judged (judge/claims.ts).
   const coded = checked.data.money.mode === "code";

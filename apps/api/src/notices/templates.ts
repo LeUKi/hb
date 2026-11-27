@@ -122,14 +122,48 @@ export function payoutStopped(
  */
 export function payoutFailed(
   env: ApiBindings,
-  input: { activityId: string; title: string; amount: string },
+  input: {
+    activityId: string;
+    title: string;
+    amount: string;
+    /** Why: the sender's balance (default), or one share over the day's limit. */
+    reason?: "funds" | "quota";
+  },
 ): Notice {
   const name = nameOf(input.title);
   return {
     subject: subjectOf(`${name}的奖励发放失败`),
     body: bodyOf(
       [
-        `你在${name}领到的 ${input.amount}，因红包作者的 Credit 余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，发放已终止。`,
+        input.reason === "quota"
+          ? `你在${name}领到的 ${input.amount}，超过了红包作者在 Credit 站每天能发出的额度，第二天重试仍未成功，发放已终止。`
+          : `你在${name}领到的 ${input.amount}，因红包作者的 Credit 余额不足，系统自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，发放已终止。`,
+      ],
+      { label: "查看红包", url: hongbaoUrl(env, input.activityId) },
+      off(env),
+    ),
+  };
+}
+
+/**
+ * 一份超过每日额度 (docs/payout-cap-design.md §3): a share over 800 LDC
+ * the day's limit refused on two days ended failed; its sender, once each.
+ */
+export function payoutOverLimit(
+  env: ApiBindings,
+  input: {
+    activityId: string;
+    title: string;
+    amount: string;
+    recipient: string;
+  },
+): Notice {
+  const name = nameOf(input.title);
+  return {
+    subject: subjectOf(`${name}有一份奖励发放已终止`),
+    body: bodyOf(
+      [
+        `${name}中 ${input.recipient} 领到的 ${input.amount}，超过了你在 Credit 站每天能发出的额度，第二天重试仍未成功。这一份的发放已终止，不再重试。`,
       ],
       { label: "查看红包", url: hongbaoUrl(env, input.activityId) },
       off(env),

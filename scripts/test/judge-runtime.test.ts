@@ -681,6 +681,31 @@ describe("protocol 5 (docs/multi-prize-design.md §3)", () => {
     });
   });
 
+  it("keeps each person's pending at 每人上限, the rest in the pool", () => {
+    // docs/payout-cap-design.md §1: a 商户直发红包's cap.
+    expect(
+      moveMoney(
+        1_000,
+        [
+          { id: 1, pending: 50, add: 100 },
+          { id: 2, pending: 0, add: 30 },
+          // Already over it from before the cap: kept, never raised.
+          { id: 3, pending: 120, add: 10 },
+          { id: 4, pending: 120, add: -30 },
+        ],
+        80,
+      ),
+    ).toEqual({
+      moves: [
+        { id: 1, before: 50, after: 80 },
+        { id: 2, before: 0, after: 30 },
+        { id: 3, before: 120, after: 120 },
+        { id: 4, before: 120, after: 90 },
+      ],
+      unclaimed: 1_000 - 30 - 30 + 30,
+    });
+  });
+
   it("names who others may not name", () => {
     const standing = (id: number) =>
       id === 1 ? null : id === 2 ? "settled" : id === 3 ? "out" : "unknown";

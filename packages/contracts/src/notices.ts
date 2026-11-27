@@ -56,7 +56,7 @@ export const NOTICE_SWITCHES: {
     id: "payout_failed",
     group: "claim",
     title: "领到的奖励发放失败",
-    hint: `你领到的奖励因红包作者的 Credit 余额不足，自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功，发放已终止。`,
+    hint: `你领到的奖励发放已终止：红包作者的 Credit 余额不足，自动重试 ${PAYOUT_FUNDS_WAIT_DAYS} 天仍未成功；或者这一份超过了作者每天能发出的额度，第二天重试仍未成功。`,
   },
   {
     id: "payout_stuck",
@@ -68,7 +68,7 @@ export const NOTICE_SWITCHES: {
     id: "payout_stopped",
     group: "send",
     title: "奖励发放已终止",
-    hint: `你的 Credit 余额不足持续 ${PAYOUT_FUNDS_WAIT_DAYS} 天，未发放的奖励终止发放，用这个商户发的进行中红包结束。`,
+    hint: `你的 Credit 余额不足持续 ${PAYOUT_FUNDS_WAIT_DAYS} 天，未发放的奖励终止发放，用这个商户发的进行中红包结束；或者有一份奖励超过了你每天能发出的额度，第二天重试仍未成功，这一份终止发放。`,
   },
   {
     id: "schedule_failed",

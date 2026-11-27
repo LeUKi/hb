@@ -20,9 +20,11 @@ import {
 } from "./fields";
 import {
   type FormState,
+  formShareCap,
   normalizeTopic,
   plan,
   randomRange,
+  wholeLdc,
 } from "./form-state";
 import { NoteEditor } from "./note-editor";
 import { useFormUnit } from "./points-funding";
@@ -218,7 +220,7 @@ export function SettingsSheet({
   const money = useFormUnit(form);
   const range = (algorithm: FormState["random"]["algorithm"]) =>
     total !== null && shares !== null && total >= shares
-      ? randomRange(total, shares, algorithm, money.step)
+      ? randomRange(total, shares, algorithm, money.step, formShareCap(form))
       : null;
   const note = notes.find((item) => item.key === editing) ?? null;
   // Closing, the text dialog keeps showing what it showed as it fades.
@@ -342,7 +344,9 @@ export function SettingsSheet({
                     label="人数不足时发完奖池"
                     description={
                       form.draw.fillPool
-                        ? "报名的人比名额少时，奖池照样全部分给报名的人。"
+                        ? formShareCap(form) === null
+                          ? "报名的人比名额少时，奖池照样全部分给报名的人。"
+                          : `报名的人比名额少时，奖池照样全部分给报名的人，每人最多 ${wholeLdc(formShareCap(form) ?? 0)} LDC，超出的不发。`
                         : "报名的人比名额少时，按原名额分好金额，只发出中奖人数那几份，其余不发。"
                     }
                     checked={form.draw.fillPool}

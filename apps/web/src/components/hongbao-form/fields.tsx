@@ -34,6 +34,7 @@ import {
   ChoiceCards,
   Field,
   Segmented,
+  Switch,
   TextArea,
   TextInput,
   WrapInput,
@@ -50,6 +51,7 @@ import {
   type RewardMode,
   type TimeUnit,
   unitLabels,
+  wantsLargeShares,
 } from "./form-state";
 import {
   FishLine,
@@ -468,6 +470,26 @@ export function AmountFields({
             Credit 站每天最多能发 800–2000 LDC（按你在 Credit
             站的等级），超出的部分可能顺延到第二天发放。
           </p>
+        </Reveal>
+        {/* 每人上限 (docs/payout-cap-design.md §1): offered once one
+            person could get more than 800 LDC, and while it is on. */}
+        <Reveal
+          show={
+            !locked &&
+            form.funding === "merchant" &&
+            (form.largeShares || wantsLargeShares(form))
+          }
+        >
+          <div className="pt-2">
+            <Switch
+              label="单份可以超过 800 LDC"
+              description="Credit 站每天能发 800–2000 LDC，看你在 Credit 站的等级。打开后每人最多 2000 LDC。额度不够时，这一份第二天再试一次，还发不出就发放失败。"
+              checked={form.largeShares}
+              onChange={(largeShares) =>
+                update((current) => ({ ...current, largeShares }))
+              }
+            />
+          </div>
         </Reveal>
       </div>
     </>

@@ -192,20 +192,40 @@ describe("bounded payment recovery sweeps", () => {
     await held.claim(await user());
     const other = await fixture();
     const resume = Date.now() + 3_600_000;
+    const amount = (
+      await env.DB.prepare("SELECT amount_minor FROM payment_tasks WHERE id=?")
+        .bind(held.taskId)
+        .first<{ amount_minor: number }>()
+    )?.amount_minor;
     await env.DB.batch([
       env.DB.prepare("UPDATE payment_outbox SET delivered_at=1"),
       env.DB.prepare(
         "UPDATE payment_tasks SET status='waiting',reason='quota',next_run_at=? WHERE id=?",
       ).bind(resume, held.taskId),
+      // The day's limit refused one of this size (docs/payout-cap-design.md §2).
       env.DB.prepare(
-        "UPDATE merchants SET active_task_id=?,paused_reason='quota' WHERE id=?",
-      ).bind(held.taskId, held.merchant.id),
+        "UPDATE merchants SET quota_until=?,quota_below=?,quota_refusals=1 WHERE id=?",
+      ).bind(resume, amount, held.merchant.id),
     ]);
     fakeQueue();
     const wakes = fakeWakes();
-    // The claim queued behind it has long been due, but it waits its turn.
+    // The claim after it has long been due, but is no smaller: it waits too.
     expect(await sweepPayments(env)).toBe(1);
     expect(wakes.attempts).toEqual([other.merchant.id]);
+    // Had the one refused been bigger, it would still go today.
+    wakes.attempts.length = 0;
+    await env.DB.prepare("UPDATE merchants SET quota_below=? WHERE id=?")
+      .bind((amount ?? 0) + 1, held.merchant.id)
+      .run();
+    await sweepPayments(env);
+    expect(wakes.attempts).toContain(held.merchant.id);
+    // Five more refused that day: nothing more until it turns.
+    wakes.attempts.length = 0;
+    await env.DB.prepare("UPDATE merchants SET quota_refusals=6 WHERE id=?")
+      .bind(held.merchant.id)
+      .run();
+    await sweepPayments(env);
+    expect(wakes.attempts).not.toContain(held.merchant.id);
     // From then on it is swept again, should its own alarm be lost.
     wakes.attempts.length = 0;
     vi.spyOn(Date, "now").mockReturnValue(resume);
@@ -238,7 +258,7 @@ describe("bounded payment recovery sweeps", () => {
       const now = Date.now();
       const plan = (
         await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
-          .bind(now, now, now)
+          .bind(now, now)
           .all<{ detail: string }>()
       ).results.map((row) => row.detail);
       expect(plan.join("\n")).toContain("payment_tasks_due_idx");

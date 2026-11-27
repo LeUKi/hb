@@ -83,10 +83,8 @@ export async function merchantView(
     row.credentialVersion,
   );
   const eligibility = await publicationEligibility(env, row, verification);
-  const quotaResumeAt =
-    row.pausedReason === "quota"
-      ? (await quotaHolds(env, [row.id])).get(row.id)
-      : undefined;
+  // The day's limit refused one of its payments today (quota.ts).
+  const quotaResumeAt = (await quotaHolds(env, [row.id])).get(row.id)?.resumeAt;
   const base = {
     credentialVerification: verification,
     usageStatus: row.usageStatus,
@@ -96,7 +94,12 @@ export async function merchantView(
     clientId: row.clientId,
     version: row.version,
     credentialVersion: row.credentialVersion,
-    pausedReason: row.pausedReason,
+    pausedReason:
+      quotaResumeAt !== undefined && row.pausedReason !== "funds"
+        ? "quota"
+        : row.pausedReason === "quota"
+          ? null
+          : row.pausedReason,
     ...(quotaResumeAt === undefined
       ? {}
       : { quotaResumeAt: new Date(quotaResumeAt).toISOString() }),

@@ -717,6 +717,15 @@ export const merchants = sqliteTable(
     fundsWaitSince: integer("funds_wait_since"),
     /** The wait its sender was told of (the 奖励发放暂停 私信), once each. */
     fundsNoticedAt: integer("funds_noticed_at"),
+    /**
+     * Credit's daily limit refused one of its payments today
+     * (docs/payout-cap-design.md §2): until when (just past Beijing
+     * midnight), the smallest amount refused, and how many were. Before
+     * then it tries only payments under that amount, a few more at most.
+     */
+    quotaUntil: integer("quota_until"),
+    quotaBelow: integer("quota_below"),
+    quotaRefusals: integer("quota_refusals").notNull().default(0),
     recoveryScannedAt: integer("recovery_scanned_at").notNull().default(0),
     manualCheckAt: integer("manual_check_at"),
     activeTaskId: text("active_task_id"),

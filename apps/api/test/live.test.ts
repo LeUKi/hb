@@ -178,9 +178,15 @@ async function upstream(scenario: "normal" | "daily_limit") {
 
 /** One merchant cycle on everything due, the way its alarm runs it. */
 async function payNow() {
-  await env.DB.prepare(
-    "UPDATE payment_tasks SET next_run_at=0 WHERE status <> 'confirmed'",
-  ).run();
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE payment_tasks SET next_run_at=0 WHERE status <> 'confirmed'",
+    ),
+    // Now is past any day the limit held (docs/payout-cap-design.md §2).
+    env.DB.prepare(
+      "UPDATE merchants SET quota_until=0 WHERE quota_until IS NOT NULL",
+    ),
+  ]);
   const response = await env.MERCHANT_DO.get(
     env.MERCHANT_DO.idFromName(merchantClientId),
   ).fetch("https://merchant.internal/internal/payments/run", {

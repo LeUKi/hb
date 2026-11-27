@@ -28,12 +28,22 @@ export function othersProblem(others, self, standing) {
  * takes no more than is unclaimed; what is taken off goes back to it.
  * `moves` are `{ id, pending, add }`; the answer has each one's pending
  * after and what is unclaimed after. Nothing is paid here: settling moves
- * pending to paid, and leaves what is unclaimed as it is.
+ * pending to paid, and leaves what is unclaimed as it is. `maxEach`, when
+ * given, is the most one person's pending may reach (每人上限 of a 商户直发
+ * 红包, docs/payout-cap-design.md §1); what goes over stays unclaimed too.
  */
-export function moveMoney(unclaimed, moves) {
+export function moveMoney(
+  unclaimed,
+  moves,
+  maxEach = Number.POSITIVE_INFINITY,
+) {
   let left = unclaimed;
   const after = moves.map(({ id, pending, add }) => {
-    const next = Math.min(pending + left, Math.max(0, pending + add));
+    const next = Math.min(
+      Math.max(pending, maxEach),
+      pending + left,
+      Math.max(0, pending + add),
+    );
     left -= next - pending;
     return { id, before: pending, after: next };
   });

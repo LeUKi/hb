@@ -392,7 +392,7 @@ export function HongbaoForm({
     );
   });
   const issues = [
-    ...issuesOf(withDefaultTitle(form), undefined, formUnit),
+    ...issuesOf(withDefaultTitle(form), undefined, formUnit, fixed),
     ...judgeIssues,
   ];
   // A step's problems show once it was checked (下一步, or a save).

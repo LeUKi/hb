@@ -105,6 +105,7 @@ export function othersProblem(
 export function moveMoney(
   unclaimed: number,
   moves: readonly { id: number; pending: number; add: number }[],
+  maxEach?: number,
 ): {
   moves: { id: number; before: number; after: number }[];
   unclaimed: number;

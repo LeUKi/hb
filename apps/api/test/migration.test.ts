@@ -585,6 +585,10 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       // 0070: none waiting on funds (docs/payout-stop-design.md §7).
       funds_wait_since: null,
       funds_noticed_at: null,
+      // 0076: no day's limit refused (docs/payout-cap-design.md §2).
+      quota_until: null,
+      quota_below: null,
+      quota_refusals: 0,
     })),
   );
   expect(after[1]?.results).toEqual(
@@ -1022,6 +1026,9 @@ it("selects one preferred current merchant while preserving legacy credentials a
       kind: "author",
       funds_wait_since: null,
       funds_noticed_at: null,
+      quota_until: null,
+      quota_below: null,
+      quota_refusals: 0,
     })),
   );
   expect(after[1]?.results).toEqual(

@@ -11,6 +11,7 @@ import {
   formatSignedAmount,
   type LdcActivityInput,
   ldcTotalMinor,
+  maxEachOf,
   type PublicQuantity,
 } from "@hb/contracts";
 import type { Json, Submission } from "../../../../kit/judge";
@@ -552,6 +553,10 @@ export async function ledgerJudgmentStatements(
       };
     }),
   ];
+  // 每人上限 (docs/payout-cap-design.md §1): no one's pending past it.
+  const maxEach = maxEachOf(
+    (JSON.parse(activity.config) as LdcActivityInput).money,
+  );
   const moved = moveMoney(
     unclaimed,
     writes.map((write, index) => ({
@@ -559,6 +564,7 @@ export async function ledgerJudgmentStatements(
       pending: write.pending,
       add: write.add,
     })),
+    maxEach ?? undefined,
   );
   const ended = reading.end ? "judge" : moved.unclaimed === 0 ? "empty" : null;
   const now = submission.now;

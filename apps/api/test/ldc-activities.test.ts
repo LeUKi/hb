@@ -644,14 +644,16 @@ describe("random LDC inventory persistence and coordination", () => {
   });
 
   it.each(randomAlgorithms)(
-    "persists and opens 1,000 exact shares at the safe-integer amount limit: %s",
+    "persists and opens 1,000 shares at 每人上限, none above it: %s",
     async (algorithm) => {
+      // docs/payout-cap-design.md §1: 800 LDC a share for 商户直发; the
+      // safe-integer limit itself is the split's own test (contracts).
       const saved = await create({
         ...randomConfig(algorithm),
         money: {
           mode: "random",
           algorithm,
-          totalAmount: "90071992547409.91",
+          totalAmount: "799999.99",
           count: 1000,
         },
       });
@@ -660,13 +662,25 @@ describe("random LDC inventory persistence and coordination", () => {
       expect(pool).toHaveLength(1000);
       expect(
         pool.reduce((sum, item) => sum + BigInt(item.amount_minor), 0n),
-      ).toBe(BigInt(Number.MAX_SAFE_INTEGER));
+      ).toBe(79_999_999n);
       expect(
         pool.every(
-          (item) =>
-            Number.isSafeInteger(item.amount_minor) && item.amount_minor > 0,
+          (item) => item.amount_minor > 0 && item.amount_minor <= 80_000,
         ),
       ).toBe(true);
+      const over = await request("/api/activities", owner, "POST", {
+        requestId: crypto.randomUUID(),
+        activity: {
+          ...randomConfig(algorithm),
+          money: {
+            mode: "random",
+            algorithm,
+            totalAmount: "800000.01",
+            count: 1000,
+          },
+        },
+      });
+      expect(over.status).toBe(400);
     },
   );
 

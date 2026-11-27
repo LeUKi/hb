@@ -50,19 +50,24 @@ const large = (a, b) => (a > b ? a : b);
 // 二倍均值，或初始均值上下 50%（每份都留够后面的）。三方积分按最小单位
 // 拆：总数先换成“多少个最小单位”，拆完再乘回去；LDC 的最小单位是 1 分。
 const step = BigInt(data.activity?.step ?? 1);
-function amounts(algorithm, total, count, take) {
-  return units(algorithm, total / step, count, take).map((n) => n * Number(step));
+// 每人上限（money.maxEach）：每份都不超过它，后面的每份也都留得下；没有它就不封顶。
+const capOf = (money) => (money.maxEach ? minor(money.maxEach) / step : null);
+function amounts(algorithm, total, count, take, cap = null) {
+  return units(algorithm, total / step, count, take, cap).map((n) => n * Number(step));
 }
-function units(algorithm, total, count, take) {
+function units(algorithm, total, count, take, cap) {
   const twice = 2n * BigInt(count);
-  const [lower, upper] = [large(total / twice, 1n), (3n * total + twice - 1n) / twice];
+  const even = (3n * total + twice - 1n) / twice;
+  const [lower, upper] = [large(total / twice, 1n), cap !== null ? small(even, cap) : even];
   const out = [];
   for (let left = BigInt(count), rest = total; left > 0n; left--) {
     const [lo, hi] =
       algorithm === "double_mean_v1"
         ? left === 1n
           ? [rest, rest]
-          : [1n, small(rest - left + 1n, (2n * rest) / left)]
+          : cap !== null
+            ? [large(1n, rest - (left - 1n) * cap), small(small(rest - left + 1n, (2n * rest) / left), cap)]
+            : [1n, small(rest - left + 1n, (2n * rest) / left)]
         : [large(lower, rest - (left - 1n) * upper), small(upper, rest - (left - 1n) * lower)];
     out.push(int(lo, hi, take));
     rest -= out.at(-1);
@@ -105,7 +110,10 @@ if (data.kind === "draw") {
   const count = Math.min(lines.length, money.count);
   const picked = floyd(lines.length, count, take);
   const pool = money.distributeFullPool && count < money.count ? count : money.count;
-  const prizes = count ? amounts(money.algorithm, minor(money.totalAmount), pool, take) : [];
+  // 人少时发完奖池，也只到每人上限为止，超出的不发。
+  const cap = capOf(money);
+  const total = cap !== null ? small(minor(money.totalAmount), cap * step * BigInt(pool)) : minor(money.totalAmount);
+  const prizes = count ? amounts(money.algorithm, total, pool, take, cap) : [];
   const positions = count
     ? shuffle(
         floyd(pool, count, take).map((n) => n - 1),
@@ -126,7 +134,7 @@ if (data.kind === "draw") {
   const take = stream(sha(["hb.lafi.sh/queue/v2/seed", activity.id, data.secret].join("\n")));
   const queue =
     money.mode === "random"
-      ? shuffle(amounts(money.algorithm, minor(money.totalAmount), money.count, take), take)
+      ? shuffle(amounts(money.algorithm, minor(money.totalAmount), money.count, take, capOf(money)), take)
       : shuffle(
           money.amounts.map((amount) => Number(minor(amount))),
           take,

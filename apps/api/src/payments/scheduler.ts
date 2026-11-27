@@ -1,5 +1,5 @@
-import type { PaymentMode } from "@hb/contracts";
-import { and, eq, lte, sql } from "drizzle-orm";
+import { type PaymentMode, QUOTA_MORE_TRIES } from "@hb/contracts";
+import { and, eq, lt, lte, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { merchants, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -25,7 +25,12 @@ import {
   realSendDecision,
   runtimeRealPolicy,
 } from "./policy";
-import { quotaResumeAt } from "./quota";
+import {
+  quotaDueSql,
+  quotaOpenSql,
+  quotaRefusalStatement,
+  quotaResumeOf,
+} from "./quota";
 import { createRealPaymentAdapter } from "./real-protocol";
 import { realMerchantNextDue, runRealMerchantCycle } from "./recovery";
 import { createSimulationPaymentAdapter } from "./simulation";
@@ -43,6 +48,16 @@ export type MerchantCycleOptions = {
 };
 
 type MerchantRow = typeof merchants.$inferSelect;
+
+/**
+ * What a simulated merchant may try on a day the limit refused one
+ * (quota.ts): payments under the smallest refused, while tries are left.
+ */
+function quotaOpen(merchant: MerchantRow, now: number) {
+  if (merchant.quotaUntil === null || merchant.quotaUntil <= now) return [];
+  if (merchant.quotaRefusals > QUOTA_MORE_TRIES) return [sql`0`];
+  return [lt(paymentTasks.amountMinor, merchant.quotaBelow ?? 0)];
+}
 
 function backoff(attempt: number) {
   const base = Math.min(300_000, 1000 * 2 ** Math.min(attempt, 8));
@@ -125,7 +140,9 @@ async function nextDue(
   return (
     (
       await env.DB.prepare(
-        `SELECT MIN(p.next_run_at) AS due FROM payment_tasks p
+        // One the day's limit keeps back is due as the day turns (quota.ts).
+        `SELECT MIN(${quotaDueSql("p", "m", Date.now())}) AS due FROM payment_tasks p
+         JOIN merchants m ON m.id=p.merchant_id
          LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
          WHERE p.merchant_id=? AND p.status IN ('pending','waiting','reconciling','sending') AND (${runnable.condition})`,
       )
@@ -232,6 +249,8 @@ export async function runMerchantCycle(
             // Fixed literals let SQLite use the matching partial index.
             sql`${paymentTasks.status} IN ('pending','waiting','reconciling','sending')`,
             lte(paymentTasks.nextRunAt, now),
+            // On a day the limit refused one, only smaller ones (quota.ts).
+            ...quotaOpen(merchant, now),
           ),
         )
         .orderBy(paymentTasks.createdAt, paymentTasks.id)
@@ -326,6 +345,7 @@ export async function runMerchantCycle(
   let httpStatus: number | null = null;
   let unknownOutcome = task.unknownOutcome;
   let retainActive = true;
+  let refusedForQuota = false;
   let outcome: "succeeded" | "rejected" | "unknown" = "unknown";
   let nextRunAt =
     Date.now() + backoff(task.attemptCount + task.reconciliationCount + 1);
@@ -362,12 +382,13 @@ export async function runMerchantCycle(
         status = "waiting";
         reason = result.reason;
         outcome = "rejected";
-        // The daily limit holds the whole merchant until the day turns: it
-        // keeps this task, and the rest queue behind it (quota.ts).
-        retainActive = result.reason === "quota";
+        // Refused by the day's limit: it waits for the day to turn, and
+        // the merchant goes on with smaller ones (quota.ts).
+        retainActive = false;
+        refusedForQuota = result.reason === "quota";
         nextRunAt =
           result.reason === "quota"
-            ? quotaResumeAt(Date.now())
+            ? quotaResumeOf(merchant as MerchantRow, Date.now())
             : Date.now() + 30_000;
         return;
       }
@@ -429,6 +450,18 @@ export async function runMerchantCycle(
       merchantId,
       token,
     ),
+    ...(refusedForQuota
+      ? [
+          quotaRefusalStatement(
+            env,
+            merchantId,
+            token,
+            task.amountMinor,
+            nextRunAt,
+            finishedAt,
+          ),
+        ]
+      : []),
     env.DB.prepare(
       `UPDATE merchants SET active_task_id=?,lease_token=NULL,lease_until=NULL,paused_reason=?,updated_at=? WHERE id=? AND lease_token=?`,
     ).bind(
@@ -535,25 +568,25 @@ export async function flushPaymentOutbox(env: ApiBindings, taskId?: string) {
 export async function sweepPayments(env: ApiBindings) {
   await flushPaymentOutbox(env);
   const runnable = await runnableTaskSql(env);
-  // A merchant held by the daily limit (quota.ts) sends nothing until its
-  // payment's resume time, whatever has queued behind it; from then on that
-  // payment is due itself.
+  // On a day the limit refused one of its payments, a merchant is woken
+  // only for what it may still try (quota.ts): no wake for one waiting on
+  // the day to turn, or too big for what is left; from then on they are due.
   // Each branch reads only what is due (sweep 2026-11-21, B4): open payments
   // through payment_tasks_due_idx; a confirmed one's duplicate probe through
   // payment_duplicate_probes_due_idx, then its payment by id. The + keeps
   // status='confirmed' from walking every confirmed payment instead.
+  const now = Date.now();
   const page = await env.DB.prepare(
     `SELECT DISTINCT m.id,m.client_id,m.recovery_scanned_at
       FROM payment_tasks p JOIN merchants m ON m.id=p.merchant_id
       LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
-      WHERE ((p.status IN ('pending','waiting','reconciling','sending') AND p.next_run_at<=?)
+      WHERE ((p.status IN ('pending','waiting','reconciling','sending') AND p.next_run_at<=? AND ${quotaOpenSql("p", "m", now)})
         OR (+p.status='confirmed' AND p.id IN (SELECT d.task_id FROM payment_duplicate_probes d
           WHERE (d.status IN ('pending','sending','reconciling') OR (d.status='awaiting_evidence' AND d.protocol_verified_at IS NULL)) AND d.next_run_at<=?)))
-        AND NOT EXISTS(SELECT 1 FROM payment_tasks h WHERE h.id=m.active_task_id AND m.paused_reason='quota' AND h.status='waiting' AND h.reason='quota' AND h.next_run_at>?)
         AND (${runnable.condition})
       ORDER BY m.recovery_scanned_at,m.id LIMIT 20`,
   )
-    .bind(Date.now(), Date.now(), Date.now(), ...runnable.values)
+    .bind(now, now, ...runnable.values)
     .all<{ id: string; client_id: string; recovery_scanned_at: number }>();
   if (!page.results.length) return 0;
   // Advance the bounded batch before waking it. Failed or protected merchants

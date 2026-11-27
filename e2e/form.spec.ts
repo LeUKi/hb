@@ -497,6 +497,24 @@ test.describe("发红包", () => {
     await expect(overflow).toBeHidden();
     await page.locator("#hb-random-total").fill("800.01");
     await expect(overflow).toBeVisible();
+    // 每人上限 (docs/payout-cap-design.md §1): offered once one share could
+    // go over 800 LDC; over 800 × 份数, told how to send more.
+    const large = page.getByText("单份可以超过 800 LDC", { exact: true });
+    await expect(large).toBeHidden();
+    await page.locator("#hb-random-total").fill("2400.01");
+    await expect(large).toBeVisible();
+    // Enter is the step's own 下一步.
+    await page.locator("#hb-random-count").press("Enter");
+    await expect(
+      page.getByText(
+        "每份最多 800 LDC，这样分总额最多 2400 LDC。要发更多，打开下面的“单份可以超过 800 LDC”。",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await page.getByRole("switch", { name: "单份可以超过 800 LDC" }).click();
+    await expect(
+      page.getByText(/^每份最多 800 LDC，这样分总额最多/),
+    ).toBeHidden();
   });
 
   test("更多设置：领取前人机验证写明代价，默认 Cap，打开后摘要和保存的输入都带上", async ({

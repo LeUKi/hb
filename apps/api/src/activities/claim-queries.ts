@@ -24,7 +24,7 @@ import {
 } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { fundsHolds } from "../payments/funds-stop";
-import { quotaHolds } from "../payments/quota";
+import { heldByQuota, quotaHolds } from "../payments/quota";
 import {
   heldForRecipient,
   recipientRejections,
@@ -312,9 +312,15 @@ export async function claimSummariesBatch(
         rejections.get(payment.id),
         now,
       );
-      const resumeAt = queued(payment.status)
+      // On a day the limit refused one, the payments it keeps back
+      // (quota.ts); a smaller one may still go today.
+      const quotaHold = queued(payment.status)
         ? held.get(payment.merchantId)
         : undefined;
+      const resumeAt =
+        quotaHold && heldByQuota(payment, quotaHold)
+          ? quotaHold.resumeAt
+          : undefined;
       const stopAt =
         resumeAt === undefined && queued(payment.status)
           ? short.get(payment.merchantId)
